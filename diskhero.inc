@@ -4,9 +4,10 @@
 KBD         = $C000     ; keyboard
 KBDFLAG     = $C008     ; keyboard flag
 KBDCLEAR    = $C010     ; keyboard strobe
-BEEP        = $C040     ; beep
 SPEAKER     = $C030     ; click
-; graphics modes
+BEEP        = $C040     ; beep
+CLOCK       = $C070     ; real time clock
+; display modes
 GRAPHICS    = $C050     ; "clear text mode"
 TEXT        = $C051     ; set text mode
 NOMIX       = $C052     ; "clear mix mode"
@@ -18,7 +19,7 @@ HIRES       = $C057     ; set hires mode
 ; smooth scrolling
 SCROLLON    = $C0D9     ; enable smooth scroll (vertical shift)
 SCROLLOFF   = $C0D8     ; disable smooth scroll
-LC000       = $C000     ; used as base for slow scroll offset
+LC000       = $C000     ; used as base for smooth scroll offset
 LC002       = $C002
 LC004       = $C004
 ; graphics buffers
@@ -29,21 +30,20 @@ TEXTBUFD    = $0580     ; line 3
 TEXTBUFE    = $0600     ; line 4
 TEXTBUFF    = $0680     ; line 5
 GRBUFA      = $2000     ; start of page 1
-; VIAs
-E_IORB      = $FFE0     ; includes HBL?
-D_ACR       = $FFDB     ; ffdx auxiliary control register
-E_ACR       = $FFEB     ; ffex auxiliary control register
-D_PCR       = $FFDC     ; ffdx peripheral control register
-E_PCR       = $FFEC     ; ffex peripheral control register
-D_IFR       = $FFDD     ; ffdx interrupt flag register
-E_IFR       = $FFED     ; ffex interrupt flag register
-D_IER       = $FFDE     ; ffdx interrupt enable register
-E_IER       = $FFEE     ; ffex interrupt enable register
-EReg        = $FFDF     ; Environment register
-Bank_Reg    = $FFEF     ; Bank register
-IRQVECT     = $ffcd     ; Monitor IRQ points here
-Z_REG       = $ffd0     ;zero page register
-CLOCK       = $c070     ; real time clock
+; VIAs and interrupts
+IRQVect     = $FFCD     ; Monitor IRQ points here
+RegZP       = $FFD0     ; zero page register
+RegEnv      = $FFDF     ; Environment register
+RegAuxCtrlD = $FFDB     ; ffdx auxiliary control register
+RegPerCtrlD = $FFDC     ; ffdx peripheral control register
+RegIntFlagD = $FFDD     ; ffdx interrupt flag register
+RegIntEnabD = $FFDE     ; ffdx interrupt enable register
+RegToneHBL  = $FFE0     ; ffex port B. 0-5 tone, 6 I/O count, 7 i/o nmi
+RegAuxCtrlE = $FFEB     ; ffex auxiliary control register
+RegPerCtrlE = $FFEC     ; ffex peripheral control register
+RegIntFlagE = $FFED     ; ffex interrupt flag register
+RegIntEnabE = $FFEE     ; ffex interrupt enable register
+RegBank     = $FFEF     ; Bank register
 
 ;SOS Calls
 ;REQUEST_SEG    = $40

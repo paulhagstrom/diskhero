@@ -143,13 +143,13 @@ sendchars:  lda #$60
 :           rts
 
 WaitVBL:    sta CTEMP       ; save bits to be stored
-            lda E_PCR       ; control port for CB2
+            lda RegPerCtrlE ; control port for CB2
             and #$3F        ; reset hi bits to 0
             ora CTEMP 
-            sta E_PCR
+            sta RegPerCtrlE
             lda #$08        ; test vertical retrace
-            sta E_IFR
-:           bit E_IFR       ; wait for retrace
+            sta RegIntFlagE
+:           bit RegIntFlagE ; wait for retrace
             beq :-
             rts
             

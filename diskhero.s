@@ -8,6 +8,15 @@
 ; S-bank: 400-C00 text/graphics, 2000-9fff graphics
 ; bank 2: 2000-5FFF - generated map representation
 
+; I suspect that VBL is pretty short.
+; I think horizontal blanking is something like 40 visible cycles, and 25 invisible ones.
+; that from Bishop's article, and corresponds to p96.  In which case, it suggests that we have
+; 70 cycles during VBL. That does not sound like much. If I have to do all refreshing then,
+; I probably can't make it. Even running at 2MHz, which might give me about 140 in that time,
+; that's not many. I may need to work with page flipping and alternating tasks.
+; this was designed to basically just sit on hold during drawing, waiting for horizontal and
+; vertical blanks.  I may also want to try to get some work done while waiting.
+; if I can set up the interrupts to help with that, it might be more possible.
 
             .setcpu "6502"
             .segment "CODE"
@@ -27,27 +36,28 @@ CodeStart:  jmp Init
 ; put the interrupt handler here at the beginning so that we're
 ; unlikely to get any 6502 page-crossing penalties
 
-HandleInt:  pha
+HandleInt:  ; save registers
+            pha
             tya
             pha
             txa
             pha
             cld
-            lda E_IFR
+            lda RegIntFlagE
             and #$10        ; CB1 (VBL)
             beq :+          ; not VBL
             jsr DoVBL
             lda #$10        ; clear CB1 VBL
-            sta E_IFR
+            sta RegIntFlagE
             bne IntReturn
-:           lda E_IFR
+:           lda RegIntFlagE
             and #$01        ; CA2 (Keyboard)
             beq :+          ; not keyboard
             jsr DoKeyboard 
             lda #$01        ; clear CA2 keyboard
-            sta E_IFR
+            sta RegIntFlagE
             bne IntReturn
-:           lda E_IFR
+:           lda RegIntFlagE
             and #$20        ; timer 2
             bne DoTimer
 IntReturn:  pla
@@ -56,9 +66,10 @@ IntReturn:  pla
             tay
             pla
             rti
+
 ; timer2 interrupt handler
 DoTimer:    lda #$20        ;clear timer2 flag
-            sta E_IFR
+            sta RegIntFlagE
             ; do game tasks
             ; IntReturn is probably too far away to branch to, so replicate
             pla
@@ -68,10 +79,16 @@ DoTimer:    lda #$20        ;clear timer2 flag
             pla
             rti
 ; keyboard interrupt handler
+; atomic defense maintains two buffers, one for movement, one for everything else
+; unclear why that is useful, so I am not presently replicating that.
+; AD is generally very careful about burffering keys, but how can you get 256 presses ahead?
 DoKeyboard: lda KBD
             sta KBDCLEAR
             bpl KeyReturn   ; no key pressed, return
             ; buffer keys
+            ldy KeyBufPtr
+            sta KeyBuffer, y
+            inc KeyBufPtr
 KeyReturn:  rts
 ; VBL interrupt handler
 DoVBL:      ; assume that we are already in display mode 1 (A3 40 text)
@@ -80,11 +97,11 @@ DoVBL:      ; assume that we are already in display mode 1 (A3 40 text)
             ; 480-4A7 (chars) 880-8A7 (colors)
             ; text lines: 0-1, pixels: 0-15
             ldx #16         ; stay in mode 1 for 16 lines
-:           bit E_IORB
+:           bit RegToneHBL
             bvc :-          ; wait until bit 6 (BL) is set
             dex
             beq :++
-:           bit E_IORB
+:           bit RegToneHBL
             bvs :-          ; wait until bit 6 (BL) is clear again
             bvc :--         ; wait for the next line
             ; switch to display mode 6 (A3 bw superhires) (map/progress)
@@ -97,11 +114,11 @@ DoVBL:      ; assume that we are already in display mode 1 (A3 40 text)
             lda HIRES
             lda MIX
             ldx #16         ; stay in mode 6 for 16 lines
-:           bit E_IORB
+:           bit RegToneHBL
             bvc :-          ; wait until bit 6 (BL) is set
             dex
             beq :++
-:           bit E_IORB
+:           bit RegToneHBL
             bvs :-          ; wait until bit 6 (BL) is clear again
             bvc :--         ; wait for the next line
             ; switch to display mode 7 (A3 hires) (top scrolling area)
@@ -111,11 +128,11 @@ DoVBL:      ; assume that we are already in display mode 1 (A3 40 text)
             ; set nudge
             ; turn nudging on
             ldx #40         ; stay in mode 7 for 40 lines
-:           bit E_IORB
+:           bit RegToneHBL
             bvc :-          ; wait until bit 6 (BL) is set
             dex
             beq :++
-:           bit E_IORB
+:           bit RegToneHBL
             bvs :-          ; wait until bit 6 (BL) is clear again
             bvc :--         ; wait for the next line
             ; switch to display mode 1 (A3 40 text) (main game area)
@@ -124,11 +141,11 @@ DoVBL:      ; assume that we are already in display mode 1 (A3 40 text)
 :           lda NOMIX
             lda LORES
             ldx #48         ; stay in mode 1 for 48 lines
-:           bit E_IORB
+:           bit RegToneHBL
             bvc :-          ; wait until bit 6 (BL) is set
             dex
             beq :++
-:           bit E_IORB
+:           bit RegToneHBL
             bvs :-          ; wait until bit 6 (BL) is clear again
             bvc :--         ; wait for the next line
             ; switch to display mode 7 (A3 hires) (bottom scrolling area)
@@ -137,22 +154,22 @@ DoVBL:      ; assume that we are already in display mode 1 (A3 40 text)
 :           lda MIX
             lda HIRES
             ldx #40         ; stay in mode 7 for 40 lines
-:           bit E_IORB
+:           bit RegToneHBL
             bvc :-          ; wait until bit 6 (BL) is set
             dex
             beq :++
-:           bit E_IORB
+:           bit RegToneHBL
             bvs :-          ; wait until bit 6 (BL) is clear again
             bvc :--         ; wait for the next line
             ; switch to display mode 1 (A3 40 text) (status area)
 :           lda NOMIX
             lda LORES
             ldx #32         ; stay in mode 1 for 32 lines
-:           bit E_IORB
+:           bit RegToneHBL
             bvc :-          ; wait until bit 6 (BL) is set
             dex
             beq :++
-:           bit E_IORB
+:           bit RegToneHBL
             bvs :-          ; wait until bit 6 (BL) is clear again
             bvc :--         ; wait for the next line
 :                           ; should have run off the bottom now
@@ -171,21 +188,26 @@ nudgecount: .byte   0
 IRQSave:    .res    0, 3
 Seed:       .byte   0
 currMap:    .byte   0       ; line of the map displayed at top of screen
-
+KeyBufPtr:  .byte   0       ; current position in keybuffer
+KeyBufDone: .byte   0       ; last handled keypress in buffer
 gLevel:     .byte   0
 gScore:     .res    0, 3
 
 ; start of game
 Init:       
+            sei     ; don't allow interrupts while we are setting them up
             ; save the IRQ vector for restoring upon exit
-            lda IRQVECT
+            lda IRQVect
             sta IRQSave
-            lda IRQVECT + 1
+            lda IRQVect + 1
             sta IRQSave + 1
-            lda IRQVECT + 2
+            lda IRQVect + 2
             sta IRQSave + 2
-            lda #$77        ; 2MHz, video, I/O, reset, r/w, ram, ROM#1
-            sta EReg            
+            jsr SetupEnv
+            ; reset key buffer - may not need to be re-intialized after load
+            lda #$00
+            sta KeyBufPtr
+            sta KeyBufDone
             ;jsr UploadFont
             jsr MakeField
             lda #$E0        ; start at line E0 of the map, leaves some room down
@@ -200,16 +222,78 @@ Init:
             lda NOMIX
             lda LORES
             lda #$0C
-            sta Z_REG       ; put zeropage at page $0C (above screen)
+            sta RegZP       ; put zeropage at page $0C (above screen)
             ; TODO: DO NOT USE ALTERNATE STACK.
             ; THIS WILL MESS UP THE GRAPHICS BECAUSE THE STACK WILL BE NEXT TO ZP
-            lda EReg
+            lda RegEnv
             and #$FB        ; enable alternate stack
-            sta EReg
+            sta RegEnv
             ; rts to task 0
             ; Do the update when we are not drawing.
             ; Hoping that we have enough time during VBL for it.
             ; jsr ScrUpdate
+            cli             ; ok, ready to start interrupting
+hang:       jmp hang
+
+; set up the interrupt environment
+SetupEnv:   lda #$77        ; 2MHz, video, I/O, reset, r/w, ram, ROM#1
+            sta RegEnv
+            lda #$7F        ; disable & clear all interrupts (MSB=clear, other bits=interrupts)
+            sta RegIntEnabD
+            sta RegIntFlagD
+            ; CB2, CA1, shift register handle VBL behavior.
+            ; E-VIA Int Flag
+            ; [0-------] disable
+            ; [-0------] timer 1
+            ; [--0-----] timer 2
+            ; [---0----] CB1
+            ; [----1---] CB2
+            ; [-----1--] shift register
+            ; [------1-] CA1
+            ; [-------0] CA2
+            lda #$0E        ; disable & clear CB2, shift register, CA1
+            sta RegIntEnabE
+            sta RegIntFlagE
+            lda #$00        ; timed interrupt
+            sta RegAuxCtrlD
+            sta RegAuxCtrlE
+            ; E-VIA - CA2 is keyboard, CA1 is clock; CB1, CB2 are VBL
+            ; CB2 - [hi nibble: 011-] independent interrupt input pos edge
+            ; CB1 - [hi nibble: ---0] neg active edge
+            ; CA2 - [lo nibble: 001-] independent interrupt input neg edge
+            ; CA1 - [lo nibble: ---0] neg active edge
+            lda #$62
+            sta RegPerCtrlE
+            ; D-VIA - CA1 is any slot IRQ, CA2 is some switch?; CB1, CB2 are SCO/SER, probably joystick?
+            ; CB2 - [hi nibble: 011-] independent interrupt input pos edge
+            ; CB1 - [hi nibble: ---1] pos active edge
+            ; CA2 - [lo nibble: 011-] independent interrupt input pos edge
+            ; CA1 - [lo nibble: ---0] neg active edge
+            lda #$76
+            sta RegPerCtrlD
+            ; E-VIA Int Enable
+            ; [1-------] enable
+            ; [-1------] timer 1
+            ; [--1-----] timer 2
+            ; [---1----] CB1
+            ; [----0---] CB2
+            ; [-----0--] shift register
+            ; [------0-] CA1
+            ; [-------1] CA2
+            lda #$F1        ; enable timer1, timer2, CB1, CA2
+            sta RegIntEnabE
+            ; E-VIA Int Flag
+            ; [0-------] no function I believe?
+            ; [-1------] timer 1
+            ; [--1-----] timer 2
+            ; [---1----] CB1
+            ; [----0---] CB2
+            ; [-----0--] shift register
+            ; [------0-] CA1
+            ; [-------1] CA2
+            lda #$71        ; clear timer1, timer2, CB1, CA2
+            sta RegIntFlagE
+            rts
             
 demo:       ldx #$00        ;display mode
             jsr dispmodex
@@ -222,15 +306,15 @@ demo:       ldx #$00        ;display mode
             jsr paint
 
             lda #$31        ;enable IOCT and keyboard
-            sta E_IER
+            sta RegIntEnabE
 
 scrollgo:   lda #$07
             sta nudgecount
             lda #$00
             sta antinudge
 scrollpos:  lda #$10        ; clear VBLx1 flag
-            sta E_IFR
-:           lda E_IFR
+            sta RegIntFlagE
+:           lda RegIntFlagE
             and #$10        ; VBL x1?
             beq :-
             ; wait for 24 scanlines to pass
@@ -294,21 +378,21 @@ sevdone:    ;inc        varA
 gotkey:     lda SCROLLOFF
 
             lda #$7f       ;disable all via interrupts
-            sta D_IER
-            sta D_IFR
+            sta RegIntEnabD
+            sta RegIntFlagD
             lda #$7f
-            sta E_IER
-            sta E_IFR
+            sta RegIntEnabE
+            sta RegIntFlagE
 
             brk
             .byte   TERMINATE
             .word   *-2
 
 ; wait for x (x-register as param) lines to be drawn
-waithbl:    bit E_IORB
+waithbl:    bit RegToneHBL
             bvc waithbl
             ; wait for HBL to go low again
-waithblb:   bit E_IORB
+waithblb:   bit RegToneHBL
             bvs waithblb
             dex
             bne waithbl
@@ -468,14 +552,14 @@ seedRandom:
             ; grab a random number seed from the fastest part of the realtime clock.
             txa
             pha
-            lda Z_REG       ; save the ZP register
+            lda RegZP       ; save the ZP register
             tax             ; don't push it just in case we're using alt-stack
             lda #$00
-            sta Z_REG       ; request smallest RTC byte
+            sta RegZP       ; request smallest RTC byte
             lda CLOCK       ; close enough to random for now
             sta Seed
             txa
-            sta Z_REG       ; restore zero page
+            sta RegZP       ; restore zero page
             pla             ; restore X
             tax
             rts
@@ -692,7 +776,7 @@ fieldHC:    .byte   $08, $09, $09, $0A, $0A, $0B
 
 ScrUpdate:  
             ; save ZP
-            lda Z_REG
+            lda RegZP
             sta ZPSave
             ; update the level and score
             ; update level
@@ -734,6 +818,14 @@ ScrUpdate:
             ; playfield
             ; playfield representation starts at 2000 in bank 2.
             ; each line is $40 long
+            ; TODO: This should really also take into account an
+            ; x-coordinate, so that we can move the window left
+            ; and right. We're displaying only 40-ish (36?)
+            ; of the 64 dots in the main playfield.
+            ; also TODO: this will at some point get custom fonts
+            ; and colors, at which point we need to know which
+            ; character variant is appropriate. Animation frame?
+            ; facing direction?
             lda currMap
             ror
             bcc :++
@@ -763,7 +855,7 @@ mapstart:
             sta curLine
 fieldline:  ldx curLine
             lda FieldH, x
-            sta Z_REG
+            sta RegZP
             lda FieldL, x
             tax
             
@@ -783,7 +875,7 @@ fieldline:  ldx curLine
             
             ldx curLine
             lda FieldHC, x
-            sta Z_REG
+            sta RegZP
             lda FieldL, x
             tax
             ; draw colors
@@ -805,6 +897,11 @@ fieldline:  ldx curLine
             ; so that nudging can work.
             ; only need to redraw entirely when nudging drops below 0 or goes over 7.
             ; this is the impressive part, but I will save it for later TODO
+            
+            ; however: plan.  The map is 64 bytes wide. We have 140 pixels.
+            ; so we can draw two pixels per column.  Might have been better
+            ; to have had 128 bytes wide.
+            
             
             rts
             
