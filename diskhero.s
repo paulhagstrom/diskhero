@@ -254,6 +254,21 @@ SetupEnv:   lda #$77        ; 2MHz, video, I/O, reset, r/w, ram, ROM#1
             lda #$0E        ; disable & clear CB2, shift register, CA1
             sta RegIntEnabE
             sta RegIntFlagE
+            ; D-VIA Aux control:
+            ; [---000--] disabled
+            ; other options (maybe copy somewhere else)
+            ; [---000--] disabled
+            ; [---100--] shift out free running at T2 rate
+            ; [---1----] shift out
+            ; [---0----] shift in
+            ; [----01--] under control of T2
+            ; [----10--] under control of +2 (?)
+            ; [----11--] under control of ext clock
+            ; T1 has two latches and a 16 bit counter.  Down to zero -> interrupt
+            ; one shot keeps counting, free-run resets and counts again
+            ; T2 can count PB6 negatives, or run in one shot mode.
+            ; Count: load number to count into T2, dec on pulses, interrupt at zero, counting continues
+            ; Is PB6 by any chance HBL? 
             lda #$00        ; timed interrupt
             sta RegAuxCtrlD
             sta RegAuxCtrlE
