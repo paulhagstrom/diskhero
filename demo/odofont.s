@@ -43,12 +43,12 @@ HiholesH:   .byte   $08, $08, $09, $09, $0A, $0A, $0B, $0B
 ; and first high hole needs: c0 c1 c2 c3 c0 c1 c2 c3
 ; then fifth holes move on to c4-c7.
 
-UploadFont: 
+odofont: 
             ; even though we do not intentionally use extended addressing,
             ; the code would trigger it.  So we need to set the X-byte to #$8F.
             lda #$8F
-            sta DataHoleP+CExtPG
-            sta AsciiHoleP+CExtPG
+            sta DataHoleP + XByte
+            sta AsciiHoleP + XByte
             lda #$00
             sta FontIndex   ; index into font data
 WriteRoll:  tay             ; use Y to look up ASCII base code
