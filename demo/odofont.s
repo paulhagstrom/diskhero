@@ -17,12 +17,12 @@
 ; 01234567
 ;
 ; To use unshifted numbers, you basically need to look them up in
-; FONTCHAR.  Hi bit set returns normal, clear returns inverse.
-; The unrolled number 2 is: LDY #$02 ; LDA FONTCHAR, y 
+; FontChar.  Hi bit set returns normal, clear returns inverse.
+; The unrolled number 2 is: LDY #$02 ; LDA FontChar, y 
 
 CWRTON      = $C0DB
 CWRTOFF     = $C0DA
-CTEMP       = $A4
+CTemp       = $A4
 DataHoleP   = $A0
 AsciiHoleP  = $A2
 
@@ -51,14 +51,14 @@ odofont:
             sta AsciiHoleP + XByte
             lda #$00
             sta FontIndex   ; index into font data
-WriteRoll:  tay             ; use Y to look up ASCII base code
+writeroll:  tay             ; use Y to look up ASCII base code
             asl             ; last font data is index * 8...
             asl
             asl
             clc             ; ...plus 7 (end of character data)... 
             adc #$0F        ; ...plus 8 (each adds only a line bc we are rolling)
             sta FDataPtr    ; last line of last rolling variant for this character
-            lda FONTCHAR, y ; get the ASCII base code for these variants
+            lda FontChar, y ; get the ASCII base code for these variants
             clc
             adc #$07        ; find the last ASCII code for this variant
             sta CurrChar
@@ -75,7 +75,7 @@ fillhole:   lda HolesL, x   ; set up the data destination pointer
             lda HiholesH, x
             sta AsciiHoleP + 1
             ldx FDataPtr    ; move the next two bytes of data into the screen hole
-            lda FONTDATA, x
+            lda FontData, x
             sta (DataHoleP), y
             lda CurrChar    ; store the ASCII code for both bytes
             sta (AsciiHoleP), y
@@ -85,7 +85,7 @@ fillhole:   lda HolesL, x   ; set up the data destination pointer
             dey
             dey
             sta (AsciiHoleP), y
-            lda FONTDATA, x
+            lda FontData, x
             sta (DataHoleP), y
             dex
             stx FDataPtr    ; update the font data pointer
@@ -130,22 +130,22 @@ fillhole:   lda HolesL, x   ; set up the data destination pointer
             
 sendchars:  lda #$60
             bit CWRTON
-            jsr WaitVBL
+            jsr waitVBL
             lda #$20
-            jsr WaitVBL
+            jsr waitVBL
             bit CWRTOFF
             
             inc FontIndex
             lda FontIndex
             cmp #$0A
             beq :+
-            jmp WriteRoll
+            jmp writeroll
 :           rts
 
-WaitVBL:    sta CTEMP       ; save bits to be stored
+waitVBL:    sta CTemp       ; save bits to be stored
             lda RegPerCtrlE ; control port for CB2
             and #$3F        ; reset hi bits to 0
-            ora CTEMP 
+            ora CTemp 
             sta RegPerCtrlE
             lda #$08        ; test vertical retrace
             sta RegIntFlagE
@@ -162,7 +162,7 @@ WaitVBL:    sta CTEMP       ; save bits to be stored
 ;   /(),.
 ; if it turns out to be useful. <YOU KNOW8 FOR KIDS;ADULTS9>
 
-FONTCHAR:
+FontChar:
             .byte   $00 ; 0
             .byte   $08
             .byte   $10
@@ -176,7 +176,7 @@ FONTCHAR:
 
 ; font data - note it is horizontally flipped, hi bit not used
 
-FONTDATA:
+FontData:
             .byte   %00000000   ; 0
             .byte   %00011100
             .byte   %00100010
