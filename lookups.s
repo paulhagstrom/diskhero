@@ -141,9 +141,9 @@ YLoresHA:
             .byte $04, $04, $05, $05, $06, $06, $07, $07
 
 YLoresHB:
-            .byte $04, $04, $05, $05, $06, $06, $07, $07
-            .byte $04, $04, $05, $05, $06, $06, $07, $07
-            .byte $04, $04, $05, $05, $06, $06, $07, $07
+            .byte $08, $08, $09, $09, $0A, $0A, $0B, $0B
+            .byte $08, $08, $09, $09, $0A, $0A, $0B, $0B
+            .byte $08, $08, $09, $09, $0A, $0A, $0B, $0B
 
 ; I took DOOM's "random" numbers.
 ; https://github.com/id-Software/DOOM/blob/77735c3ff0772609e9c8d29e3ce2ab42ff54d20b/linuxdoom-1.10/m_random.c#L27

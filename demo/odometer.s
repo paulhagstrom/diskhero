@@ -64,9 +64,12 @@ TERMINATE   = $65
 
 ; indirect addressing
 XByte       = $1601     ; Interp extended address offset
-Ptr         = $20
-
-Numbor      = $22
+PtrA        = $20
+PtrB        = $22
+PtrC        = $24
+PtrS        = $26
+PrColor     = $28
+Numbor      = $29
 
             .org     $2000 - 14
             
@@ -78,7 +81,7 @@ Numbor      = $22
 
 CodeStart:  jmp init
 
-            .include "odofont.s" ; UploadFont
+            .include "odofont.s" ; odofont
 
 varA:       .byte   $C1
 linecount:  .byte   0
@@ -108,6 +111,7 @@ init:
             jsr setnudge
             jsr cleartext
             jsr paintback
+            jsr drawnums
             ; show intro screen
             ; initialize graphics
             ; set up VIAs
@@ -217,82 +221,81 @@ waithblb:   bit E_IORB
             bne waithbl
 waitedhbl:  rts
 
-; write to the text page
+; draw a single number
 
-DrawText:   lda #$8F
-            sta Ptr1+CExtPG
-            lda #$04
-            sta Ptr1 + 1
-            lda #$00
-            sta Ptr1
-            lda #$A0
-            ldy #$27
-:           sta (Ptr1),y
-            dey
-            bpl :-
-            inc Ptr1 + 1
-            ldy #$27
-:           sta (Ptr1),y
-            dey
-            bpl :-
-            lda #$80
-            sta Ptr1
-            dec Ptr1 + 1
-            ldy #$00
-:           lda StatText,y
-            beq :+
-            ora #$80
-            sta (Ptr1),y
-            iny
-            bne :-
-:           lda #$A0
-            sta (Ptr1),y
-            iny
-            cpy #$28
-            bne :-
+DigitList:  .byte 0, 0, 0, 0, 0, 0
+RollStep:   .byte 0, 0, 0, 0, 0, 0
+
+drawnum:    tya
+            pha
             
-            lda #$A8
-            sta Ptr1
-            lda #$05
-            sta Ptr1 + 1
             ldy #$00
-:           lda ColorText, y
-            beq :+
-            sta (Ptr1), y
+:           ldx #$00        ; some acrobatics to avoid extended addressing mode
+            lda (PtrC, x)
+            and #$F0
+            lsr
+            lsr
+            lsr
+            lsr
+            tax
+            lda FontChar, x
+            sta DigitList, y
             iny
-            bne :-
-:           lda #$09
-            sta Ptr1 + 1
-            ldy #$0F
-:           tya
-            sta (Ptr1), y
-            dey
-            bpl :-
-            lda #$B8
-            sta Ptr1
-            ldy #$0F
-:           tya
-            asl
-            asl
-            asl
-            asl
-            sta (Ptr1), y
-            dey
-            bpl :-
+            lda (PtrC, x)
+            and #$0F
+            lda FontChar, x
+            sta DigitList, y
+            inc PtrC
+            bne :+
+            inc PtrC + 1
+:           iny
+            cpy #$06
+            bne :--
+            ; YOU ARE HERE MORE OR LESS
             
-            ; FONTCHAR is defined in font.s
-DrawNum:    lda #$90
-            sta Ptr1
-            lda #$04
-            sta Ptr1+1
-            lda #$8F
-            sta Ptr1+CExtPG
-            lda #$00
+            ; last digit is base 8, determines the "roll" step
+            ; still in A at this point
+            ; if digit to the left of a rolling digit is 9, then it rolls too.
+            dey
+            sta RollStep, y
+            
+            
+
+            ; FontChar is defined in odofont.s
+drawnums:   
+            ldx #$08
+            jsr getlinex        ; load PtrA (text), PtrB (color) for line
+            lda #<CountVBL      ; load number to draw into PtrC
+            sta PtrC
+            lda #>CountVBL
+            sta PtrC + 1
+            ldy #22             ; column to draw numbers at.
+            jsr drawnum
+            
+            ldx #$0A
+            jsr getlinex        ; load PtrA (text), PtrB (color) for line
+            lda #<CountKBD      ; load number to draw into PtrC
+            sta PtrC
+            lda #>CountKBD
+            sta PtrC + 1
+            ldy #22             ; column to draw numbers at.
+            jsr drawnum
+            
+            ldx #$0C
+            jsr getlinex        ; load PtrA (text), PtrB (color) for line
+            lda #<CountHBL      ; load number to draw into PtrC
+            sta PtrC
+            lda #>CountHBL
+            sta PtrC + 1
+            ldy #22             ; column to draw numbers at.
+            jsr drawnum
+            
+            ; done, below is old
             sta Numbor
             ldy #$05
 :           lda ClickNum, y ; base number to display
             tax
-            lda FONTCHAR, x ; character this corresponds to
+            lda FontChar, x ; character this corresponds to
             clc
             adc RollNum, y
             ora Numbor
@@ -319,32 +322,106 @@ IncNum:     ldx #$05
             bpl :-
 IncNumDone: rts
 
-StatText:   .byte "NUM BER #! ?:"
-            .byte $0
+CountVBL:   .byte 0, 0, 0, 0
+CountKBD:   .byte 0, 0, 0, 0
+CountHBL:   .byte 0, 0, 0, 0
 
-ColorText:  .byte "ABCDEFGHIJKLMNOP"
-            .byte "ABCDEFGHIJKLMNOP"
-            .byte $0
+TextOne:    .byte "INTERRUPT COUNTING", 0
+TextTwo:    .byte "VBL interrupts:", 0
+TextThree:  .byte "Keyboard interrupts:", 0
+TextFour:   .byte "HBL interrupts:", 0
 
-ClickNum:   .byte $0,$0,$0,$0,$0,$0
-RollNum:    .byte $0,$0,$0,$0,$0,$0
+; paint the static parts of the page
 
-; HGR graphics is at the beginning of bank 0
-paint:      lda #$00
-            sta Ptr1+CExtPG
-            lda #$00
-            sta Ptr1
-            sta Ptr1+1
-            lda paintfrom
-            ldx #$10
+paintback:  
+            ldx #$04        ; vtab
+            jsr getlinex
+            lda #>TextOne
+            pha
+            lda #<TextOne
+            pha
+            lda #$F0        ; color
+            pha
+            jsr printstr
+            ldx #$08        ; vtab
+            jsr getlinex
+            lda #>TextTwo
+            pha
+            lda #<TextTwo
+            pha
+            lda #$E0        ; color
+            pha
+            jsr printstr
+            ldx #$0A        ; vtab
+            jsr getlinex
+            lda #>TextThree
+            pha
+            lda #<TextThree
+            pha
+            lda #$0E        ; color
+            pha
+            jsr printstr
+            ldx #$0C        ; vtab
+            jsr getlinex
+            lda #>TextFour
+            pha
+            lda #<TextFour
+            pha
+            lda #$C0        ; color
+            pha
+            jsr printstr
+            rts            
+
+; print the characters that we were passed on the stack, to PtrA/PtrB (found via getlinex)
+; push string high, string low, color, then call
+
+printstr:
+            ; stash return address
+            pla
+            sta PtrS
+            pla
+            sta PtrS + 1
+            ; get string 
+            pla
+            sta PrColor
+            pla
+            sta PtrC
+            pla
+            sta PtrC + 1
+            ; replace return address
+            lda PtrS + 1
+            pha
+            lda PtrS
+            pha
+            ; 
+            lda #$8F
+            sta PtrC + XByte
             ldy #$00
-paintpage:  sta (Ptr1), y
+:           lda (PtrC), y
+            beq :+
+            sta (PtrA), y
             iny
-            bne paintpage
-            clc
-            adc #$01
-            dex
-            bne paintpage
+            bne :-
+:           lda PrColor
+:           sta (PtrB), y
+            dey
+            bne :-
+            sta (PtrB), y
+            rts
+        
+; put the pointers to line x into PtrA (char) and PtrB (color)
+
+getlinex:
+            lda YLoresL, x
+            sta PtrA
+            sta PtrB
+            lda YLoresHA, x
+            sta PtrA + 1
+            lda YLoresHB, x
+            sta PtrB + 1
+            lda #$8F
+            sta PtrA + XByte
+            sta PtrB + XByte
             rts
 
 ; clear text page (blank page one, F0 colors on page two)
@@ -370,7 +447,6 @@ cleartext:  lda #$00
             ldx #$04
             bne :-
 :           rts
-            
             
 ; Set smooth scroll offset to the number (0-7) in A
 
@@ -422,4 +498,19 @@ sdmix:      bit D_MIX
 sdhires:    bit D_HIRES
             rts
 
+YLoresL:
+            .byte $00, $80, $00, $80, $00, $80, $00, $80
+            .byte $28, $A8, $28, $A8, $28, $A8, $28, $A8
+            .byte $50, $D0, $50, $D0, $50, $D0, $50, $D0
+
+YLoresHA:
+            .byte $04, $04, $05, $05, $06, $06, $07, $07
+            .byte $04, $04, $05, $05, $06, $06, $07, $07
+            .byte $04, $04, $05, $05, $06, $06, $07, $07
+
+YLoresHB:
+            .byte $08, $08, $09, $09, $0A, $0A, $0B, $0B
+            .byte $08, $08, $09, $09, $0A, $0A, $0B, $0B
+            .byte $08, $08, $09, $09, $0A, $0A, $0B, $0B
+                        
 CodeEnd     = *
