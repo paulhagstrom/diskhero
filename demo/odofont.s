@@ -143,13 +143,13 @@ sendchars:  lda #$60
 :           rts
 
 waitVBL:    sta CTemp       ; save bits to be stored
-            lda RegPerCtrlE ; control port for CB2
+            lda RE_PERCTL   ; control port for CB2
             and #$3F        ; reset hi bits to 0
             ora CTemp 
-            sta RegPerCtrlE
+            sta RE_PERCTL
             lda #$08        ; test vertical retrace
-            sta RegIntFlagE
-:           bit RegIntFlagE ; wait for retrace
+            sta RE_INTFLAG
+:           bit RE_INTFLAG  ; wait for retrace
             beq :-
             rts
             

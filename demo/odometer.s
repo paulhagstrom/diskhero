@@ -51,8 +51,8 @@ RE_INTENAB  = $FFEE     ; ffex interrupt enable register
 
 R_ENVIRON   = $FFDF     ; Environment register
 R_BANK      = $FFEF     ; Bank register
-R_ZP        = $ffd0     ; zero page register
-IRQVECT     = $ffcd     ; Monitor IRQ points here
+R_ZP        = $FFD0     ; zero page register
+IRQVECT     = $FFCD     ; Monitor IRQ points here
 
 ;SOS Calls
 ;REQUEST_SEG    = $40
@@ -69,7 +69,6 @@ PtrB        = $22
 PtrC        = $24
 PtrS        = $26
 PrColor     = $28
-Numbor      = $29
 
             .org     $2000 - 14
             
@@ -83,12 +82,105 @@ CodeStart:  jmp init
 
             .include "odofont.s" ; odofont
 
-varA:       .byte   $C1
-linecount:  .byte   0
-nudgecount: .byte   0
-antinudge:  .byte   0
-paintfrom:  .byte   0
+ExitFlag:   .byte   0
 IRQSave:    .res    0, 3
+
+inthandler: ; save registers
+            pha
+            tya
+            pha
+            txa
+            pha
+            cld
+            lda RE_INTFLAG
+            and #$10        ; CB1 (VBL)
+            beq :+          ; not VBL
+            jsr intvbl
+            lda #$10        ; clear CB1 VBL
+            sta RE_INTFLAG
+            bne intreturn
+:           lda RE_INTFLAG
+            and #$01        ; CA2 (Keyboard)
+            beq :+          ; not keyboard
+            jsr intkey 
+            lda #$01        ; clear CA2 keyboard
+            sta RE_INTFLAG
+            bne intreturn
+:           lda RE_INTFLAG
+            and #$20        ; timer 2
+            bne inttimer
+intreturn:  pla
+            tax
+            pla
+            tay
+            pla
+            rti
+; timer2 interrupt handler
+inttimer:   lda #$20        ;clear timer2 flag
+            sta RE_INTFLAG
+            lda CountHBL + 2
+            sed
+            clc
+            adc #$01
+            sta CountHBL + 2
+            bcc timerdo
+            lda CountHBL + 1
+            adc #$00
+            sta CountHBL + 1
+            bcc timerdo
+            lda CountHBL
+            adc #$00
+            sta CountHBL
+timerdo:    cld
+            clc
+            bcc intreturn
+            
+; keyboard interrupt handler
+; increment count using BCD mode.
+intkey:     
+            lda IO_KEY
+            sta IO_KEYCLEAR
+            bpl keyreturn   ; no key pressed, return
+            ; if the key was E, set the exit flag.
+            cmp #$C5        ; E
+            bne inckey
+            inc ExitFlag
+            ; increment key event counter
+inckey:     lda CountKBD + 2
+            sed
+            clc
+            adc #$01
+            sta CountKBD + 2
+            bcc keyreturn
+            lda CountKBD + 1
+            adc #$00
+            sta CountKBD + 1
+            bcc keyreturn
+            lda CountKBD
+            adc #$00
+            sta CountKBD
+keyreturn:  cld
+            rts
+
+; VBL interrupt handler
+; this one plays two roles.  One: it counts VBLs.  Two: it draw the numbers.
+intvbl:     
+            lda CountVBL + 2
+            sed
+            clc
+            adc #$01
+            sta CountVBL + 2
+            bcc vbldraw
+            lda CountVBL + 1
+            adc #$00
+            sta CountVBL + 1
+            bcc vbldraw
+            lda CountVBL
+            adc #$00
+            sta CountVBL
+vbldraw:    cld
+            jsr drawnums
+            rts
 
 init:       
             ; [0-------] F000.FFFF RAM (1=RAM)
@@ -112,123 +204,117 @@ init:
             jsr cleartext
             jsr paintback
             jsr drawnums
-            ; show intro screen
-            ; initialize graphics
-            ; set up VIAs
-            ; setup vars and interrupt
-            lda #$0C
-            sta R_ZP       ; put zeropage at page $0C
-            lda R_ENVIRON
-            and #$FB        ; enable alternate stack
-            sta R_ENVIRON
-            ; rts to task 0
+            jsr setupenv
+eventloop:  lda ExitFlag
+            bne eventloop
             
-            jsr DrawText
-            lda #$00
-            sta paintfrom
-            jsr paint
-
-            lda #$31        ;enable IOCT and keyboard
-            sta E_IER
-
-scrollgo:   lda #$07
-            sta nudgecount
-            lda #$00
-            sta antinudge
-scrollpos:  lda #$10        ; clear VBLx1 flag
-            sta E_IFR
-:           lda E_IFR
-            and #$10        ; VBL x1?
-            beq :-
-            ; wait for 24 scanlines to pass
-            ; and switch to mode 4
-            ldx #24
-            jsr waithbl
-            ldx #$04
-            jsr dispmodex
-            lda SCROLLON
-            ; wait for 24 scanlines to pass
-            ; and switch to mode 5
-            ldx #24
-            jsr waithbl
-            ldx #$05
-            jsr dispmodex
-            ; wait for 24 scanlines to pass
-            ; and switch to mode 1
-            ldx #24
-            jsr waithbl
-            ldx #$01
-            jsr dispmodex
-            lda SCROLLOFF
-            ldx antinudge
-            jsr nudgetox
-
-            ; wait for 24 scanlines to pass
-            ; and switch to mode 7
-            ldx #24
-            jsr waithbl
-            ldx #$07
-            jsr dispmodex
-            lda SCROLLON
-
-            ; wait for 24 to pass and switch back to mode 0
-            ldx #24
-            jsr waithbl
-            ldx #$00
-            jsr dispmodex
-            lda SCROLLOFF
-            
-;            lda KBD
-;            bmi gotkey
-
-            jsr DrawNum
-
-            ; nudge screen during VBL
-            ldx nudgecount
-            jsr nudgetox
-            
-            inc antinudge
-            dec nudgecount
-            bmi sevdone
-            
-            jmp scrollpos
-            
-sevdone:    ;inc        varA
-            ;jsr        fillx
-            ;jsr        paint
-
-            jmp scrollgo
-gotkey:     lda SCROLLOFF
-
             lda #$7f       ;disable all via interrupts
-            sta D_IER
-            sta D_IFR
+            sta RD_INTENAB
+            sta RD_INTFLAG
             lda #$7f
-            sta E_IER
-            sta E_IFR
+            sta RE_INTENAB
+            sta RE_INTFLAG
 
             brk
             .byte   TERMINATE
             .word   *-2
 
-; wait for x (x-register as param) lines to be drawn
-waithbl:    bit E_IORB
-            bvc waithbl
-            ; wait for HBL to go low again
-waithblb:   bit E_IORB
-            bvs waithblb
-            dex
-            bne waithbl
-waitedhbl:  rts
+; arm interrupts
+
+setupenv:   ; save IRQ vector and then install ours
+            lda IRQVECT
+            sta IRQSave
+            lda IRQVECT + 1
+            sta IRQSave + 1
+            lda IRQVECT + 2
+            sta IRQSave + 2
+            lda #$4C        ; jmp
+            sta IRQVECT
+            lda #<inthandler
+            sta IRQVECT + 1
+            lda #>inthandler
+            sta IRQVECT + 2
+            lda #$77        ; 2MHz, video, I/O, reset, r/w, ram, ROM#1
+            sta R_ENVIRON
+            lda #$7F        ; disable & clear all interrupts (MSB=clear, other bits=interrupts)
+            sta RD_INTENAB
+            sta RD_INTFLAG
+            ; CB2, CA1, shift register handle VBL behavior.
+            ; E-VIA Int Flag
+            ; [0-------] disable
+            ; [-0------] timer 1
+            ; [--0-----] timer 2
+            ; [---0----] CB1
+            ; [----1---] CB2
+            ; [-----1--] shift register
+            ; [------1-] CA1
+            ; [-------0] CA2
+            lda #$0E        ; disable & clear CB2, shift register, CA1
+            sta RE_INTENAB
+            sta RE_INTFLAG
+            ; D-VIA Aux control:
+            ; [---000--] disabled
+            ; other options (maybe copy somewhere else)
+            ; [---000--] disabled
+            ; [---100--] shift out free running at T2 rate
+            ; [---1----] shift out
+            ; [---0----] shift in
+            ; [----01--] under control of T2
+            ; [----10--] under control of +2 (?)
+            ; [----11--] under control of ext clock
+            ; T1 has two latches and a 16 bit counter.  Down to zero -> interrupt
+            ; one shot keeps counting, free-run resets and counts again
+            ; T2 can count PB6 negatives, or run in one shot mode.
+            ; Count: load number to count into T2, dec on pulses, interrupt at zero, counting continues
+            ; Is PB6 by any chance HBL? 
+            lda #$00        ; timed interrupt
+            sta RD_AUXCTL
+            sta RE_AUXCTL
+            ; E-VIA - CA2 is keyboard, CA1 is clock; CB1, CB2 are VBL
+            ; CB2 - [hi nibble: 011-] independent interrupt input pos edge
+            ; CB1 - [hi nibble: ---0] neg active edge
+            ; CA2 - [lo nibble: 001-] independent interrupt input neg edge
+            ; CA1 - [lo nibble: ---0] neg active edge
+            lda #$62
+            sta RE_PERCTL
+            ; D-VIA - CA1 is any slot IRQ, CA2 is some switch?; CB1, CB2 are SCO/SER, probably joystick?
+            ; CB2 - [hi nibble: 011-] independent interrupt input pos edge
+            ; CB1 - [hi nibble: ---1] pos active edge
+            ; CA2 - [lo nibble: 011-] independent interrupt input pos edge
+            ; CA1 - [lo nibble: ---0] neg active edge
+            lda #$76
+            sta RD_PERCTL
+            ; E-VIA Int Enable
+            ; [1-------] enable
+            ; [-1------] timer 1
+            ; [--1-----] timer 2
+            ; [---1----] CB1
+            ; [----0---] CB2
+            ; [-----0--] shift register
+            ; [------0-] CA1
+            ; [-------1] CA2
+            lda #$F1        ; enable timer1, timer2, CB1, CA2
+            sta RE_INTENAB
+            ; E-VIA Int Flag
+            ; [0-------] no function I believe?
+            ; [-1------] timer 1
+            ; [--1-----] timer 2
+            ; [---1----] CB1
+            ; [----0---] CB2
+            ; [-----0--] shift register
+            ; [------0-] CA1
+            ; [-------1] CA2
+            lda #$71        ; clear timer1, timer2, CB1, CA2
+            sta RE_INTFLAG
+            rts
 
 ; draw a single number
 
 DigitList:  .byte 0, 0, 0, 0, 0, 0
-RollStep:   .byte 0, 0, 0, 0, 0, 0
+CharList:   .byte 0, 0, 0, 0, 0, 0
 
 drawnum:    tya
-            pha
-            
+            pha             ; stash column number for later
             ldy #$00
 :           ldx #$00        ; some acrobatics to avoid extended addressing mode
             lda (PtrC, x)
@@ -237,29 +323,58 @@ drawnum:    tya
             lsr
             lsr
             lsr
+            sta DigitList, y
             tax
             lda FontChar, x
-            sta DigitList, y
+            sta CharList, y
             iny
             lda (PtrC, x)
             and #$0F
-            lda FontChar, x
             sta DigitList, y
+            tax
+            lda FontChar, x
+            ora #$80            ; normal not inverse
+            sta CharList, y
             inc PtrC
             bne :+
             inc PtrC + 1
 :           iny
             cpy #$06
             bne :--
-            ; YOU ARE HERE MORE OR LESS
-            
-            ; last digit is base 8, determines the "roll" step
-            ; still in A at this point
-            ; if digit to the left of a rolling digit is 9, then it rolls too.
+            ; base digits now in place
+            ; last "digit" is base 8, determines the "roll" step
+            ; and not binary coded decimal
+            ; PtrC now points there.
+            lda (PtrC, x)
+            tax                 ; stash roll offset in X for use later
+            dey                 ; point to final digit
+            clc
+            adc CharList, y
+            and #$7F            ; make the last one inverse
+            sta CharList, y     ; and roll
+            ; if digit we are rolling is a 9, roll the one before it too
+:           lda DigitList, y
+            cmp #$09
+            bne dndone          ; advqnced the last roll-adjacent 9
             dey
-            sta RollStep, y
-            
-            
+            bmi dndone          ; no more digits
+            txa                 ; restore roll offset from X
+            clc                 ; roll the adjacent digit
+            adc CharList, y
+            sta CharList, y
+            bne :-              ; back to check more digits
+dndone:     ; we now have all the digits and rolls determined, put them onscreen
+            pla                 ; pull column number
+            clc
+            adc #$05
+            tay
+            ldx #$05
+:           lda CharList, x
+            sta (PtrA), y
+            dey
+            dex
+            bpl :-
+            rts
 
             ; FontChar is defined in odofont.s
 drawnums:   
@@ -289,39 +404,8 @@ drawnums:
             sta PtrC + 1
             ldy #22             ; column to draw numbers at.
             jsr drawnum
+            rts
             
-            ; done, below is old
-            sta Numbor
-            ldy #$05
-:           lda ClickNum, y ; base number to display
-            tax
-            lda FontChar, x ; character this corresponds to
-            clc
-            adc RollNum, y
-            ora Numbor
-            sta (Ptr1), y
-            lda #$80
-            sta Numbor
-            dey
-            bpl :-
-            
-IncNum:     ldx #$05
-:           inc RollNum,x
-            lda RollNum,x
-            cmp #$08
-            bne IncNumDone
-            lda #$00
-            sta RollNum,x
-            inc ClickNum,x
-            lda ClickNum,x
-            cmp #$0A
-            bne IncNumDone
-            lda #$00
-            sta ClickNum,x
-            dex
-            bpl :-
-IncNumDone: rts
-
 CountVBL:   .byte 0, 0, 0, 0
 CountKBD:   .byte 0, 0, 0, 0
 CountHBL:   .byte 0, 0, 0, 0
@@ -427,18 +511,18 @@ getlinex:
 ; clear text page (blank page one, F0 colors on page two)
 
 cleartext:  lda #$00
-            sta Ptr
+            sta PtrA
             lda #$04
-            sta Ptr + 1
+            sta PtrA + 1
             lda #$8F
-            sta Ptr + XByte
+            sta PtrA + XByte
             ldx #$04
             lda #$A0
             ldy #$00
-:           sta (Ptr), y
+:           sta (PtrA), y
             iny
             bne :-
-            inc Ptr + 1
+            inc PtrA + 1
             dex
             bne :-
             cmp #$F0
@@ -457,15 +541,15 @@ setnudge:   ror
             bcs snxyx
 snxnx:      bit SS_XNX
             ror
-            bcs sdyxx
+            bcs snyxx
 snnxx:      bit SS_NXX
             rts
 snxxy:      bit SS_XXY
             ror
-            bcc ssxnx     
+            bcc snxnx     
 snxyx:      bit SS_XYX
             ror
-            bcc ssnxx
+            bcc snnxx
 snyxx:      bit SS_YXX
             rts
 
