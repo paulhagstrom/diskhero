@@ -80,10 +80,8 @@ PrColor     = $28
 
 CodeStart:  jmp init
 
-            .include "odofont.s" ; odofont
-
 ExitFlag:   .byte   0
-IRQSave:    .res    0, 3
+IRQSave:    .byte   0, 0 , 0
 
 inthandler: ; save registers
             pha
@@ -183,6 +181,7 @@ vbldraw:    cld
             rts
 
 init:       
+            sei                 ; no interrupts while we are setting up
             ; [0-------] F000.FFFF RAM (1=RAM)
             ; [-1------] ROM#1 (0=ROM#2)
             ; [--1-----] True stack ($100) (0=alt stack)
@@ -191,10 +190,10 @@ init:
             ; [-----1--] video enabled (0=disabled)
             ; [------1-] C000.CFFF I/O (0=RAM)
             ; [-------1] 2MHz clock (0=1MHz)
-            lda #$77        ; 2MHz, video, I/O, reset, r/w, ram, ROM#1
+            lda #$77            ; 2MHz, video, I/O, reset, r/w, ram, ROM#1
             sta R_ENVIRON
-            jsr odofont     ; create and upload odometer font
-            lda #$01        ; Apple III color text
+            jsr odofont         ; create and upload odometer font
+            lda #$01            ; Apple III color text
             jsr setdisplay
             bit D_PAGEONE
             bit D_SCROLLOFF
@@ -205,10 +204,11 @@ init:
             jsr paintback
             jsr drawnums
             jsr setupenv
+            cli                 ; all set up now, interrupt away
 eventloop:  lda ExitFlag
             bne eventloop
             
-            lda #$7f       ;disable all via interrupts
+            lda #$7f            ;disable all via interrupts
             sta RD_INTENAB
             sta RD_INTFLAG
             lda #$7f
@@ -234,6 +234,14 @@ setupenv:   ; save IRQ vector and then install ours
             sta IRQVECT + 1
             lda #>inthandler
             sta IRQVECT + 2
+            ; [0-------] F000.FFFF RAM (1=RAM)
+            ; [-1------] ROM#1 (0=ROM#2)
+            ; [--1-----] True stack ($100) (0=alt stack)
+            ; [---1----] C000.CFFF read-only (1=read/write)
+            ; [----0---] Reset key disabled (1=enabled)
+            ; [-----1--] video enabled (0=disabled)
+            ; [------1-] C000.CFFF I/O (0=RAM)
+            ; [-------1] 2MHz clock (0=1MHz)
             lda #$77        ; 2MHz, video, I/O, reset, r/w, ram, ROM#1
             sta R_ENVIRON
             lda #$7F        ; disable & clear all interrupts (MSB=clear, other bits=interrupts)
@@ -314,9 +322,9 @@ DigitList:  .byte 0, 0, 0, 0, 0, 0
 CharList:   .byte 0, 0, 0, 0, 0, 0
 
 drawnum:    tya
-            pha             ; stash column number for later
+            pha                 ; stash column number for later
             ldy #$00
-:           ldx #$00        ; some acrobatics to avoid extended addressing mode
+:           ldx #$00            ; some acrobatics to avoid extended addressing mode
             lda (PtrC, x)
             and #$F0
             lsr
@@ -326,6 +334,7 @@ drawnum:    tya
             sta DigitList, y
             tax
             lda FontChar, x
+            ora #$80            ; normal not inverse
             sta CharList, y
             iny
             lda (PtrC, x)
@@ -411,9 +420,9 @@ CountKBD:   .byte 0, 0, 0, 0
 CountHBL:   .byte 0, 0, 0, 0
 
 TextOne:    .byte "INTERRUPT COUNTING", 0
-TextTwo:    .byte "VBL interrupts:", 0
-TextThree:  .byte "Keyboard interrupts:", 0
-TextFour:   .byte "HBL interrupts:", 0
+TextTwo:    .byte "VBL INTERRUPTS:", 0
+TextThree:  .byte "KEYBOARD INTERRUPTS:", 0
+TextFour:   .byte "HBL INTERRUPTS:", 0
 
 ; paint the static parts of the page
 
@@ -424,7 +433,7 @@ paintback:
             pha
             lda #<TextOne
             pha
-            lda #$F0        ; color
+            lda #$E0        ; color
             pha
             jsr printstr
             ldx #$08        ; vtab
@@ -433,7 +442,7 @@ paintback:
             pha
             lda #<TextTwo
             pha
-            lda #$E0        ; color
+            lda #$C0        ; color
             pha
             jsr printstr
             ldx #$0A        ; vtab
@@ -451,7 +460,7 @@ paintback:
             pha
             lda #<TextFour
             pha
-            lda #$C0        ; color
+            lda #$0C        ; color
             pha
             jsr printstr
             rts            
@@ -478,14 +487,17 @@ printstr:
             lda PtrS
             pha
             ; 
-            lda #$8F
-            sta PtrC + XByte
+            ldx #$00
             ldy #$00
-:           lda (PtrC), y
-            beq :+
+:           lda (PtrC, x)
+            beq :++
+            ora #$80
             sta (PtrA), y
-            iny
-            bne :-
+            inc PtrC
+            bne :+
+            inc PtrC + 1
+:           iny
+            bne :--
 :           lda PrColor
 :           sta (PtrB), y
             dey
@@ -555,12 +567,12 @@ snyxx:      bit SS_YXX
 
 ; set display to number in A
 ; 0 = 40 char Apple II b/w                  gr      nomix   lores
-; 1 = 40 char Apple III color               text    nomix   hires
+; 1 = 40 char Apple III color               text    nomix   lores
 ; 2 = 80 char b/w                           gr      mix     lores
-; 3 = 80 char b/w                           text    mix     hires
-; 4 = Apple II hires (280x192 b/w)          gr      nomix   lores
+; 3 = 80 char b/w                           text    mix     lores
+; 4 = Apple II hires (280x192 b/w)          gr      nomix   hires
 ; 5 = Fg/bg hires (280x192, 16 colors)      text    nomix   hires
-; 6 = super hires (560x192, b/w)            gr      mix     lores
+; 6 = super hires (560x192, b/w)            gr      mix     hires
 ; 7 = 140x192 A Hires (140x192, color)      text    mix     hires
 
 setdisplay: ror
@@ -596,5 +608,7 @@ YLoresHB:
             .byte $08, $08, $09, $09, $0A, $0A, $0B, $0B
             .byte $08, $08, $09, $09, $0A, $0A, $0B, $0B
             .byte $08, $08, $09, $09, $0A, $0A, $0B, $0B
-                        
+            
+            .include "odofont.s" ; odofont
+            
 CodeEnd     = *
