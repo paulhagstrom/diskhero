@@ -116,6 +116,10 @@ intreturn:  pla
 ; timer2 interrupt handler
 inttimer:   lda #$20        ;clear timer2 flag
             sta RE_INTFLAG
+            dec CountHBL + 3
+            bpl timerdo
+            lda #$07
+            sta CountHBL + 3
             lda CountHBL + 2
             sed
             clc
@@ -140,11 +144,16 @@ intkey:
             sta IO_KEYCLEAR
             bpl keyreturn   ; no key pressed, return
             ; if the key was E, set the exit flag.
+            sta $0400       ; put it in the corner so I can see it
             cmp #$C5        ; E
             bne inckey
             inc ExitFlag
             ; increment key event counter
-inckey:     lda CountKBD + 2
+inckey:     dec CountKBD + 3
+            bpl keyreturn
+            lda #$07
+            sta CountKBD + 3
+            lda CountKBD + 2
             sed
             clc
             adc #$01
@@ -163,6 +172,10 @@ keyreturn:  cld
 ; VBL interrupt handler
 ; this one plays two roles.  One: it counts VBLs.  Two: it draw the numbers.
 intvbl:     
+            dec CountVBL + 3
+            bpl vbldraw
+            lda #$07
+            sta CountVBL + 3
             lda CountVBL + 2
             sed
             clc
@@ -206,7 +219,7 @@ init:
             jsr setupenv
             cli                 ; all set up now, interrupt away
 eventloop:  lda ExitFlag
-            bne eventloop
+            beq eventloop
             
             lda #$7f            ;disable all via interrupts
             sta RD_INTENAB
@@ -326,7 +339,7 @@ drawnum:    tya
             ldy #$00
 :           ldx #$00            ; some acrobatics to avoid extended addressing mode
             lda (PtrC, x)
-            and #$F0
+            pha
             lsr
             lsr
             lsr
@@ -337,7 +350,7 @@ drawnum:    tya
             ora #$80            ; normal not inverse
             sta CharList, y
             iny
-            lda (PtrC, x)
+            pla
             and #$0F
             sta DigitList, y
             tax
@@ -354,7 +367,11 @@ drawnum:    tya
             ; last "digit" is base 8, determines the "roll" step
             ; and not binary coded decimal
             ; PtrC now points there.
-            lda (PtrC, x)
+            ; roll should actually be 7 minus stored value
+            ; because it's decremented for efficiency elsewhere
+            ldx #$00
+            lda #$07
+            sbc (PtrC, x)            
             tax                 ; stash roll offset in X for use later
             dey                 ; point to final digit
             clc
@@ -415,9 +432,9 @@ drawnums:
             jsr drawnum
             rts
             
-CountVBL:   .byte 0, 0, 0, 0
-CountKBD:   .byte 0, 0, 0, 0
-CountHBL:   .byte 0, 0, 0, 0
+CountVBL:   .byte 0, 0, 0, 7
+CountKBD:   .byte 0, 0, 0, 7
+CountHBL:   .byte 0, 0, 0, 7
 
 TextOne:    .byte "INTERRUPT COUNTING", 0
 TextTwo:    .byte "VBL INTERRUPTS:", 0
