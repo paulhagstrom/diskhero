@@ -1,6 +1,7 @@
 ; odometer
 ; Paul Hagstrom, 2022
 ; create and upload a font with odometer-style "rolling" numbers
+; and set and process interrupts
 
             .segment "CODE"
             .setcpu "6502"
