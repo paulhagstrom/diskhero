@@ -217,9 +217,9 @@ init:
 eventloop:  lda ExitFlag
             bne alldone
             jsr drawscore
-            ;jsr scrupdate
+            jsr scrupdate
             inc GameScore + 2
-            ;dec CurrMap
+            dec CurrMap
             jmp eventloop
 
 alldone:    lda #$7f            ;disable all via interrupts
@@ -460,9 +460,9 @@ drawscore:
 ; these are in screen holes because we're using screen memory for ZP
 ScrHole     = $78
 OtherZP     = $7A
-LineStart   = $7C
-CurrMapX    = $7D
 CurrDrawX   = $7B
+LineStart   = $7C
+CurrMapX    = $7E
 MapBuffer   = $F8
 PixScratch  = $FF
 Zero        = $00
@@ -491,8 +491,11 @@ scrupdate:
             ; facing direction?
             
             ; get pointer into the map data for current row
+            ; it is blocks of 4 so shift out the last two bits
+            ; to do the mod 4, then multiply what's left by $100
+            ; by putting it in the high byte.
             lda CurrMap
-            ror
+            lsr
             bcc :++
             ; either 1 (40) or 3 (c0)
             lsr
@@ -516,12 +519,12 @@ mapstart:
             adc #$20
             sta MapPtrH
             
-            ; the pointer is to the TOP of the whole screen
+            ; the map pointer is to what is displayed at the TOP of the entire display
             ; the whole screen is 80 (28 30 28) long
-            ; first mode 7 stuff is from 0 to 28.  Drawn from line $20
-            ; the mode 1 stuff is 28 lines down.  Drawn from line $09
+            ; first mode 7 stuff is from 0 to 28.  Drawn from physical line $20.
+            ; the mode 1 stuff is 28 lines down.  Drawn from physical line $09,
             ; and 6 lines long (magnified by 8 vertically)
-            ; it starts at 28+18-3 = 3D
+            ; so its map data starts at 28+18-3 = 3D
             ; and goes to 42.
             ; then the next mode 7 stuff is from 58 to 80.  Drawn from line $78.
             
@@ -530,22 +533,22 @@ mapstart:
 
             ; mode 7 part
 
-            lda #$20        ; top field starts at line $20
+            lda #$20        ; top field starts at physical line $20
             sta DrawLine
 fieldline:  ldx DrawLine
             lda YHiresHZA, x
             ; we will use ZP to write to graphics memory, but there are two
             ; graphics pages involved.
             ; engineer it so that OtherZP always points to the other ZP to flip quickly.
-            sta R_ZP
+            sta R_ZP        ; now using HGR page 1 ZP
             pha
             clc
             adc #$20
-            sta OtherZP
-            sta R_ZP
+            sta OtherZP     ; compute and store HGR page 2 ZP
+            sta R_ZP        ; go there
             pla
-            sta OtherZP
-            sta R_ZP
+            sta OtherZP     ; recall and store HGR page 1 ZP
+            sta R_ZP        ; go there
             ; lo byte is the same on either page
             lda YHiresL, x
             sta LineStart
@@ -557,16 +560,31 @@ fieldline:  ldx DrawLine
             sta ScrHole + 1
             lda #$02
             sta ScrHole + XByte
-            ; (ScrHole), 0 is now the left side of the map line
-            ; in mode 7 we draw the whole thing, start at the right
+            ; (ScrHole), 0 is now the left side of the map data line
+            ; in mode 7 we draw the whole thing, and start at the right
             ; it is a 140-pixel space, and we have a 64-byte wide thing to draw
-            ; so we want to double up pixels (unless we expand it to be a 128 byte wide thing)
-            ; so we read 7 map elements and push them out into 8 bytes
-            ; start at the right edge 
-topline:    lda #$27
+            ; so we want to double up pixels and draw it over 128 pixels.
+            ; we draw 7 pixels with 4 bytes and beccause we are doubling, we
+            ; expand that to drawing 14 pixels with 8 bytes.
+            ; to stay on the byte boundaries, we will actually just leave
+            ; the whole last byte unused, and draw 9 groups, amounting to 126 pixels.
+            ; or, skipping the last doubled map pixel.
+            ; 0 7 14 21 28 35 42 49 56 63
+            ; diagram of layout borrowed frmo Rob Justice:
+            ; 140x192 16 color mode pixel layout
+            ; 
+            ; |    2000     |    4000     |    2001     |    4001     |
+            ; | | | | | | | | | | | | | | | | | | | | | | | | | | | | |
+            ; |  P1   |  P2   |  P3   |  P4   |  P5   |  P6   |  P7   |
+            ;  B           B B           B B           B B           B
+            ;  i           i i           i i           i i           i
+            ;  t           t t           t t           t t           t
+            ;  0           7 0           7 0           7 0           7
+
+topline:    lda #62
             sta CurrMapX
             ; pixels are in groups of 7 split over 4 bytes
-            ; load the seven map elements we will represent
+            ; buffer the seven map elements we will represent
 toplineseg: ldy CurrMapX
             ldx #$06
 :           lda (ScrHole), y
@@ -574,17 +592,17 @@ toplineseg: ldy CurrMapX
             dey
             dex
             bpl :-
-            sty CurrMapX
+            sty CurrMapX        ; save new pointer for next block after this
             ; blast them onto the screen via our handy ZP
             ; byte 0 (page 1): -000011 [0+0]
             ldx LineStart
             ldy MapBuffer
             lda MapColors, y
-            tay
+            tay                 ; stash in y for recall later
             lsr
             php                 ; save the last bit in carry
             sta PixScratch
-            tya                 ; same color, horizontally doubled
+            tya                 ; recall from y (same color, doubled)
             asl
             asl
             asl
@@ -607,10 +625,10 @@ toplineseg: ldy CurrMapX
             ora PixScratch
             ; put this data on the other ZP
             ldy OtherZP
-            sty R_ZP
+            sty R_ZP            ; go to page 2 ZP
             sta Zero, x
             ldy OtherZP
-            sty R_ZP
+            sty R_ZP            ; go to page 1 ZP
             inx
             ; byte 1 (page 1): -3344445 [1+2+2]
             ; we stashed the lower pixel 3 bits on the stack as carries
@@ -678,10 +696,10 @@ toplineseg: ldy CurrMapX
             ora PixScratch
             ; put this data on the other ZP
             ldy OtherZP
-            sty R_ZP
+            sty R_ZP            ; go to page 2 ZP
             sta Zero, x
             ldy OtherZP
-            sty R_ZP
+            sty R_ZP            ; go to page 1 ZP
             inx
             ; byte 3 (page 1): -AABBBBC [5+5+6]
             ldy MapBuffer + 6
@@ -709,16 +727,16 @@ toplineseg: ldy CurrMapX
             ora PixScratch
             ; put this data on the other ZP
             ldy OtherZP
-            sty R_ZP
+            sty R_ZP            ; go to page 2 ZP
             sta Zero, x
             ldy OtherZP
-            sty R_ZP
+            sty R_ZP            ; go to page 1 ZP
             
             ; the 14 pixels are now drawn
-            ; continue back the line
+            ; continue back through the line
             ; the map pointer was already decremented when we buffered it.
             lda CurrMapX
-            bmi :+          ; already done
+            bmi :+          ; we ran off the left edge of the line, so now done
             jmp toplineseg
             
             ; and the line is now drawn
@@ -732,22 +750,24 @@ toplineseg: ldy CurrMapX
             ; advance the graphics line
             inc DrawLine
             lda DrawLine
-            cmp #$A0
+            cmp #$A0            ; last line of bottom field complete? ($78-$A0)
             beq :+
-            cmp #$48
+            cmp #$48            ; last line of top field complete? ($20-$48)
             beq :++
             jmp fieldline
 :
-            ; we have finished the lower field now
+            ; we have finished the lower field now, go do the middle patch
             jmp lowstats
 :            
+            ; we finished the top field now, but the bottom field is the
+            ; same just advanced a bit down the screen and map.
             ; at this point the map pointer should be at the point
             ; between the top and bottom fields.
             ; since the middle area is zoomed, we need to skip ahead a little.
             ; specifically, we are pointing at 28 and we want to skip to 3D.
             ; draw at line 9, draw to 42, and then we're back to hires.
             
-            ; skip ahead $15 (to $3D).  $15 x $40 = $3C0.
+            ; skip the map ahead $15 lines (to $3D).  $15 x $40 = $3C0.
             
             lda MapPtrL
             clc
@@ -761,9 +781,7 @@ toplineseg: ldy CurrMapX
             sta DrawLine
 drawmid:    ldx DrawLine
             lda YLoresHA, x
-            sta R_ZP
-            lda YLoresL, x
-            sta LineStart
+            sta R_ZP            ; put ZP in character space
             ; Zero, LineStart is now the left side of the draw line in graphics memory
             ; because this is ZP-dependent, we need to set the map pointer up only once we've set ZP.
             lda MapPtrL
@@ -776,57 +794,52 @@ drawmid:    ldx DrawLine
             ; start at the right edge 
             ; we will start by just drawing the 40 leftmost characters, but later the window should
             ; scroll horizontablly
+            lda YLoresL, x
+            sta LineStart
+            clc
+            adc #$27            ; rightmost screen byte
+            sta CurrDrawX       ; save for use in color ZP
+            tax
             ldy #$27
-midline:    ldx #$27
 :           lda (ScrHole), y
             sta Zero, x
-            dey
             dex
+            dey
             bpl :-
             ; draw the colors
-            ldx DrawLine
+            lda CurrDrawX       ; save from sceen ZP for use in color ZP
+            pha
             lda YLoresHB, x
-            sta R_ZP
-            ldx #$27
+            sta R_ZP            ; put ZP in color space
+            pla
             sta CurrDrawX
+            ldx DrawLine
             ldy #$27
 :           lda (ScrHole), y
             tax
-            lda MapColors, y
+            lda MapColors, x
             ldx CurrDrawX
             sta Zero, x
-            dey
             dec CurrDrawX
+            dey
             bpl :-
-            ; line now drawn
+            ; line now drawn, move to next one
+            ; advance map
             lda MapPtrL
             clc
             adc $40
             sta MapPtrH
             bcc :+
             inc MapPtrH
+            ; advance screen line
 :           inc DrawLine
             lda DrawLine
             cmp #$0F
             beq :+
-            jmp drawmid
+            jmp drawmid         ; more lines to draw, go draw them
 :
-            
-            ; now move to updating tha regions above
-            ; and below the playfield.
-            ; these are in A3 hires.
-            ; the strategy is to ensure that there are lines above and below
-            ; so that nudging can work.
-            ; only need to redraw entirely when nudging drops below 0 or goes over 7.
-            ; this is the impressive part, but I will save it for later TODO
-            
-            ; however: plan.  The map is 64 bytes wide. We have 140 pixels.
-            ; so we can draw two pixels per column.  Might have been better
-            ; to have had 128 bytes wide.
-            
-
-            ; skip ahead $15 (from $43 to $58).  $15 x $40 = $3C0.
-            
+            ; top and middle fields now drawn, go back and do the bottom one
+            ; skip ahead $15 (from $43 to $58).  $15 x $40 = $3C0.            
             lda MapPtrL
             clc
             adc #$C0
@@ -836,7 +849,6 @@ midline:    ldx #$27
             sta MapPtrH
 
             ; switch to the lower hires field and draw it from line $78
-
             lda #$78
             sta DrawLine
             jmp fieldline
