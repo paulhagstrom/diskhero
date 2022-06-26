@@ -74,13 +74,13 @@ PtrC        = $24
 PtrS        = $26
 PrColor     = $28
 
-			.org     $2000 - 14
+			.org     $A000 - 14
 			
 ; sos interp header
-			.byte    "SOS NTRP"
-			.word    0000
-			.word    CodeStart
-			.word    (CodeEnd-CodeStart)
+            .byte    "SOS NTRP"
+            .word    0000
+            .word    CodeStart
+            .word    (CodeEnd-CodeStart)
 
 CodeStart:  jmp init
 
@@ -90,38 +90,43 @@ CurrMode:	.byte	0
 CurrMap:	.byte	0
 NudgeCount:	.byte	0
 
+; we need to prioritize interrupts a bit because they can pile up.
+; if HBL has priority we can wind up in an situation where nothingg
+; else gets a chance to fire.  So keyboard first, then VBL, then HBL/timer.
+
 inthandler: ; save registers
-			pha
-			tya
-			pha
-			txa
-			pha
-			cld
-			lda RE_INTFLAG
-			and #$10        ; CB1 (VBL)
-			beq :+          ; not VBL
-			jsr intvbl
-			lda #$10        ; clear CB1 VBL
-			sta RE_INTFLAG
-			bne intreturn
+            pha
+            tya
+            pha
+            txa
+            pha
+            cld
+            lda RE_INTFLAG
+            and #$10        ; VBL?
+            beq :+          ; nope
+            jsr intvbl
+            lda #$10        ; clear CB1 VBL
+            sta RE_INTFLAG
+            bne intreturn
 :           lda RE_INTFLAG
-			and #$01        ; CA2 (Keyboard)
-			beq :+          ; not keyboard
-			jsr intkey 
-			lda #$01        ; clear CA2 keyboard
-			sta RE_INTFLAG
-			bne intreturn
+            and #$01        ; keyboard?
+            beq :+          ; not $01 CA2 keyboard
+            jsr intkey
+            lda #$01        ; clear CA2 keyboard
+            sta RE_INTFLAG
+            bne intreturn
 :           lda RE_INTFLAG
-			and #$20        ; timer 2
-			bne inttimer
+            and #$20        ; check for $20 (timer/HBL)
+            bne inttimer
 intreturn:  pla
-			tax
-			pla
-			tay
-			pla
-			rti
+            tax
+            pla
+            tay
+            pla
+            rti
 ; timer2 interrupt handler
 inttimer:   
+            inc $0402
             inc ScrRegion
             ldx ScrRegion
             ; reset the HBL counter to length of next mode
@@ -131,6 +136,9 @@ inttimer:
             sta RE_T2CL
             lda #$00
             sta RE_T2CH
+            ; clear the timer2 flag (resettig the timer clock seems not to do it?)
+            lda #$20
+            sta RE_INTFLAG
             ; move display to correct mode
             lda ScrRegMode, x
             jsr setdisplay
@@ -139,29 +147,30 @@ inttimer:
 ; keyboard interrupt handler
 ; increment count using BCD mode.
 intkey:     
-			lda IO_KEY
-			sta IO_KEYCLEAR
-			bpl keyreturn   ; no key pressed, return
-			; if the key was E, set the exit flag.
-			sta $0400       ; put it in the corner so I can see it
-			cmp #$C5        ; E
-			bne keyreturn
-			inc ExitFlag
+            lda IO_KEY
+            sta IO_KEYCLEAR
+            bpl keyreturn   ; no key pressed, return
+            ; if the key was E, set the exit flag.
+            sta $0400       ; put it in the corner so I can see it
+            cmp #$C5        ; E
+            bne keyreturn
+            inc ExitFlag
 keyreturn:  rts
 
 ; VBL interrupt handler
 intvbl:     
+            inc $0401
             lda ScrRegLen
-			; reset the HBL counter to the length of top region
-			sta RE_T2CL
-			lda #0
-			sta RE_T2CH
+            ; reset the HBL counter to the length of top region
+            sta RE_T2CL
+            lda #0
+            sta RE_T2CH
             ; reset region number
             sta ScrRegion
-			; move display to correct mode
-			lda ScrRegMode
-			jsr setdisplay
-			rts
+            ; move display to correct mode
+            lda ScrRegMode
+            jsr setdisplay
+            rts
 
 GameLevel:	.byte	0
 GameScore:	.byte	0, 0, 0
@@ -206,12 +215,13 @@ init:
 			sta GameScore
 			cli                 ; all set up now, interrupt away
 eventloop:  lda ExitFlag
-			bne alldone
-            jsr drawscore
-            jsr scrupdate
-            dec CurrMap
+            bne alldone
+            ;jsr drawscore
+            ;jsr scrupdate
+            ;inc GameScore + 3
+            ;dec CurrMap
             jmp eventloop
-			
+
 alldone:    lda #$7f            ;disable all via interrupts
 			sta RD_INTENAB
 			sta RD_INTFLAG
@@ -420,11 +430,11 @@ drawscore:
             lsr
             lsr
             lsr
-            ora #$40
+            ora #$30
             sta $407
             pla
             and #$0F
-            ora #$40
+            ora #$30
             sta $408
             ; update score
             ldy #$03
@@ -432,14 +442,14 @@ drawscore:
 :           lda GameScore, y
             pha
             and #$0F
-            ora #$40
+            ora #$30
             sta $480, x
             pla
             lsr
             lsr
             lsr
             lsr
-            ora #$40
+            ora #$30
             dex
             sta $480, x
             dex
@@ -452,7 +462,7 @@ ScrHole     = $78
 OtherZP     = $7A
 LineStart   = $7C
 CurrMapX    = $7D
-ScrHoleD    = $7B
+CurrDrawX   = $7B
 MapBuffer   = $F8
 PixScratch  = $FF
 Zero        = $00
@@ -466,7 +476,6 @@ FieldHC:    .byte   $08, $09, $09, $0A, $0A, $0B
 MapColors:  .byte   $00, $0C, $0D, $0E, $04
 
 scrupdate:
-
             ; update playfield (lines 9-14)
             ; currMap represents the line at the top of the
             ; playfield
@@ -519,9 +528,9 @@ mapstart:
             lda R_ZP
             sta ZPSave
 
-            ; top mode 7 part
+            ; mode 7 part
 
-            lda #$20        ; starts at line $20
+            lda #$20        ; top field starts at line $20
             sta DrawLine
 fieldline:  ldx DrawLine
             lda YHiresHZA, x
@@ -541,7 +550,7 @@ fieldline:  ldx DrawLine
             lda YHiresL, x
             sta LineStart
             ; Zero, LineStart is now the left side of the draw line in graphics memory
-            ; because this is ZP-dependent, we need to se the map pointer up only once we've set ZP.
+            ; because this is ZP-dependent, we need to set the map pointer up only once we've set ZP.
             lda MapPtrL
             sta ScrHole
             lda MapPtrH
@@ -555,17 +564,17 @@ fieldline:  ldx DrawLine
             ; so we read 7 map elements and push them out into 8 bytes
             ; start at the right edge 
 topline:    lda #$27
-            sta CurMapX
+            sta CurrMapX
             ; pixels are in groups of 7 split over 4 bytes
             ; load the seven map elements we will represent
-toplineseg: ldy CurMapX
+toplineseg: ldy CurrMapX
             ldx #$06
 :           lda (ScrHole), y
             sta MapBuffer, x
             dey
             dex
             bpl :-
-            sty CurMapX
+            sty CurrMapX
             ; blast them onto the screen via our handy ZP
             ; byte 0 (page 1): -000011 [0+0]
             ldx LineStart
@@ -723,78 +732,85 @@ toplineseg: ldy CurMapX
             ; advance the graphics line
             inc DrawLine
             lda DrawLine
-            cmp #$48
+            cmp #$A0
             beq :+
+            cmp #$48
+            beq :++
             jmp fieldline
+:
+            ; we have finished the lower field now
+            jmp lowstats
 :            
-            ; do the above again but for the lower field
-            ; that is from 58 to 80.  Drawn from line $78.
+            ; at this point the map pointer should be at the point
+            ; between the top and bottom fields.
+            ; since the middle area is zoomed, we need to skip ahead a little.
+            ; specifically, we are pointing at 28 and we want to skip to 3D.
+            ; draw at line 9, draw to 42, and then we're back to hires.
             
-            ; then do the mode 1 stuff
-            ;YOU ARE HERE
+            ; skip ahead $15 (to $3D).  $15 x $40 = $3C0.
             
-            ldy #$27
-:           lda (ScrHole), y
-            sta Zero, x
-            dex
-            dey
-            bpl :-
-            
-            ldx CurMapLine
-            lda FieldHC, x
+            lda MapPtrL
+            clc
+            adc #$C0
+            sta MapPtrL
+            lda MapPtrH
+            adc #$03
+            sta MapPtrH
+
+            lda #$09
+            sta DrawLine
+drawmid:    ldx DrawLine
+            lda YLoresHA, x
             sta R_ZP
-            lda FieldL, x
-            tax
-            ; draw colors
-            ldy #$27
-:           lda (ScrHole), y
-            ora #$88
-            sta Zero, x
-            dex
-            dey
-            bpl :-
-            
-            dec CurMapLine
-            bpl fieldline
-                        
-            lda #$05
-            sta CurMapLine
-fieldline:  ldx CurMapLine
-            lda FieldH, x
-            sta R_ZP
-            lda FieldL, x
-            tax
-            
+            lda YLoresL, x
+            sta LineStart
+            ; Zero, LineStart is now the left side of the draw line in graphics memory
+            ; because this is ZP-dependent, we need to set the map pointer up only once we've set ZP.
             lda MapPtrL
             sta ScrHole
             lda MapPtrH
             sta ScrHole + 1
             lda #$02
             sta ScrHole + XByte
-            ; draw characters
+            ; (ScrHole), 0 is now the left side of the map line
+            ; start at the right edge 
+            ; we will start by just drawing the 40 leftmost characters, but later the window should
+            ; scroll horizontablly
             ldy #$27
+midline:    ldx #$27
 :           lda (ScrHole), y
             sta Zero, x
-            dex
             dey
+            dex
             bpl :-
-            
-            ldx CurMapLine
-            lda FieldHC, x
+            ; draw the colors
+            ldx DrawLine
+            lda YLoresHB, x
             sta R_ZP
-            lda FieldL, x
-            tax
-            ; draw colors
+            ldx #$27
+            sta CurrDrawX
             ldy #$27
 :           lda (ScrHole), y
-            ora #$88
+            tax
+            lda MapColors, y
+            ldx CurrDrawX
             sta Zero, x
-            dex
             dey
+            dec CurrDrawX
             bpl :-
-            
-            dec CurMapLine
-            bpl fieldline
+            ; line now drawn
+            lda MapPtrL
+            clc
+            adc $40
+            sta MapPtrH
+            bcc :+
+            inc MapPtrH
+:           inc DrawLine
+            lda DrawLine
+            cmp #$0F
+            beq :+
+            jmp drawmid
+:
             
             ; now move to updating tha regions above
             ; and below the playfield.
@@ -808,7 +824,28 @@ fieldline:  ldx CurMapLine
             ; so we can draw two pixels per column.  Might have been better
             ; to have had 128 bytes wide.
             
+
+            ; skip ahead $15 (from $43 to $58).  $15 x $40 = $3C0.
             
+            lda MapPtrL
+            clc
+            adc #$C0
+            sta MapPtrL
+            lda MapPtrH
+            adc #$03
+            sta MapPtrH
+
+            ; switch to the lower hires field and draw it from line $78
+
+            lda #$78
+            sta DrawLine
+            jmp fieldline
+            
+lowstats:
+            ; draw the last field on the screen, the mode 1 lower status region
+            ; TOOD
+            
+            ; restore ZP and come back
             
             lda ZPSave
             sta R_ZP
