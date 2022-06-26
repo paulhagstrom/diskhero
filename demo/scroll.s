@@ -129,6 +129,9 @@ inttimer:
             inc $0402
             inc ScrRegion
             ldx ScrRegion
+            ; move display to correct mode
+            lda ScrRegMode, x
+            jsr setdisplay
             ; reset the HBL counter to length of next mode
             lda ScrRegLen, x
             ; living mildly dangerously, assumes that we'll always get
@@ -136,12 +139,9 @@ inttimer:
             sta RE_T2CL
             lda #$00
             sta RE_T2CH
-            ; clear the timer2 flag (resettig the timer clock seems not to do it?)
+            ; clear the timer2 flag (resetting the timer clock seems not to do it?)
             lda #$20
             sta RE_INTFLAG
-            ; move display to correct mode
-            lda ScrRegMode, x
-            jsr setdisplay
             bne intreturn
 
 ; keyboard interrupt handler
@@ -216,9 +216,9 @@ init:
 			cli                 ; all set up now, interrupt away
 eventloop:  lda ExitFlag
             bne alldone
-            ;jsr drawscore
+            jsr drawscore
             ;jsr scrupdate
-            ;inc GameScore + 3
+            inc GameScore + 2
             ;dec CurrMap
             jmp eventloop
 
