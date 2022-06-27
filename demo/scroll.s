@@ -124,7 +124,7 @@ intreturn:  pla
             tay
             pla
             rti
-; timer2 interrupt handler
+; timer2 (HBL) interrupt handler
 inttimer:   
             inc $0402
             inc ScrRegion
@@ -175,8 +175,10 @@ intvbl:
 GameLevel:	.byte	0
 GameScore:	.byte	0, 0, 0
 ScrRegion:	.byte	0
-ScrRegLen:	.byte	$10, $10, $28, $30, $28, $20, $00
+ScrRegLen:	.byte	$0E, $0F, $27, $2F, $27, $1F, $00
 ScrRegMode: .byte   $01, $06, $07, $01, $07, $01, $00
+; I played with ScRegLen by trial and error a little.
+; Not sure why I needed to go two down for region zero.
 
 init:       
 			sei                 ; no interrupts while we are setting up
@@ -496,7 +498,7 @@ scrupdate:
             ; by putting it in the high byte.
             lda CurrMap
             lsr
-            bcc :++
+            bcc mseven
             ; either 1 (40) or 3 (c0)
             lsr
             bcc :+
@@ -505,7 +507,7 @@ scrupdate:
 :           ldx #$40
             bne mapstart
             ; either 0 (0) or 2 (80)
-:           lsr
+mseven:     lsr
             bcc :+
             ldx #$80
             bne mapstart
@@ -534,7 +536,7 @@ mapstart:
             ; mode 7 part
 
             lda #$20        ; top field starts at physical line $20
-            sta DrawLine
+            sta DrawLine    ; DrawLine is the actual line on the screen
 fieldline:  ldx DrawLine
             lda YHiresHZA, x
             ; we will use ZP to write to graphics memory, but there are two
@@ -731,17 +733,18 @@ toplineseg: ldy CurrMapX
             sta Zero, x
             ldy OtherZP
             sty R_ZP            ; go to page 1 ZP
-            
+
             ; the 14 pixels are now drawn
             ; continue back through the line
             ; the map pointer was already decremented when we buffered it.
             lda CurrMapX
-            bmi :+          ; we ran off the left edge of the line, so now done
+            bmi :+          ; we had ran off the left edge of the line, so now we are done
             jmp toplineseg
             
             ; and the line is now drawn
             ; advance the map pointer
             lda MapPtrL
+            clc
             adc #$40
             sta MapPtrL
             bcc :+
@@ -751,14 +754,14 @@ toplineseg: ldy CurrMapX
             inc DrawLine
             lda DrawLine
             cmp #$A0            ; last line of bottom field complete? ($78-$A0)
-            beq :+
+            beq hiresdone
             cmp #$48            ; last line of top field complete? ($20-$48)
-            beq :++
+            beq :+
             jmp fieldline
 :
             ; we have finished the lower field now, go do the middle patch
             jmp lowstats
-:            
+hiresdone:            
             ; we finished the top field now, but the bottom field is the
             ; same just advanced a bit down the screen and map.
             ; at this point the map pointer should be at the point
@@ -870,12 +873,12 @@ seedRandom:
 			txa
 			pha
 			lda R_ZP       	; save the ZP register
-			tax             ; don't push it just in case we're using alt-stack
+			pha
 			lda #$00
 			sta R_ZP       	; request smallest RTC byte
 			lda IO_CLOCK	; close enough to random for now
 			sta Seed
-			txa
+			pla
 			sta R_ZP		; restore zero page
 			pla             ; restore X
 			tax
@@ -894,30 +897,30 @@ seedRandom:
 ; be mostly empty space.
 
 makefield:  lda #$02
-			sta PtrA + XByte
-			lda #$00
-			sta PtrA
-			lda #$20
-			sta PtrA + 1
+            sta PtrA + XByte
+            lda #$00
+            sta PtrA
+            lda #$20
+            sta PtrA + 1
 :           jsr seedRandom
-			ldx Seed
-			ldy #$3F
+            ldx Seed
+            ldy #$3F
 :           lda Random, x
-			and #$07
-			sta (PtrA), y
-			inx             ; next random number
-			dey             ; next x coordinate
-			bne :- 
-			lda PtrA
-			clc
-			adc #$40
-			sta PtrA
-			bcc :--
-			inc PtrA + 1
-			lda PtrA + 1
-			cmp #$60
-			bne :--
-			rts
+            and #$07
+            sta (PtrA), y
+            inx             ; next random number
+            dey             ; next x coordinate
+            bpl :- 
+            lda PtrA
+            clc
+            adc #$40
+            sta PtrA
+            bcc :--
+            inc PtrA + 1
+            lda PtrA + 1
+            cmp #$60
+            bne :--
+            rts
 
 ; paint the static parts of the page
 
