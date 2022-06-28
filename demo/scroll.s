@@ -765,12 +765,12 @@ toplineseg: ldy CurrMapX
             cmp #$A0            ; last line of bottom field complete? ($78-$A0)
             beq hiresdone
             cmp #$48            ; last line of top field complete? ($20-$48)
-            beq :+
+            beq startmid
             jmp fieldline
-:
-            ; we have finished the lower field now, go do the middle patch
-            jmp lowstats
 hiresdone:            
+            jmp lowstats
+startmid:
+            ; we have finished the lower field now, go do the middle patch
             ; we finished the top field now, but the bottom field is the
             ; same just advanced a bit down the screen and map.
             ; at this point the map pointer should be at the point
