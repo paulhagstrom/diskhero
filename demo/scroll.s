@@ -89,6 +89,8 @@ IRQSave:    .byte   0, 0 , 0
 CurrMode:	.byte	0
 CurrMap:	.byte	0
 NudgeCount:	.byte	0
+ZPSave:     .byte   0
+BankSave:   .byte   0
 
 ; we need to prioritize interrupts a bit because they can pile up.
 ; if HBL has priority we can wind up in an situation where nothingg
@@ -475,7 +477,7 @@ MapPtrH:    .byte   0
 FieldH:     .byte   $04, $05, $05, $06, $06, $07
 FieldL:     .byte   $A8, $25, $A8, $28, $A8, $28
 FieldHC:    .byte   $08, $09, $09, $0A, $0A, $0B
-MapColors:  .byte   $00, $0C, $0D, $0E, $04
+MapColors:  .byte   $00, $1C, $2D, $3E, $C4
 
 scrupdate:
             ; update playfield (lines 9-14)
@@ -533,6 +535,11 @@ mapstart:
             lda R_ZP
             sta ZPSave
 
+            lda R_BANK
+            sta BankSave
+            lda #$00
+            sta R_BANK
+            
             ; mode 7 part
 
             lda #$20        ; top field starts at physical line $20
@@ -554,6 +561,8 @@ fieldline:  ldx DrawLine
             ; lo byte is the same on either page
             lda YHiresL, x
             sta LineStart
+            ; since ZP addressing seems not to be working, try directly writing.
+            
             ; Zero, LineStart is now the left side of the draw line in graphics memory
             ; because this is ZP-dependent, we need to set the map pointer up only once we've set ZP.
             lda MapPtrL
@@ -859,6 +868,11 @@ drawmid:    ldx DrawLine
 lowstats:
             ; draw the last field on the screen, the mode 1 lower status region
             ; TOOD
+
+            ; restore bank to whatever it was
+            
+            lda BankSave
+            sta R_BANK
             
             ; restore ZP and come back
             
@@ -956,8 +970,6 @@ InnerCol:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $C0, $F0, $F0
 			.byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
 			.byte $D0, $E0, $90, $F0, $F0, $F0, $F0, $F0, $F0, $F0
 			.byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
-
-ZPSave:     .byte 0
 
 paintback:  
 			; mode 1 text page
