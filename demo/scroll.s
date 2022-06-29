@@ -68,11 +68,10 @@ TERMINATE   = $65
 
 ; indirect addressing
 XByte       = $1601     ; Interp extended address offset
-PtrA        = $20
-PtrB        = $22
-PtrC        = $24
-PtrS        = $26
-PrColor     = $28
+ZPtrA       = $20
+ZPtrB       = $22
+ZPtrC       = $24
+ZPtrS       = $26
 
 			.org     $A000 - 14
 			
@@ -462,13 +461,13 @@ drawscore:
             rts
 
 ; these are in screen holes because we're using screen memory for ZP
-ScrHole     = $78
-OtherZP     = $7A
-CurrDrawX   = $7B
-LineStart   = $7C
-CurrMapX    = $7E
-MapBuffer   = $F8
-PixScratch  = $FF
+ZScrHole    = $78
+ZOtherZP    = $7A
+ZCurrDrawX  = $7B
+ZLineStart  = $7C
+ZCurrMapX   = $7E
+ZMapBuffer  = $F8
+ZPxScratch  = $FF
 Zero        = $00
 DrawLine:   .byte   0
 CurMapLine: .byte   0
@@ -477,7 +476,8 @@ MapPtrH:    .byte   0
 FieldH:     .byte   $04, $05, $05, $06, $06, $07
 FieldL:     .byte   $A8, $25, $A8, $28, $A8, $28
 FieldHC:    .byte   $08, $09, $09, $0A, $0A, $0B
-MapColors:  .byte   $00, $1C, $2D, $3E, $C4
+MapColors:  .byte   $00, $CC, $DD, $EE, $44
+PlayColors: .byte   $00, $1C, $2D, $3E, $C4
 
 scrupdate:
             ; update playfield (lines 9-14)
@@ -548,30 +548,28 @@ fieldline:  ldx DrawLine
             lda YHiresHZA, x
             ; we will use ZP to write to graphics memory, but there are two
             ; graphics pages involved.
-            ; engineer it so that OtherZP always points to the other ZP to flip quickly.
+            ; engineer it so that ZOtherZP always points to the other ZP to flip quickly.
             sta R_ZP        ; now using HGR page 1 ZP
             pha
             clc
             adc #$20
-            sta OtherZP     ; compute and store HGR page 2 ZP
+            sta ZOtherZP     ; compute and store HGR page 2 ZP
             sta R_ZP        ; go there
             pla
-            sta OtherZP     ; recall and store HGR page 1 ZP
+            sta ZOtherZP     ; recall and store HGR page 1 ZP
             sta R_ZP        ; go there
-            ; lo byte is the same on either page
+            ; lo byte is the same on either page, but we are mostly computing in HGR page 1
             lda YHiresL, x
-            sta LineStart
-            ; since ZP addressing seems not to be working, try directly writing.
-            
-            ; Zero, LineStart is now the left side of the draw line in graphics memory
+            sta ZLineStart
+            ; Zero, ZLineStart is now the left side of the draw line in graphics memory
             ; because this is ZP-dependent, we need to set the map pointer up only once we've set ZP.
             lda MapPtrL
-            sta ScrHole
+            sta ZScrHole
             lda MapPtrH
-            sta ScrHole + 1
+            sta ZScrHole + 1
             lda #$02
-            sta ScrHole + XByte
-            ; (ScrHole), 0 is now the left side of the map data line
+            sta ZScrHole + XByte
+            ; (ZScrHole), 0 is now the left side of the map data line
             ; in mode 7 we draw the whole thing, and start at the right
             ; it is a 140-pixel space, and we have a 64-byte wide thing to draw
             ; so we want to double up pixels and draw it over 128 pixels.
@@ -580,7 +578,9 @@ fieldline:  ldx DrawLine
             ; to stay on the byte boundaries, we will actually just leave
             ; the whole last byte unused, and draw 9 groups, amounting to 126 pixels.
             ; or, skipping the last doubled map pixel.
-            ; 0 7 14 21 28 35 42 49 56 63
+            ; 0  7 14 21 28 35 42 49 56 63
+            ; ZCurrDrawX represents x offset into current line.  9 groups of 4 bytes.
+            ; 0  4  8 12 16 20 24 28 32 36
             ; diagram of layout borrowed frmo Rob Justice:
             ; 140x192 16 color mode pixel layout
             ; 
@@ -592,164 +592,154 @@ fieldline:  ldx DrawLine
             ;  t           t t           t t           t t           t
             ;  0           7 0           7 0           7 0           7
 
-topline:    lda #62
-            sta CurrMapX
+            lda #62
+            sta ZCurrMapX        ; right edge of last group of map bytes
+            lda ZLineStart       ; left edge of drawn line
+            clc
+            adc #32
+            sta ZCurrDrawX       ; left edge of last group of drawn pixels
             ; pixels are in groups of 7 split over 4 bytes
             ; buffer the seven map elements we will represent
-toplineseg: ldy CurrMapX
+toplineseg: ldy ZCurrMapX
             ldx #$06
-:           lda (ScrHole), y
-            sta MapBuffer, x
+:           lda (ZScrHole), y
+            sta ZMapBuffer, x
             dey
             dex
             bpl :-
-            sty CurrMapX        ; save new pointer for next block after this
+            sty ZCurrMapX        ; save new pointer for next block after this
             ; blast them onto the screen via our handy ZP
-            ; byte 0 (page 1): -000011 [0+0]
-            ldx LineStart
-            ldy MapBuffer
-            lda MapColors, y
-            tay                 ; stash in y for recall later
-            lsr
-            php                 ; save the last bit in carry
-            sta PixScratch
-            tya                 ; recall from y (same color, doubled)
-            asl
-            asl
-            asl
-            ora PixScratch
-            sta Zero, x
-            ; byte 0 (page 2): -1222233 [0+1+1]
-            ldy MapBuffer + 1
-            lda MapColors, y
-            asl
-            asl
-            plp
-            bcc :+
-            ora #$40
-:           sta PixScratch
-            lda MapColors, y    ; same color, horizontally doubled
-            lsr
-            php
-            lsr
-            php
-            ora PixScratch
-            ; put this data on the other ZP
-            ldy OtherZP
-            sty R_ZP            ; go to page 2 ZP
-            sta Zero, x
-            ldy OtherZP
-            sty R_ZP            ; go to page 1 ZP
-            inx
-            ; byte 1 (page 1): -3344445 [1+2+2]
-            ; we stashed the lower pixel 3 bits on the stack as carries
-            ldy MapBuffer + 2
-            lda MapColors, y
-            clc
-            and #$08
-            beq :+
-            sec
-:           rol
-            plp
-            bcc :+
-            ora #$40
-:           plp
-            bcc :+
-            ora #$20
-:           sta Zero, x
-            ; byte 1 (page 2): -5556666 [2+3]
-            lda MapColors, y    ; same color, horizontally doubled
-            asl
-            asl
-            asl
-            asl
+            ; MapColors strategically have both upper and lower nibbles containing color
+            ; byte 0 (page 1): -1110000 [0+0] 4218421
+            ldx ZCurrDrawX
+            ldy ZMapBuffer      ; first map element
+            lda MapColors, y    ; color of pixels 0 and 1
+            pha                 ; stash for later
             and #$7F
-            sta PixScratch
-            ldy MapBuffer + 3
-            lda MapColors, y
-            ora PixScratch
+            sta Zero, x
+            ; byte 0 (page 2): -3322221 [0+1+1] 2184218
+            pla                 ; recall color of pixel 1
+            bpl :+
+            lda #$01
+            bne :++
+:           lda #$00
+:           sta ZPxScratch      ; stash bit of pixel 1
+            ldy ZMapBuffer + 1  ; second map element
+            lda MapColors, y    ; color of pixels 2 and 3
+            pha                 ; stash for later
+            asl
+            and #%011111110
+            ora ZPxScratch
+            pha
             ; put this data on the other ZP
-            ldy OtherZP
+            lda ZOtherZP
+            sta R_ZP            ; go to page 2 ZP
+            pla
+            sta Zero, x
+            lda ZOtherZP
+            sta R_ZP            ; go to page 1 ZP
+            inx
+            ; byte 1 (page 1): -5444433 [1+2+2] 1842184
+            pla                 ; recall color of pixel 3
+            lsr
+            lsr
+            and #$03            ; chop off its high bits
+            sta ZPxScratch      ; and stash it
+            ldy ZMapBuffer + 2  ; third map element
+            lda MapColors, y    ; color of pixels 4 and 5
+            pha                 ; save for later
+            asl
+            asl
+            ora ZPxScratch
+            and #$7F
+            sta Zero, x
+            ; byte 1 (page 2): -6666555 [2+3] 8421842
+            pla                 ; recall color of pixels 4 and 5
+            lsr
+            and #$07            ; chop of lowest bit
+            sta ZPxScratch
+            ldy ZMapBuffer + 3  ; fourth map element
+            lda MapColors, y    ; color of pixels 6 and 7
+            pha                 ; stash for later
+            lsr
+            and #%01111000
+            ora ZPxScratch
+            ; put this data on the other ZP
+            ldy ZOtherZP
             sty R_ZP
             sta Zero, x
-            ldy OtherZP
+            ldy ZOtherZP
             sty R_ZP
             inx
             ; we do it again because the doubling crosses two groups
-            ; byte 2 (page 1): -7777888 [3+4]
-            ldy MapBuffer + 4
-            lda MapColors, y
-            lsr
-            php
-            sta PixScratch
-            ldy MapBuffer + 3
-            lda MapColors, y
-            asl
-            asl
-            asl
-            ora PixScratch 
+            ; byte 2 (page 1): -8887777 [3+4] 4218421
+            pla                 ; recall color of pixels 6 and 7
+            and #$0F
+            sta ZPxScratch
+            ldy ZMapBuffer + 4  ; fifth map element
+            lda MapColors, y    ; color of pixels 8 and 9
+            pha                 ; stash for later
+            and #%01110000
+            ora ZPxScratch
             sta Zero, x
-            ; byte 2 (page 2): -89999AA [4+4+5]
-            ldy MapBuffer + 4
-            lda MapColors, y
-            asl
-            asl
-            plp
-            bcc :+
-            ora #$40
-:           sta PixScratch
-            lda MapBuffer + 5
-            lda MapColors, y
+            ; byte 2 (page 2): -AA99998 [4+4+5]  2184218
+            pla                 ; recall color of pixels 8 and 9
             lsr
-            php
             lsr
-            php
-            ora PixScratch
+            lsr
+            sta ZPxScratch
+            ldy ZMapBuffer + 5  ; sixth map element
+            lda MapColors, y    ; color of pixels A and B
+            pha                 ; stash for later
+            asl
+            and #%01100000
+            ora ZPxScratch
             ; put this data on the other ZP
-            ldy OtherZP
+            ldy ZOtherZP
             sty R_ZP            ; go to page 2 ZP
             sta Zero, x
-            ldy OtherZP
+            ldy ZOtherZP
             sty R_ZP            ; go to page 1 ZP
             inx
-            ; byte 3 (page 1): -AABBBBC [5+5+6]
-            ldy MapBuffer + 6
-            lda MapColors, y
-            ror
-            ldy MapBuffer + 5
-            lda MapColors, y
-            rol
-            plp
-            bcc :+
-            ora #$40
-:           plp
-            bcc :+
-            ora #$20
-:           sta Zero, x
-            ; byte 3 (page 2): -CCCDDDD [6+6]
-            ldy MapBuffer + 6
-            lda MapColors, y    ; same color, horizontally doubled
-            sta PixScratch
+            ; byte 3 (page 1): -CBBBBAA [5+5+6] 1842184
+            pla                 ; recall color of pixels A and B
+            lsr
+            lsr
+            and #%00111111
+            sta ZPxScratch
+            ldy ZMapBuffer + 6  ; seventh map element
+            lda MapColors, y    ; colors of pixels C and D
+            pha                 ; stash for later
             asl
             asl
-            asl
-            asl
+            and #%01000000
+            ora ZPxScratch
+            sta Zero, x
+            ; byte 3 (page 2): -DDDDCCC [6+6] 4218421
+            pla                 ; recall color of pixels C and D
+            lsr
             and #$7F
-            ora PixScratch
             ; put this data on the other ZP
-            ldy OtherZP
+            ldy ZOtherZP
             sty R_ZP            ; go to page 2 ZP
             sta Zero, x
-            ldy OtherZP
+            ldy ZOtherZP
             sty R_ZP            ; go to page 1 ZP
 
             ; the 14 pixels are now drawn
             ; continue back through the line
             ; the map pointer was already decremented when we buffered it.
-            lda CurrMapX
+            ; move the pointer for the (left edge of) drawn pixels back by 4 bytes.
+            
+            dec ZCurrDrawX
+            dec ZCurrDrawX
+            dec ZCurrDrawX
+            dec ZCurrDrawX
+            
+            lda ZCurrMapX
             bmi :+          ; we had ran off the left edge of the line, so now we are done
             jmp toplineseg
-            
+:            
             ; and the line is now drawn
             ; advance the map pointer
             lda MapPtrL
@@ -763,16 +753,14 @@ toplineseg: ldy CurrMapX
             inc DrawLine
             lda DrawLine
             cmp #$A0            ; last line of bottom field complete? ($78-$A0)
-            beq hiresdone
+            beq hiresdone       ; if so, move to the lower status section
             cmp #$48            ; last line of top field complete? ($20-$48)
-            beq startmid
-            jmp fieldline
+            beq startmid        ; if so, move on to the middle part
+            jmp fieldline       ; do the next line
 hiresdone:            
             jmp lowstats
 startmid:
-            ; we have finished the lower field now, go do the middle patch
-            ; we finished the top field now, but the bottom field is the
-            ; same just advanced a bit down the screen and map.
+            ; we finished the top field now.
             ; at this point the map pointer should be at the point
             ; between the top and bottom fields.
             ; since the middle area is zoomed, we need to skip ahead a little.
@@ -794,45 +782,51 @@ startmid:
 drawmid:    ldx DrawLine
             lda YLoresHA, x
             sta R_ZP            ; put ZP in character space
-            ; Zero, LineStart is now the left side of the draw line in graphics memory
+            ; Zero, ZLineStart is now the left side of the draw line in graphics memory
             ; because this is ZP-dependent, we need to set the map pointer up only once we've set ZP.
             lda MapPtrL
-            sta ScrHole
+            sta ZScrHole
             lda MapPtrH
-            sta ScrHole + 1
+            sta ZScrHole + 1
             lda #$02
-            sta ScrHole + XByte
-            ; (ScrHole), 0 is now the left side of the map line
+            sta ZScrHole + XByte
+            ; (ZScrHole), 0 is now the left side of the map line
             ; start at the right edge 
             ; we will start by just drawing the 40 leftmost characters, but later the window should
             ; scroll horizontablly
             lda YLoresL, x
-            sta LineStart
+            sta ZLineStart
             clc
             adc #$27            ; rightmost screen byte
-            sta CurrDrawX       ; save for use in color ZP
+            sta ZCurrDrawX      ; save for use in color ZP
             tax
             ldy #$27
-:           lda (ScrHole), y
+:           lda (ZScrHole), y
             sta Zero, x
             dex
             dey
             bpl :-
             ; draw the colors
-            lda CurrDrawX       ; save from sceen ZP for use in color ZP
+            lda ZCurrDrawX      ; save from sceen ZP for use in color ZP
             pha
             lda YLoresHB, x
             sta R_ZP            ; put ZP in color space
+            lda MapPtrL         ; establish the map pointer in the color ZP
+            sta ZScrHole
+            lda MapPtrH
+            sta ZScrHole + 1
+            lda #$02
+            sta ZScrHole + XByte
             pla
-            sta CurrDrawX
+            sta ZCurrDrawX
             ldx DrawLine
             ldy #$27
-:           lda (ScrHole), y
+:           lda (ZScrHole), y
             tax
             lda MapColors, x
-            ldx CurrDrawX
+            ldx ZCurrDrawX
             sta Zero, x
-            dec CurrDrawX
+            dec ZCurrDrawX
             dey
             bpl :-
             ; line now drawn, move to next one
@@ -869,15 +863,16 @@ lowstats:
             ; draw the last field on the screen, the mode 1 lower status region
             ; TOOD
 
+            ; restore ZP and come back
+            
+            lda ZPSave
+            sta R_ZP
+
             ; restore bank to whatever it was
             
             lda BankSave
             sta R_BANK
             
-            ; restore ZP and come back
-            
-            lda ZPSave
-            sta R_ZP
             rts
             
 Seed:		.byte	0
@@ -911,27 +906,27 @@ seedRandom:
 ; be mostly empty space.
 
 makefield:  lda #$02
-            sta PtrA + XByte
+            sta ZPtrA + XByte
             lda #$00
-            sta PtrA
+            sta ZPtrA
             lda #$20
-            sta PtrA + 1
+            sta ZPtrA + 1
 :           jsr seedRandom
             ldx Seed
             ldy #$3F
 :           lda Random, x
             and #$07
-            sta (PtrA), y
+            sta (ZPtrA), y
             inx             ; next random number
             dey             ; next x coordinate
             bpl :- 
-            lda PtrA
+            lda ZPtrA
             clc
             adc #$40
-            sta PtrA
+            sta ZPtrA
             bcc :--
-            inc PtrA + 1
-            lda PtrA + 1
+            inc ZPtrA + 1
+            lda ZPtrA + 1
             cmp #$60
             bne :--
             rts
@@ -1029,16 +1024,16 @@ paintback:
 			; 16 lines, from 16-31.
 			; draw frame for now
 			lda #$8F
-			sta PtrA + XByte
-			sta PtrB + XByte
+			sta ZPtrA + XByte
+			sta ZPtrB + XByte
 			ldx #$1F
  mapline:   lda YHiresL, x
-			sta PtrA
-			sta PtrB
+			sta ZPtrA
+			sta ZPtrB
 			lda YHiresHA, x
-			sta PtrA + 1
+			sta ZPtrA + 1
 			lda YHiresHB, x
-			sta PtrB + 1
+			sta ZPtrB + 1
 			ldy #$27
 			cpx #$10
 			beq mapsolid
@@ -1046,21 +1041,21 @@ paintback:
 			beq mapsolid
 			lda #$5A
 			ldy #$27
-			sta (PtrA), y
-			sta (PtrB), y
+			sta (ZPtrA), y
+			sta (ZPtrB), y
 			dey
 			lda #$00
-:           sta (PtrA), y
-			sta (PtrB), y
+:           sta (ZPtrA), y
+			sta (ZPtrB), y
 			dey
 			bne :-
 			lda #$5A
-			sta (PtrA), y
-			sta (PtrB), y
+			sta (ZPtrA), y
+			sta (ZPtrB), y
 			bne :++
 mapsolid:   lda #$7F
-:           sta (PtrA), y
-			sta (PtrB), y
+:           sta (ZPtrA), y
+			sta (ZPtrB), y
 			dey
 			bpl :-
 :           dex
@@ -1072,60 +1067,60 @@ mapsolid:   lda #$7F
 			; just clear it.
 			ldx #$20
 			lda YHiresL, x
-			sta PtrA
-			sta PtrB
+			sta ZPtrA
+			sta ZPtrB
 			lda YHiresHA, x
-			sta PtrA + 1
+			sta ZPtrA + 1
 			lda YHiresHB, x
-			sta PtrB + 1
+			sta ZPtrB + 1
 			lda #$00
 			ldy #$27
-:           sta (PtrA), y
-			sta (PtrB), y
+:           sta (ZPtrA), y
+			sta (ZPtrB), y
 			dey
 			bpl :-
 			lda YHiresHC, x
-			sta PtrA + 1
+			sta ZPtrA + 1
 			lda YHiresHD, x
-			sta PtrB + 1
+			sta ZPtrB + 1
 			lda #$00
 			ldy #$27
-:           sta (PtrA), y
-			sta (PtrB), y
+:           sta (ZPtrA), y
+			sta (ZPtrB), y
 			dey
 			bpl :-
 			rts
 
-; put the pointers to line x into PtrA (char) and PtrB (color)
+; put the pointers to line x into ZPtrA (char) and ZPtrB (color)
 
 getlinex:
 			lda YLoresL, x
-			sta PtrA
-			sta PtrB
+			sta ZPtrA
+			sta ZPtrB
 			lda YLoresHA, x
-			sta PtrA + 1
+			sta ZPtrA + 1
 			lda YLoresHB, x
-			sta PtrB + 1
+			sta ZPtrB + 1
 			lda #$8F
-			sta PtrA + XByte
-			sta PtrB + XByte
+			sta ZPtrA + XByte
+			sta ZPtrB + XByte
 			rts
 
 ; clear graphics pages (just fill with nonsense for now)
 
 clearhgr:	lda #$00
-			sta PtrA
+			sta ZPtrA
 			lda #$20
-			sta PtrA + 1
+			sta ZPtrA + 1
 			lda #$8F
-			sta PtrA + XByte
+			sta ZPtrA + XByte
 			ldx #$80
 			lda #$40
 			ldy #$00
-:			sta (PtrA), y
+:			sta (ZPtrA), y
 			iny
 			bne :-
-			inc PtrA + 1
+			inc ZPtrA + 1
 			dex
 			bne :-
 			rts
@@ -1133,18 +1128,18 @@ clearhgr:	lda #$00
 ; clear text page (blank page one, F0 colors on page two)
 
 cleartext:  lda #$00
-			sta PtrA
+			sta ZPtrA
 			lda #$04
-			sta PtrA + 1
+			sta ZPtrA + 1
 			lda #$8F
-			sta PtrA + XByte
+			sta ZPtrA + XByte
 			ldx #$04
 			lda #$A0
 			ldy #$00
-:           sta (PtrA), y
+:           sta (ZPtrA), y
 			iny
 			bne :-
-			inc PtrA + 1
+			inc ZPtrA + 1
 			dex
 			bne :-
 			cmp #$F0
