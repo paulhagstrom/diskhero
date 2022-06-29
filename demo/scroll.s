@@ -823,7 +823,7 @@ drawmid:    ldx DrawLine
             ldy #$27
 :           lda (ZScrHole), y
             tax
-            lda MapColors, x
+            lda PlayColors, x
             ldx ZCurrDrawX
             sta Zero, x
             dec ZCurrDrawX
