@@ -487,25 +487,18 @@ scrupdate:
             ; so lines at 2000, 2040, 2080, 20C0, 2100, 2140, etc.
             lda CurrMap
             lsr
-            bcc mseven
-            ; either 1 (40) or 3 (c0)
+            php
             lsr
-            bcc :+
-            ldx #$c0
-            bne mapstart
-:           ldx #$40
-            bne mapstart
-            ; either 0 (0) or 2 (80)
-mseven:     lsr
-            bcc :+
-            ldx #$80
-            bne mapstart
-:           ldx #$00
-mapstart:   stx MapPtrL
-            ; A is presently CurrMap divided by 4, floored
+            php
             clc
             adc #$20
-            sta MapPtrH
+            sta MapPtrH     ; floor(line/4).
+            lda #$00
+            plp
+            ror
+            plp
+            ror
+            sta MapPtrL     ; $C0, $80, $40, or $00.
             
             ; the map pointer is to what is displayed at the TOP of the entire display
             ; the whole screen is 80 (28 30 28) long
@@ -515,7 +508,7 @@ mapstart:   stx MapPtrL
             ; so its map data starts at 28+18-3 = 3D
             ; and goes to 42.
             ; then the next mode 7 stuff is from 58 to 80.  Drawn from line $78.
-            
+msfound:
             lda R_ZP
             sta ZPSave
             lda R_BANK
@@ -528,7 +521,7 @@ mapstart:   stx MapPtrL
             lda #$20            ; top field starts at physical line $20
             sta CurrLine        ; CurrLine is the current actual line on the screen
 fieldline:  ldx CurrLine
-            lda YHiresHZA, x    ; get 0-based address of current line on screen
+            lda YHiresHA, x     ; get 2000-based address of current line on screen
             ; engineer it so that ZOtherZP always points to the other ZP to flip quickly.
             sta R_ZP            ; now using HGR page 1 ZP
             pha                 ; stash it for putting in other ZP's ZOtherZP.
@@ -550,7 +543,7 @@ fieldline:  ldx CurrLine
             sta ZScrHole
             lda MapPtrH
             sta ZScrHole + 1
-            lda #$02
+            lda #$01
             sta ZScrHole + XByte
             ; strategy: follow the map data line down the map. 
             ; draw top mode 7 part, middle mode 1 part, bottom mode 7 part.
@@ -754,7 +747,7 @@ drawmid:    ldx CurrLine
             sta ZScrHole
             lda MapPtrH
             sta ZScrHole + 1
-            lda #$02
+            lda #$01
             sta ZScrHole + XByte
             ; (ZScrHole), 0 is now the left side of the map data line
             lda YLoresL, x
@@ -778,7 +771,7 @@ drawmid:    ldx CurrLine
             sta ZScrHole
             lda MapPtrH
             sta ZScrHole + 1
-            lda #$02
+            lda #$01
             sta ZScrHole + XByte
             pla                 ; retrieve pointer to rightmost screen byte
             sta ZCurrDrawX      ; store it, we need to use x along the way
@@ -815,7 +808,7 @@ drawmid:    ldx CurrLine
             adc #$05
             sta MapPtrH
 
-            jmp updatedone
+;            jmp updatedone
             ; switch to the lower hires field and draw it from line $78
             lda #$78
             sta CurrLine
@@ -867,7 +860,7 @@ seedRandom:
 ; 1 (wall), 2 (another wall), 3 (a third wall).  Should
 ; be mostly empty space.
 
-makefield:  lda #$02
+makefield:  lda #$01
             sta ZPtrA + XByte
             lda #$00
             sta ZPtrA
