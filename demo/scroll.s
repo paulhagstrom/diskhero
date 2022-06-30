@@ -543,7 +543,7 @@ fieldline:  ldx CurrLine
             sta ZScrHole
             lda MapPtrH
             sta ZScrHole + 1
-            lda #$01
+            lda #$81
             sta ZScrHole + XByte
             ; strategy: follow the map data line down the map. 
             ; draw top mode 7 part, middle mode 1 part, bottom mode 7 part.
@@ -747,7 +747,7 @@ drawmid:    ldx CurrLine
             sta ZScrHole
             lda MapPtrH
             sta ZScrHole + 1
-            lda #$01
+            lda #$81
             sta ZScrHole + XByte
             ; (ZScrHole), 0 is now the left side of the map data line
             lda YLoresL, x
@@ -771,7 +771,7 @@ drawmid:    ldx CurrLine
             sta ZScrHole
             lda MapPtrH
             sta ZScrHole + 1
-            lda #$01
+            lda #$81
             sta ZScrHole + XByte
             pla                 ; retrieve pointer to rightmost screen byte
             sta ZCurrDrawX      ; store it, we need to use x along the way
@@ -860,7 +860,7 @@ seedRandom:
 ; 1 (wall), 2 (another wall), 3 (a third wall).  Should
 ; be mostly empty space.
 
-makefield:  lda #$01
+makefield:  lda #$81
             sta ZPtrA + XByte
             lda #$00
             sta ZPtrA
@@ -870,6 +870,7 @@ mfseed:     jsr seedRandom
             ldx Seed
             ldy #$3F
 mfline:     lda Random, x
+            lda ZPtrA       ; DEBUG- be less random
             and #$07
             sta (ZPtrA), y
             inx             ; next random number
