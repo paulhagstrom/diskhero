@@ -479,26 +479,37 @@ FieldL:     .byte   $A8, $25, $A8, $28, $A8, $28
 FieldHC:    .byte   $08, $09, $09, $0A, $0A, $0B
 MapColors:  .byte   $00, $CC, $DD, $EE, $44
 PlayColors: .byte   $00, $1C, $2D, $3E, $C4
+StashZP:    .byte   0
 
 scrupdate:
             ; update playfield (lines 9-14)
             ; CurrMap represents the line in the map data at top of playfield
             ; playfield representation starts at 2000 in bank 2, each line is $40 long
             ; so lines at 2000, 2040, 2080, 20C0, 2100, 2140, etc.
+            ; anything interacting with the map should activate $1C00 ZP
+            ; we will temporarily switch to graphics-based ZP when necessary
+            lda R_ZP
+            sta ZPSave          ; save current ZP
+            lda #$1C
+            sta R_ZP            ; switch ZP to $1C00
+            lda R_BANK
+            sta BankSave        ; save current bank
+            lda #$00            ; go to bank zero,
+            sta R_BANK          ; where (hires) graphics memory lives
             lda CurrMap
             lsr
             php
             lsr
             php
             clc
-            adc #$20
-            sta MapPtrH     ; floor(line/4).
+            adc #$10
+            sta MapPtrH         ; floor(line/4).
             lda #$00
             plp
             ror
             plp
             ror
-            sta MapPtrL     ; $C0, $80, $40, or $00.
+            sta MapPtrL         ; $C0, $80, $40, or $00.
             
             ; the map pointer is to what is displayed at the TOP of the entire display
             ; the whole screen is 80 (28 30 28) long
@@ -509,12 +520,6 @@ scrupdate:
             ; and goes to 42.
             ; then the next mode 7 stuff is from 58 to 80.  Drawn from line $78.
 msfound:
-            lda R_ZP
-            sta ZPSave
-            lda R_BANK
-            sta BankSave
-            lda #$00            ; go to bank zero,
-            sta R_BANK          ; where (hires) graphics memory lives
             
             ; mode 7 part
 
@@ -522,8 +527,9 @@ msfound:
             sta CurrLine        ; CurrLine is the current actual line on the screen
 fieldline:  ldx CurrLine
             lda YHiresHA, x     ; get 2000-based address of current line on screen
-            ; engineer it so that ZOtherZP always points to the other ZP to flip quickly.
-            sta R_ZP            ; now using HGR page 1 ZP
+            ; engineer it so that ZOtherZP in hgr pages always points to the other ZP to flip quickly.
+            sta ZOtherZP        ; store HGR1 page in 1C00 ZP.
+            sta R_ZP            ; go to HGR page 1 ZP
             pha                 ; stash it for putting in other ZP's ZOtherZP.
             clc
             adc #$20            ; second page is $2000 higher than first
@@ -531,13 +537,13 @@ fieldline:  ldx CurrLine
             sta R_ZP            ; go there
             pla
             sta ZOtherZP        ; recall and store HGR page 1 ZP
-            sta R_ZP            ; go (back) there
-            ; lo byte is same on either page, but mostly computing with HGR page 1 ZP active
+            lda #$1C            ; and go back to 1C00.
+            sta R_ZP
+            ; lo byte is same on either page, store it in 1C00 page.
             lda YHiresL, x
             sta ZLineStart
             inc ZLineStart      ; push it 14 pixels in from the left edge
             inc ZLineStart
-            ; Zero, ZLineStart is now the left side of the draw line in graphics memory
             ; point ZScrHole at the left side of present line in the map data.
             lda MapPtrL
             sta ZScrHole
@@ -545,6 +551,7 @@ fieldline:  ldx CurrLine
             sta ZScrHole + 1
             lda #$81
             sta ZScrHole + XByte
+            ; Zero, ZLineStart is now the left side of the draw line in graphics memory
             ; strategy: follow the map data line down the map. 
             ; draw top mode 7 part, middle mode 1 part, bottom mode 7 part.
             ; we have 64 map data bytes, will draw over 128 pixels.
@@ -563,7 +570,6 @@ fieldline:  ldx CurrLine
             ;  i           i i           i i           i i           i
             ;  t           t t           t t           t t           t
             ;  0           7 0           7 0           7 0           7
-
             lda #62
             sta ZCurrMapX        ; right edge of last group of map bytes
             lda ZLineStart       ; left edge of graphics memory for line
@@ -571,18 +577,23 @@ fieldline:  ldx CurrLine
             adc #32              ; left edge of last group of graphics memory for line
             sta ZCurrDrawX
             ; buffer the seven map elements we will represent
-toplineseg: ldy ZCurrMapX
+toplineseg:
+            ldy ZCurrMapX
             ldx #$06
 :           lda (ZScrHole), y
-            sta ZMapBuffer, x
+            pha
             dey
             dex
             bpl :-
-            sty ZCurrMapX        ; save new pointer for state of next (left) block after this
+            sty ZCurrMapX       ; save new pointer for state of next (left) block after this
+            ldx ZCurrDrawX      ; set x to the horizontal offset
+            lda ZOtherZP        ; set ZP to HGR1
+            sta R_ZP
             ; MapColors strategically have both upper and lower nibbles containing color
             ; byte 0 (page 1): -1110000 [0+0] 4218421
-            ldx ZCurrDrawX
-            ldy ZMapBuffer      ; first map element
+            ;ldy ZMapBuffer      ; first map element
+            pla                 ; first map element
+            tay
             lda MapColors, y    ; color of pixels 0 and 1
             pha                 ; stash for later
             and #$7F
@@ -594,20 +605,21 @@ toplineseg: ldy ZCurrMapX
             bne :++
 :           lda #$00
 :           sta ZPxScratch      ; stash bit of pixel 1
-            ldy ZMapBuffer + 1  ; second map element
+            ;ldy ZMapBuffer + 1  ; second map element
+            pla                 ; second map element
+            tay
             lda MapColors, y    ; color of pixels 2 and 3
             pha                 ; stash for later
             asl
             and #%011111110
             ora ZPxScratch
-            pha
             ; put this pixel data on the other ZP (page 2)
-            lda ZOtherZP
-            sta R_ZP            ; go to page 2 ZP
+            ldy ZOtherZP
+            sty R_ZP            ; go to page 2 ZP
             pla
             sta Zero, x
-            lda ZOtherZP
-            sta R_ZP            ; go to page 1 ZP
+            ldy ZOtherZP
+            sty R_ZP            ; go to page 1 ZP
             inx
             ; byte 1 (page 1): -5444433 [1+2+2] 1842184
             pla                 ; recall color of pixel 3
@@ -615,7 +627,9 @@ toplineseg: ldy ZCurrMapX
             lsr
             and #$03            ; chop off its high bits
             sta ZPxScratch      ; and stash it
-            ldy ZMapBuffer + 2  ; third map element
+            ;ldy ZMapBuffer + 2  ; third map element
+            pla                 ; third map element
+            tay
             lda MapColors, y    ; color of pixels 4 and 5
             pha                 ; save for later
             asl
@@ -628,7 +642,9 @@ toplineseg: ldy ZCurrMapX
             lsr
             and #$07            ; chop off lowest bit
             sta ZPxScratch
-            ldy ZMapBuffer + 3  ; fourth map element
+            ;ldy ZMapBuffer + 3  ; fourth map element
+            pla                 ; fourth map element
+            tay
             lda MapColors, y    ; color of pixels 6 and 7
             pha                 ; stash for later
             lsr
@@ -645,7 +661,9 @@ toplineseg: ldy ZCurrMapX
             pla                 ; recall color of pixels 6 and 7
             and #$0F
             sta ZPxScratch
-            ldy ZMapBuffer + 4  ; fifth map element
+            ;ldy ZMapBuffer + 4  ; fifth map element
+            pla                 ; fifth map element
+            tay
             lda MapColors, y    ; color of pixels 8 and 9
             pha                 ; stash for later
             and #%01110000
@@ -657,7 +675,9 @@ toplineseg: ldy ZCurrMapX
             lsr
             lsr
             sta ZPxScratch
-            ldy ZMapBuffer + 5  ; sixth map element
+            ;ldy ZMapBuffer + 5  ; sixth map element
+            pla                 ; sixth map element
+            tay
             lda MapColors, y    ; color of pixels A and B
             pha                 ; stash for later
             asl
@@ -676,7 +696,9 @@ toplineseg: ldy ZCurrMapX
             lsr
             and #%00111111
             sta ZPxScratch
-            ldy ZMapBuffer + 6  ; seventh map element
+            ;ldy ZMapBuffer + 6  ; seventh map element
+            pla                 ; seventh map element
+            tay
             lda MapColors, y    ; colors of pixels C and D
             pha                 ; stash for later
             asl
@@ -692,8 +714,8 @@ toplineseg: ldy ZCurrMapX
             ldy ZOtherZP
             sty R_ZP            ; go to page 2 ZP
             sta Zero, x
-            ldy ZOtherZP
-            sty R_ZP            ; go to page 1 ZP
+            ldy #$1C
+            sty R_ZP            ; go to 1C00 ZP
 
             ; the 14 pixels are now drawn
             ; continue back through the line
@@ -742,7 +764,8 @@ startmid:
             sta CurrLine
 drawmid:    ldx CurrLine
             lda YLoresHA, x     ; $400 base (character space)
-            sta R_ZP            ; put ZP in character space
+            sta StashZP         ; character space ZP
+            ;sta R_ZP            ; put ZP in character space
             lda MapPtrL
             sta ZScrHole
             lda MapPtrH
@@ -759,14 +782,27 @@ drawmid:    ldx CurrLine
             tax                 ; x will be the pointer to the current screen byte
             ldy #$27
 :           lda (ZScrHole), y
-            sta Zero, x
+            ;sta Zero, x
+            pha
             dex
             dey
             bpl :-
+            ; send to screen
+            lda StashZP
+            sta R_ZP            ; go to character memory
+            ldy #$27
+:           pla
+            sta Zero, x
+            inx
+            dey
+            bpl :-
+            lda #$1C
+            sta R_ZP            ; back to $1C00 ZP
             ; draw the colors
             ldx CurrLine
             lda YLoresHB, x     ; $800 base (color space)
-            sta R_ZP            ; put ZP in color space
+            sta StashZP         ; color space ZP
+            ;sta R_ZP            ; put ZP in color space
             lda MapPtrL         ; establish the map pointer in the color ZP
             sta ZScrHole
             lda MapPtrH
@@ -779,12 +815,25 @@ drawmid:    ldx CurrLine
 :           lda (ZScrHole), y
             tax
             lda PlayColors, x
+            ;ldx ZCurrDrawX
+            ;sta Zero, x
+            pha
+            ;dec ZCurrDrawX
+            dey
+            bpl :-
+            ; send to screen
+            lda StashZP
+            sta R_ZP            ; go to color memory
             ldx ZCurrDrawX
+            ldy #$27
+:           pla
             sta Zero, x
-            dec ZCurrDrawX
+            dex
             dey
             bpl :-
             ; line now drawn, move to next one
+            lda #$1C
+            sta R_ZP            ; back to $1C00 ZP
             lda MapPtrL
             clc
             adc $40
@@ -850,8 +899,8 @@ seedRandom:
 
 ; build the playfield representation
 ; the map is 64 units wide and 256 units tall
-; so, that's $40 pages, I'll put it in $2000-$5FFF.
-; put it in bank 2 I guess.
+; so, that's $40 pages, I'll put it in $1000-$4FFF.
+; and in bank 1 I guess.
 ; the random numbers aren't going to look very random
 ; unless I keep reseeding them, so I will.
 ; This is still deterministic, but at least it should look
@@ -864,7 +913,7 @@ makefield:  lda #$81
             sta ZPtrA + XByte
             lda #$00
             sta ZPtrA
-            lda #$20
+            lda #$10
             sta ZPtrA + 1
 mfseed:     jsr seedRandom
             ldx Seed
@@ -883,7 +932,7 @@ mfline:     lda Random, x
             bcc mfseed
             inc ZPtrA + 1
             lda ZPtrA + 1
-            cmp #$60
+            cmp #$50
             bne mfseed
             rts
 
