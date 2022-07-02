@@ -206,15 +206,15 @@ intvbl:
 
 init:       
 			sei                 ; no interrupts while we are setting up
-			;     0------- F000.FFFF RAM (1=RAM)
-			;     -1------ ROM#1 (0=ROM#2)
-			;     --1----- True stack ($100) (0=alt stack)
-			;     ---1---- C000.CFFF read-only (1=read/write)
-			;     ----0--- Reset key disabled (1=enabled)
-			;     -----1-- video enabled (0=disabled)
-			;     ------1- C000.CFFF I/O (0=RAM)
-			;     -------1 2MHz clock (0=1MHz)
-			lda #%01110111		; 2MHz, video, I/O, reset, r/w, ram, ROM#1
+			;     0------- 2MHz clock (1=1MHz)
+			;     -1------ C000.CFFF I/O (0=RAM)
+			;     --1----- video enabled (0=disabled)
+			;     ---1---- Reset key enabled (0=disabled)
+			;     ----0--- C000.CFFF read/write (1=read only)
+			;     -----1-- True stack ($100) (0=alt stack)
+			;     ------1- ROM#1 (0=ROM#2)
+			;     -------1 F000.FFFF RAM (1=ROM)
+			lda #%01110111		; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
 			sta R_ENVIRON
 			sta CurrMode
 			lda #$01            ; Apple III color text
@@ -287,15 +287,15 @@ setupenv:   ; save IRQ vector and then install ours
 			
 			; set environment - $FFDF - D-VIA input register A
 			; because we will use ZP to draw, we need stack to be true.
-			;    [0-------] F000.FFFF RAM (1=ROM)
-			;    [-1------] ROM#1 (0=ROM#2)
-			;    [--1-----] True stack ($100) (0=alt stack)
-			;    [---1----] C000.CFFF read-only (1=read/write)
-			;    [----0---] Reset key disabled (1=enabled)
-			;    [-----1--] video enabled (0=disabled)
-			;    [------1-] C000.CFFF I/O (0=RAM)
-			;    [-------1] 2MHz clock (0=1MHz)
-			lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1
+            ;     0------- 2MHz clock (1=1MHz)
+            ;     -1------ C000.CFFF I/O (0=RAM)
+            ;     --1----- video enabled (0=disabled)
+            ;     ---1---- Reset key enabled (0=disabled)
+            ;     ----0--- C000.CFFF read/write (1=read only)
+            ;     -----1-- True stack ($100) (0=alt stack)
+            ;     ------1- ROM#1 (0=ROM#2)
+            ;     -------1 F000.FFFF RAM (1=ROM)
+			lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
 			sta R_ENVIRON
 			
 			; D-VIA
