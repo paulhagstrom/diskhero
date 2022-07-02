@@ -216,6 +216,8 @@ init:
 			;     -------1 F000.FFFF RAM (1=ROM)
 			lda #%01110111		; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
 			sta R_ENVIRON
+            lda #$1C
+            sta R_ZP            ; go to our private extended-addressing enabled ZP
 			sta CurrMode
 			lda #$01            ; Apple III color text
 			jsr setdisplay
@@ -500,8 +502,8 @@ scrupdate:
             sta R_BANK          ; where (hires) graphics memory lives
             ; translate pointer to top displayed line in map (CurMap)
             ; to an address for its data (in bank 1 at $1000).
-            ; If CurrMap is something like 00000111 (7), shift bits to translate to:
-            ; MapPtrL: 11000000 (C0) MapPtrH: 00010001 (11) ($11C0 and $40 bytes there)
+            ; If CurrMap is something like 00000101 (5), shift bits to translate to:
+            ; MapPtrL: 01000000 (40) MapPtrH: 00010001 (11) ($1140 and $40 bytes there)
             lda #$00
             sta MapPtrL
             lda CurrMap
@@ -509,8 +511,7 @@ scrupdate:
             ror MapPtrL
             lsr
             ror MapPtrL
-            clc
-            adc #$10            ; map data starts at $1000.
+            ora #$10            ; map data starts at $1000.
             sta MapPtrH         ; floor(line/4) + $1000.
 
             ; the map pointer is to what is displayed at the TOP of the entire display
@@ -648,10 +649,10 @@ toplineseg:
             ora ZPxScratch
             ; put this data on the page 2 ZP
             ldy ZOtherZP
-            sty R_ZP
+            sty R_ZP            ; go to page 2 ZP
             sta Zero, x
             ldy ZOtherZP
-            sty R_ZP
+            sty R_ZP            ; go to page 1 ZP
             inx
             ; byte 2 (page 1): -8887777 [3+4] 4218421
             pla                 ; recall color of pixels 6 and 7
@@ -859,20 +860,14 @@ updatedone:
 Seed:		.byte	0
 
 seedRandom:
-			; grab a random number seed from the fastest part of the realtime clock.
-			txa
-			pha
-			lda R_ZP       	; save the ZP register
-			pha
-			lda #$00
-			sta R_ZP       	; request smallest RTC byte
-			lda IO_CLOCK	; close enough to random for now
-			sta Seed
-			pla
-			sta R_ZP		; restore zero page
-			pla             ; restore X
-			tax
-			rts
+            ; grab a random number seed from the fastest part of the realtime clock.
+            lda #$00
+            sta R_ZP       	; request smallest RTC byte
+            lda IO_CLOCK	; close enough to random for now
+            sta Seed
+            lda #$1C
+            sta R_ZP
+            rts
 
 ; build the playfield representation
 ; the map is 64 units wide and 256 units tall
@@ -886,17 +881,25 @@ seedRandom:
 ; 1 (wall), 2 (another wall), 3 (a third wall).  Should
 ; be mostly empty space.
 
-makefield:  lda #$81
-            sta ZPtrA + XByte
+; YOU ARE HERE - PROBLEM IS THAT WHEN IT WRITES 1C00 OF THE MAP
+; IT IS OVERWRITING THE ZP.  SEEMS LIKE THAT SHOULD NOT BE HAPPENING.
+; IS IT A MAME BUG?
+
+makefield:  lda R_ZP
+            sta ZPSave
+            lda #$1C        ; go to 1C00 ZP
+            sta R_ZP
             lda #$00
             sta ZPtrA
             lda #$10
             sta ZPtrA + 1
-mfseed:     jsr seedRandom
+            lda #$81
+            sta ZPtrA + XByte
+mfseed:     ;jsr seedRandom
             ldx Seed
             ldy #$3F
 mfline:     lda Random, x
-            lda ZPtrA       ; DEBUG- be less random
+            txa             ; DEBUG- be less random
             and #$07
             sta (ZPtrA), y
             inx             ; next random number
@@ -911,6 +914,8 @@ mfline:     lda Random, x
             lda ZPtrA + 1
             cmp #$50
             bne mfseed
+            lda ZPSave
+            sta R_ZP
             rts
 
 ; paint the static parts of the page
@@ -949,6 +954,7 @@ InnerCol:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $C0, $F0, $F0
 			.byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
 
 paintback:  
+            ; paint static parts, assumes that it has already been cleared?
 			; mode 1 text page
 			; lines 0-1: score status
 			ldy #$27
@@ -1080,21 +1086,6 @@ clrhgr:     lda YHiresL, x
             bne clrhgr
 clrhgrdone: 
             rts
-
-; put the pointers to line x into ZPtrA (char) and ZPtrB (color)
-
-getlinex:
-			lda YLoresL, x
-			sta ZPtrA
-			sta ZPtrB
-			lda YLoresHA, x
-			sta ZPtrA + 1
-			lda YLoresHB, x
-			sta ZPtrB + 1
-			lda #$8F
-			sta ZPtrA + XByte
-			sta ZPtrB + XByte
-			rts
 
 ; clear graphics pages (just fill with nonsense for now)
 
