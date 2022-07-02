@@ -71,7 +71,7 @@ XByte       = $1601     ; Interp extended address offset
 ZPtrA       = $20
 ZPtrB       = $22
 ZPtrC       = $24
-ZPtrS       = $26
+ZPtrD       = $26
 
 			.org     $A000 - 14
 			
@@ -83,13 +83,42 @@ ZPtrS       = $26
 
 CodeStart:  jmp init
 
-ExitFlag:   .byte   0
-IRQSave:    .byte   0, 0 , 0
+IRQSave:    .byte   0, 0 , 0        ; saved state
+ZPSave:     .byte   0
+BankSave:   .byte   0
+
+ExitFlag:   .byte   0               ; keyboard int mskes this nonzero to triggger exit
 CurrMode:	.byte	0
 CurrMap:	.byte	0
 NudgeCount:	.byte	0
-ZPSave:     .byte   0
-BankSave:   .byte   0
+
+GameLevel:	.byte	0
+GameScore:	.byte	0, 0, 0
+ScrRegion:	.byte	0
+FieldH:     .byte   $04, $05, $05, $06, $06, $07
+FieldL:     .byte   $A8, $25, $A8, $28, $A8, $28
+FieldHC:    .byte   $08, $09, $09, $0A, $0A, $0B
+MapColors:  .byte   $00, $CC, $DD, $EE, $44
+PlayColors: .byte   $00, $1C, $2D, $3E, $C4
+ScrRegLen:	.byte	$0E, $0F, $27, $2F, $27, $1F, $00
+ScrRegMode: .byte   $01, $06, $07, $01, $07, $01, $00
+; I played with ScRegLen by trial and error a little.
+; Not sure why I needed to go two down for region zero.
+
+; these are in screen holes because we're using screen memory for ZP
+ZScrHole    = $78
+ZOtherZP    = $7A
+ZCurrDrawX  = $7B
+ZLineStart  = $7C
+ZCurrMapX   = $7E
+ZMapBuffer  = $F8
+ZPxScratch  = $FF
+Zero        = $00
+CurrLine:   .byte   0
+CurMapLine: .byte   0
+MapPtrL:    .byte   0
+MapPtrH:    .byte   0
+StashZP:    .byte   0
 
 ; we need to prioritize interrupts a bit because they can pile up.
 ; if HBL has priority we can wind up in an situation where nothingg
@@ -173,14 +202,6 @@ intvbl:
             lda ScrRegMode
             jsr setdisplay
             rts
-
-GameLevel:	.byte	0
-GameScore:	.byte	0, 0, 0
-ScrRegion:	.byte	0
-ScrRegLen:	.byte	$0E, $0F, $27, $2F, $27, $1F, $00
-ScrRegMode: .byte   $01, $06, $07, $01, $07, $01, $00
-; I played with ScRegLen by trial and error a little.
-; Not sure why I needed to go two down for region zero.
 
 init:       
 			sei                 ; no interrupts while we are setting up
@@ -461,26 +482,6 @@ drawscore:
             bpl :-
             rts
 
-; these are in screen holes because we're using screen memory for ZP
-ZScrHole    = $78
-ZOtherZP    = $7A
-ZCurrDrawX  = $7B
-ZLineStart  = $7C
-ZCurrMapX   = $7E
-ZMapBuffer  = $F8
-ZPxScratch  = $FF
-Zero        = $00
-CurrLine:   .byte   0
-CurMapLine: .byte   0
-MapPtrL:    .byte   0
-MapPtrH:    .byte   0
-FieldH:     .byte   $04, $05, $05, $06, $06, $07
-FieldL:     .byte   $A8, $25, $A8, $28, $A8, $28
-FieldHC:    .byte   $08, $09, $09, $0A, $0A, $0B
-MapColors:  .byte   $00, $CC, $DD, $EE, $44
-PlayColors: .byte   $00, $1C, $2D, $3E, $C4
-StashZP:    .byte   0
-
 scrupdate:
             ; update playfield (lines 9-14)
             ; CurrMap represents the line in the map data at top of playfield
@@ -490,27 +491,25 @@ scrupdate:
             ; we will temporarily switch to graphics-based ZP when necessary
             lda R_ZP
             sta ZPSave          ; save current ZP
-            lda #$1C
-            sta R_ZP            ; switch ZP to $1C00
             lda R_BANK
             sta BankSave        ; save current bank
+            lda #$1C
+            sta R_ZP            ; switch ZP to $1C00
             lda #$00            ; go to bank zero,
             sta R_BANK          ; where (hires) graphics memory lives
+            ; translate pointer to top displayed line in map (CurMap)
+            ; to an address for its data (in bank 1 at $1000).
+            lda #$00
+            sta MapPtrL
             lda CurrMap
             lsr
-            php
+            ror MapPtrL
             lsr
-            php
+            ror MapPtrL
             clc
-            adc #$10
-            sta MapPtrH         ; floor(line/4).
-            lda #$00
-            plp
-            ror
-            plp
-            ror
-            sta MapPtrL         ; $C0, $80, $40, or $00.
-            
+            adc #$10            ; map data starts at $1000.
+            sta MapPtrH         ; floor(line/4) + $1000.
+
             ; the map pointer is to what is displayed at the TOP of the entire display
             ; the whole screen is 80 (28 30 28) long
             ; first mode 7 stuff is from 0 to 28.  Drawn from physical line $20.
@@ -519,11 +518,8 @@ scrupdate:
             ; so its map data starts at 28+18-3 = 3D
             ; and goes to 42.
             ; then the next mode 7 stuff is from 58 to 80.  Drawn from line $78.
-msfound:
-            
-            ; mode 7 part
 
-            lda #$20            ; top field starts at physical line $20
+            lda #$20            ; top field starts at display line $20
             sta CurrLine        ; CurrLine is the current actual line on the screen
 fieldline:  ldx CurrLine
             lda YHiresHA, x     ; get 2000-based address of current line on screen
@@ -542,7 +538,8 @@ fieldline:  ldx CurrLine
             ; lo byte is same on either page, store it in 1C00 page.
             lda YHiresL, x
             sta ZLineStart
-            inc ZLineStart      ; push it 14 pixels in from the left edge
+            ; push left edge right 14 pixels to center it
+            inc ZLineStart
             inc ZLineStart
             ; point ZScrHole at the left side of present line in the map data.
             lda MapPtrL
@@ -576,7 +573,8 @@ fieldline:  ldx CurrLine
             clc
             adc #32              ; left edge of last group of graphics memory for line
             sta ZCurrDrawX
-            ; buffer the seven map elements we will represent
+            ; buffer the seven map elements we will represent in the stack.
+            ; read them from right to left, then we draw them from left to right
 toplineseg:
             ldy ZCurrMapX
             ldx #$06
@@ -585,7 +583,7 @@ toplineseg:
             dey
             dex
             bpl :-
-            sty ZCurrMapX       ; save new pointer for state of next (left) block after this
+            sty ZCurrMapX       ; save new pointer for end of next (left) block after this
             ldx ZCurrDrawX      ; set x to the horizontal offset
             lda ZOtherZP        ; set ZP to HGR1
             sta R_ZP
