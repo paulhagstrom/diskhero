@@ -501,7 +501,7 @@ scrupdate:
             lda #$00            ; swap in bank zero,
             sta R_BANK          ; where (hires) graphics memory lives
             ; translate pointer to top displayed line in map (CurMap)
-            ; to an address for its data (in bank 1 at $1000).
+            ; to an address for its data (in bank 2 at $0000).
             ; If CurrMap is something like 00000101 (5), shift bits to translate to:
             ; MapPtrL: 01000000 (40) MapPtrH: 00010001 (11) ($1140 and $40 bytes there)
             lda #$00
@@ -550,7 +550,7 @@ hiresline:  ldx CurrLine
             sta ZScrHole
             lda MapPtrH
             sta ZScrHole + 1
-            lda #$81
+            lda #$82
             sta ZScrHole + XByte
             ; Zero, ZLineStart is now the left side of the draw line in graphics memory
             ; strategy: follow the map data line down the map. 
@@ -760,7 +760,7 @@ loresline:
             sta ZScrHole
             lda MapPtrH
             sta ZScrHole + 1
-            lda #$81
+            lda #$82
             sta ZScrHole + XByte
             ; (ZScrHole), 0 is now the left side of the map data line
             ; buffer all diplayed map bytes into the stack, from right to left
@@ -881,20 +881,24 @@ seedRandom:
 ; 1 (wall), 2 (another wall), 3 (a third wall).  Should
 ; be mostly empty space.
 
-; YOU ARE HERE - PROBLEM IS THAT WHEN IT WRITES 1C00 OF THE MAP
-; IT IS OVERWRITING THE ZP.  SEEMS LIKE THAT SHOULD NOT BE HAPPENING.
-; IS IT A MAME BUG?
+MFBank:     .byte 0
 
 makefield:  lda R_ZP
             sta ZPSave
             lda #$1C        ; go to 1C00 ZP
+            lda #$00        ; no, go to actual ZP (no extended addr)
             sta R_ZP
             lda #$00
             sta ZPtrA
             lda #$10
+            lda #$30        ; start at $3000 (2000+1000)
             sta ZPtrA + 1
-            lda #$81
+            lda #$82
             sta ZPtrA + XByte
+            lda R_BANK
+            sta MFBank
+            lda #$02
+            sta R_BANK
 mfseed:     ;jsr seedRandom
             ldx Seed
             ldy #$3F
@@ -912,10 +916,13 @@ mfline:     lda Random, x
             bcc mfseed
             inc ZPtrA + 1
             lda ZPtrA + 1
-            cmp #$50
+            cmp #$70        ; $7000 means we've done $4000
+            ;cmp #$5D
             bne mfseed
             lda ZPSave
             sta R_ZP
+            lda MFBank
+            sta R_BANK
             rts
 
 ; paint the static parts of the page
