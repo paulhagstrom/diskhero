@@ -216,7 +216,7 @@ init:
 			;     -------1 F000.FFFF RAM (1=ROM)
 			lda #%01110111		; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
 			sta R_ENVIRON
-            lda #$1C
+            lda #$1A
             sta R_ZP            ; go to our private extended-addressing enabled ZP
 			sta CurrMode
 			lda #$01            ; Apple III color text
@@ -490,14 +490,14 @@ scrupdate:
             ; CurrMap represents the line in the map data at top of playfield
             ; playfield representation starts at 2000 in bank 2, each line is $40 long
             ; so lines at 2000, 2040, 2080, 20C0, 2100, 2140, etc.
-            ; anything interacting with the map should activate $1C00 ZP
+            ; anything interacting with the map should activate $1A00 ZP
             ; we will temporarily switch to graphics-based ZP when necessary
             lda R_ZP
             sta ZPSave          ; save current ZP
             lda R_BANK
             sta BankSave        ; save current bank
-            lda #$1C
-            sta R_ZP            ; switch ZP to $1C00
+            lda #$1A
+            sta R_ZP            ; switch ZP to $1A00
             lda #$00            ; swap in bank zero,
             sta R_BANK          ; where (hires) graphics memory lives
             ; translate pointer to top displayed line in map (CurMap)
@@ -528,7 +528,7 @@ scrupdate:
 hiresline:  ldx CurrLine
             lda YHiresHA, x     ; get 2000-based address of current line on screen
             ; engineer it so that ZOtherZP in hgr pages always points to the other ZP to flip quickly.
-            sta ZOtherZP        ; store HGR1 page in 1C00 ZP.
+            sta ZOtherZP        ; store HGR1 page in 1A00 ZP.
             sta R_ZP            ; go to HGR page 1 ZP
             pha                 ; stash it for putting in other ZP's ZOtherZP.
             clc
@@ -537,9 +537,9 @@ hiresline:  ldx CurrLine
             sta R_ZP            ; go there (to HGR2 ZP)
             pla
             sta ZOtherZP        ; recall and store HGR page 1 ZP (in HGR2's ZP)
-            lda #$1C            ; and go back to 1C00 ZP.
+            lda #$1A            ; and go back to 1A00 ZP.
             sta R_ZP
-            ; lo byte is same on either page, store it in 1C00 page.
+            ; lo byte is same on either page, store it in 1A00 page.
             lda YHiresL, x
             sta ZLineStart
             ; push left edge right 14 pixels to center it
@@ -708,8 +708,8 @@ toplineseg:
             ldy ZOtherZP
             sty R_ZP            ; go to page 2 ZP
             sta Zero, x
-            ldy #$1C
-            sty R_ZP            ; go to 1C00 ZP
+            ldy #$1A
+            sty R_ZP            ; go to 1A00 ZP
 
             ; the 14 pixels are now drawn
             ; continue back through the line
@@ -771,7 +771,7 @@ loresline:
             lda PlayChars, x    ; translate to displayed character
             pha                 ; store displayed character on stack
             lda PlayColors, x   ; translate to displayed color
-            sta Zero, y         ; store color in 1C00 page
+            sta Zero, y         ; store color in 1A00 page
             dey
             bpl :-
             ; send to screen
@@ -790,8 +790,8 @@ loresline:
             dey
             bpl :-
             ; push the colors onto the stack so they are available from color page ZP
-            lda #$1C
-            sta R_ZP            ; go back to 1C00 ZP
+            lda #$1A
+            sta R_ZP            ; go back to 1A00 ZP
             ldy #$27
 :           lda Zero, y
             pha
@@ -809,8 +809,8 @@ loresline:
             dey
             bpl :-
             ; line now drawn, move to next one
-            lda #$1C
-            sta R_ZP            ; go back to 1C00 ZP
+            lda #$1A
+            sta R_ZP            ; go back to 1A00 ZP
             ; advance map pointer
             lda MapPtrL
             clc
@@ -865,7 +865,7 @@ seedRandom:
             sta R_ZP       	; request smallest RTC byte
             lda IO_CLOCK	; close enough to random for now
             sta Seed
-            lda #$1C
+            lda #$1A
             sta R_ZP
             rts
 
@@ -881,29 +881,22 @@ seedRandom:
 ; 1 (wall), 2 (another wall), 3 (a third wall).  Should
 ; be mostly empty space.
 
-MFBank:     .byte 0
-
 makefield:  lda R_ZP
             sta ZPSave
-            lda #$1C        ; go to 1C00 ZP
+            lda #$1A        ; go to 1A00 ZP
             lda #$00        ; no, go to actual ZP (no extended addr)
             sta R_ZP
             lda #$00
             sta ZPtrA
             lda #$10
-            lda #$30        ; start at $3000 (2000+1000)
             sta ZPtrA + 1
             lda #$82
             sta ZPtrA + XByte
-            lda R_BANK
-            sta MFBank
-            lda #$02
-            sta R_BANK
-mfseed:     ;jsr seedRandom
+mfseed:     jsr seedRandom
             ldx Seed
             ldy #$3F
 mfline:     lda Random, x
-            txa             ; DEBUG- be less random
+            ;txa             ; DEBUG- be less random
             and #$07
             sta (ZPtrA), y
             inx             ; next random number
@@ -916,13 +909,10 @@ mfline:     lda Random, x
             bcc mfseed
             inc ZPtrA + 1
             lda ZPtrA + 1
-            cmp #$70        ; $7000 means we've done $4000
-            ;cmp #$5D
+            cmp #$50        ; map occupies $4000 bytes
             bne mfseed
             lda ZPSave
             sta R_ZP
-            lda MFBank
-            sta R_BANK
             rts
 
 ; paint the static parts of the page
