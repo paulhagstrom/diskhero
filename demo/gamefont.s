@@ -150,7 +150,7 @@ FontAscii:
             .byte   $1D         ; drive up
             .byte   $1E         ; drive down
             .byte   $1F         ; flux 1
-            .byte   $20         ; flux 2
+            .byte   $28         ; flux 2 -- leave $20 for space
             .byte   $21         ; truck left A
             .byte   $22         ; truck left B
             .byte   $23         ; truck right A
