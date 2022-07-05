@@ -87,10 +87,12 @@ IRQSave:    .byte   0, 0 , 0        ; saved state
 ZPSave:     .byte   0
 BankSave:   .byte   0
 
-ExitFlag:   .byte   0               ; keyboard int mskes this nonzero to triggger exit
-CurrMode:	.byte	0
-CurrMap:	.byte	0
-NudgeCount:	.byte	0
+ExitFlag:   .byte   0               ; keyboard int makes this nonzero to trigger exit
+RedrawMap:  .byte   0               ; keyboard int makes this nonzero to trigger redraw
+RedrawPlay: .byte   0               ; keyboard int makes this nonzero to trigger redraw
+CurrTop: 	.byte	0
+CurrBottom: .byte	0
+CurrPlay: 	.byte	0
 
 GameLevel:	.byte	0
 GameScore:	.byte	0, 0, 0
@@ -101,10 +103,19 @@ FieldHC:    .byte   $08, $09, $09, $0A, $0A, $0B
 MapColors:  .byte   $00, $CC, $DD, $EE, $44
 PlayColors: .byte   $00, $1C, $2D, $3E, $C4
 PlayChars:  .byte   $41, $C2, $43, $21, $C7
-ScrRegLen:	.byte	$0E, $0F, $27, $2F, $27, $1F, $00
+; screen regions.
+; mode is display mode, length is number of HBLs,
+; nudge is 0 if no nudge, else pos or neg depending on which nudge count to use
+ScrRegLen:	.byte	$0E, $0E, $27, $2F, $27, $1F, $00
 ScrRegMode: .byte   $01, $06, $07, $01, $07, $01, $00
+ScrNudge:   .byte   $00, $80, $01, $00, $01, $00, $00
+NudgePos:	.byte	0
+NudgeNeg:	.byte	0
+
 ; I played with ScRegLen by trial and error a little.
 ; Not sure why I needed to go two down for region zero.
+; Probably because the VBL code (or HBL code) takes long enough that we miss
+; some HBLs here and there.
 
 ; these are in screen holes because we're using screen memory for ZP
 ZScrHole    = $78
@@ -122,142 +133,161 @@ MapPtrH:    .byte   0
 StashZP:    .byte   0
 
 ; we need to prioritize interrupts a bit because they can pile up.
-; if HBL has priority we can wind up in an situation where nothingg
+; if HBL has priority we can wind up in an situation where nothing
 ; else gets a chance to fire.  So keyboard first, then VBL, then HBL/timer.
 
-inthandler: ; save registers
-            pha
+inthandle:  pha                 ; save registers
             tya
             pha
             txa
             pha
             cld
-            lda RE_INTFLAG
-            and #$10        ; VBL?
-            beq :+          ; nope
-            jsr intvbl
-            lda #$10        ; clear CB1 VBL
+            lda RE_INTFLAG      ; identify interrupt
+            and #$10            ; VBL?
+            beq :+              ; nope
+            jsr intvbl          ; handle the VBL interrupt
+            lda #$10            ; clear CB1 VBL
             sta RE_INTFLAG
             bne intreturn
 :           lda RE_INTFLAG
-            and #$01        ; keyboard?
-            beq :+          ; not $01 CA2 keyboard
-            jsr intkey
-            lda #$01        ; clear CA2 keyboard
+            and #$01            ; keyboard?
+            beq :+              ; nope
+            jsr intkey          ; handle the keyboard interrupt
+            lda #$01            ; clear CA2 keyboard
             sta RE_INTFLAG
             bne intreturn
 :           lda RE_INTFLAG
-            and #$20        ; check for $20 (timer/HBL)
-            bne inttimer
-intreturn:  pla
+            and #$20            ; timer/HBL?
+            bne inttimer        ; yep, go handle the timer/HBL
+intreturn:  pla                 ; restore registers
             tax
             pla
             tay
             pla
             rti
 ; timer2 (HBL) interrupt handler
-inttimer:   
-            inc $0402
-            inc ScrRegion
+; goes off only at display mode switch points (not every HBL)
+; sets the display mode and smooth scroll offset, then timer for next mode switch point
+; allows for two different smooth scroll offsets, named "NudgePos" and "NudgeNeg"
+inttimer:   inc ScrRegion       ; advance region
             ldx ScrRegion
-            ; move display to correct mode
-            lda ScrRegMode, x
+            lda ScrRegMode, x   ; move display to correct mode
             jsr setdisplay
-            ; reset the HBL counter to length of next mode
-            lda ScrRegLen, x
-            ; living mildly dangerously, assumes that we'll always get
-            ; a VBL region reset before we run off the end of the region list
+            lda D_SCROLLOFF     ; nudge off
+            sec                 ; set up bcs/jmp
+            lda ScrNudge, x     ; nudge if this region needs nudging
+            beq postnudge       ; do no nudging
+            bmi negnudge        ; using negative (alt) nudge?
+            lda NudgePos        ; nope, use the positive (regular) nudge value
+            bcs gonudge
+negnudge:   lda NudgeNeg        ; yep, use the negative (alternate) nudge value
+gonudge:    jsr setnudge        ; twiddle the nudge bits
+            lda D_SCROLLON      ; turn on nudging
+postnudge:  lda ScrRegLen, x    ; reset the HBL counter to length of next mode
             sta RE_T2CL
-            lda #$00
+            lda #$00            ; clear the timer2 flag
             sta RE_T2CH
-            ; clear the timer2 flag (resetting the timer clock seems not to do it?)
             lda #$20
             sta RE_INTFLAG
             bne intreturn
-
 ; keyboard interrupt handler
-; increment count using BCD mode.
-intkey:     
-            lda IO_KEY
-            sta IO_KEYCLEAR
-            bpl keyreturn   ; no key pressed, return
-            ; if the key was E, set the exit flag.
-            sta $0400       ; put it in the corner so I can see it
-            dec CurrMap     ; move, for now.
-            cmp #$C5        ; E
+intkey:     lda IO_KEY          ; load keyboard register
+            sta IO_KEYCLEAR     ; clear keyboard register
+            bpl keyreturn       ; no key pressed, return
+            sta $0400           ; put it in the corner so I can see it
+            cmp #$C9            ; I (up)
+            bne :+
+            inc RedrawPlay
+            dec NudgePos
             bne keyreturn
-            inc ExitFlag
+            lda #$07
+            sta NudgePos
+            dec CurrMap
+            inc RedrawMap
+            bne keyreturn
+:           cmp #$CD            ; M (down)
+            bne :+
+            inc RedrawPlay
+            inc NudgePos
+            lda NudgePos
+            cmp #$08
+            bne keyreturn
+            lda #$00
+            sta NudgePos
+            inc CurrMap
+            inc RedrawMap
+            bne keyreturn
+:           cmp #$CA            ; J (left)
+            bne :+
+            inc RedrawPlay
+:           cmp #$CB            ; K (right)
+            bne :+
+            inc RedrawPlay
+:           cmp #$C5            ; E (exit)
+            bne keyreturn
+            inc ExitFlag        ; tell event loop we are exiting
 keyreturn:  rts
 
 ; VBL interrupt handler
-intvbl:     
-            inc $0401
-            lda ScrRegLen
-            ; reset the HBL counter to the length of top region
+intvbl:     lda ScrRegLen       ; reset the HBL counter to the length of top region
             sta RE_T2CL
             lda #0
             sta RE_T2CH
-            ; reset region number
-            sta ScrRegion
-            ; move display to correct mode
-            lda ScrRegMode
+            sta ScrRegion       ; reset region number
+            lda ScrRegMode      ; move display to correct mode
             jsr setdisplay
+            lda D_SCROLLOFF     ; smooth scrolling off is assumed for top region
             rts
 
-init:       
-			sei                 ; no interrupts while we are setting up
-			;     0------- 2MHz clock (1=1MHz)
-			;     -1------ C000.CFFF I/O (0=RAM)
-			;     --1----- video enabled (0=disabled)
-			;     ---1---- Reset key enabled (0=disabled)
-			;     ----0--- C000.CFFF read/write (1=read only)
-			;     -----1-- True stack ($100) (0=alt stack)
-			;     ------1- ROM#1 (0=ROM#2)
-			;     -------1 F000.FFFF RAM (1=ROM)
-			lda #%01110111		; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
-			sta R_ENVIRON
-            lda #$1A
-            sta R_ZP            ; go to our private extended-addressing enabled ZP
-			sta CurrMode
-			lda #$01            ; Apple III color text
-			jsr setdisplay
-			bit D_PAGEONE
-			bit D_SCROLLOFF
-			bit IO_KEYCLEAR
-			lda #$00
-			jsr setnudge
-			jsr cleartext
-			jsr clearhgr
-			jsr paintback
-			jsr setupenv
-			jsr makefield
-			lda #$00
-			sta ScrRegion
-			lda #$80        	; start at line 80 of the map, bottom half
-			sta CurrMap
-			lda #$00        	; start at nudge 0
-			sta NudgeCount
-			lda #$00
-			sta GameLevel
-			lda #$00
-			sta GameScore
-			cli                 ; all set up now, interrupt away
+init:       sei                 ; no interrupts while we are setting up
+            ;     0------- 2MHz clock (1=1MHz)
+            ;     -1------ C000.CFFF I/O (0=RAM)
+            ;     --1----- video enabled (0=disabled)
+            ;     ---1---- Reset key enabled (0=disabled)
+            ;     ----0--- C000.CFFF read/write (1=read only)
+            ;     -----1-- True stack ($100) (0=alt stack)
+            ;     ------1- ROM#1 (0=ROM#2)
+            ;     -------1 F000.FFFF RAM (1=ROM)
+            lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
+            sta R_ENVIRON
+            lda #$1A            ; ZP to $1A00 (standard for interpreters)
+            sta R_ZP
+            jsr herofont        ; load game font into character RAM
+            jsr drawback        ; draw static background
+            jsr makefield       ; set up map
+            jsr setupenv        ; arm interrupts
+            lda #$00
+            sta ScrRegion
+            lda #$80        	; start at line 80 of the map, bottom half
+            sta CurrMap
+            lda #$00        	; start at nudge 0
+            sta NudgePos
+            sta NudgeNeg
+            lda #$00
+            sta GameLevel
+            lda #$00
+            sta GameScore
+            lda #$01
+            sta RedrawMap       ; start by assuming we need to redraw whole thing
+            bit IO_KEYCLEAR
+            cli                 ; all set up now, interrupt away
 eventloop:  lda ExitFlag
             bne alldone
             jsr drawscore
+            inc GameScore + 2   ; DEV - constantly move score up
+            lda RedrawPlay      ; screen moved, at least playfield needs update
+            bne :+
             jsr scrupdate
-            inc GameScore + 2
-            ;dec CurrMap
-            jmp eventloop
+:           jmp eventloop
 
-alldone:    lda #$7f            ;disable all via interrupts
+alldone:    lda #$7F            ;disable all interrupts
 			sta RD_INTENAB
 			sta RD_INTFLAG
-			lda #$7f
+			lda #$7F
 			sta RE_INTENAB
 			sta RE_INTFLAG
 
-			brk
+			brk                  ; SOS TERMINATE
 			.byte   TERMINATE
 			.word   *-2
 
@@ -270,11 +300,11 @@ setupenv:   ; save IRQ vector and then install ours
 			sta IRQSave + 1
 			lda IRQVECT + 2
 			sta IRQSave + 2
-			lda #$4C        ; jmp
+			lda #$4C             ; jmp
 			sta IRQVECT
-			lda #<inthandler
+			lda #<inthandle
 			sta IRQVECT + 1
-			lda #>inthandler
+			lda #>inthandle
 			sta IRQVECT + 2
 			
 			; bank register - $FFEF - E-VIA input register A
@@ -485,7 +515,67 @@ drawscore:
             bpl :-
             rts
 
+mapattern:
+            ; pattern 0
+            .byte   %00100010
+            .byte   %00110100
+            ; pattern 1
+            .byte   %01100010
+            .byte   %00110110
+            ; pattern 2
+            .byte   %10100110
+            .byte   %00110100
+            ; pattern 3
+            .byte   %00101010
+            .byte   %10110101
+
+; compute map pointer, based on A.  Map data is in bank 2, $1000-4FFF.
+; If CurrMap is something like 00000101 (5), shift bits to translate to:
+; MapPtrL: 01000000 (40) MapPtrH: 00010001 (11) ($1140 and $40 bytes there)
+
+getmapptr:  pha
+            lda #$00
+            sta MapPtrL
+            pla
+            lsr                 ; shift lower bits of map line into higher bits of MPL
+            ror MapPtrL
+            lsr
+            ror MapPtrL
+            ora #$10            ; map data starts at $1000.
+            sta MapPtrH         ; floor(line/4) + $1000.
+            rts
+
+; the top hires portion of the screen occupies "lines $20 to $48."
+; on the screen, due to nudging, we draw from lines $20 to $4F.
+; the map repsents 2x2 patterns, so we draw map lines from N to N+$20
+; the middle text section represents $28 across, drawn from line $09 to line $0E.
+; it obscures $18 map lines, displaying the middle 6.  So it represents N+$26 to N+$2C.
+; then the lower section picks up from N+$38 to N+$58.
+; the text section is always redrawn and is not nudged. Its top map line is N+$26+nudge.
+; YOU ARE HERE
+; ACTUALLY, I think I may want to nudge the text section sort of.
+; have text characters that represent on and off zero?
+; BUT: if something is off zero, though, would we expect something to be able to be up close to it?
+; like if a wall block stops halfway up, shouldn't a character be able to be up next to it?
+; so maybe would be better if playfield were GIANT?
+; so that it is just three map lines, double tall?  The we would not need partial characters.
+; But, then it also doesn't make the nice point. So maybe I just keep people from getting too close
+; to walls.
+
+
 scrupdate:
+            ; update parts of the screen that need updating.
+            ; redrawPlay is set if the playfield in the middle needs updating
+            ; redrawMap is set if the map above and below playfield needs updating too
+            ; The map can be moved by NudgePos without redrawing, while the playfield cannot.
+            ; CurrTop is the top map line of the top map we are looking at.
+            ; CurrBottom is the top map line of the bottom map we are looking at.
+            ; CurrPlay is the top map line of the playfield.
+            ; Those three should always be kept in sync programmatically, but no need to
+            ; burn cycles continually adding things together when we could just cache.
+            ; The map lines will represent patterns that are 2 by 4, which roughly matches the
+            ; proportions of the 40 column characters.
+            ; 
             ; update playfield (lines 9-14)
             ; CurrMap represents the line in the map data at top of playfield
             ; playfield representation starts at 2000 in bank 2, each line is $40 long
@@ -500,20 +590,18 @@ scrupdate:
             sta R_ZP            ; switch ZP to $1A00
             lda #$00            ; swap in bank zero,
             sta R_BANK          ; where (hires) graphics memory lives
-            ; translate pointer to top displayed line in map (CurMap)
-            ; to an address for its data (in bank 2 at $0000).
-            ; If CurrMap is something like 00000101 (5), shift bits to translate to:
-            ; MapPtrL: 01000000 (40) MapPtrH: 00010001 (11) ($1140 and $40 bytes there)
-            lda #$00
-            sta MapPtrL
-            lda CurrMap
-            lsr                 ; shift lower bits of CurrMap into higher bits of MPL
-            ror MapPtrL
-            lsr
-            ror MapPtrL
-            ora #$10            ; map data starts at $1000.
-            sta MapPtrH         ; floor(line/4) + $1000.
 
+            lda RedrawMap
+            bne redrawmap
+            ; we only need to redraw the play field
+            ; so pop the map pointer down to there.  Should be at line 2C + NudgePos.
+            ; multiplied by $40, that can be added to MapPtr.
+            lda #$2C
+            clc
+            adc NudgePos
+            jsr getmapptr
+            jmp redrawplay
+            
             ; the map pointer is to what is displayed at the TOP of the entire display
             ; the whole screen is 80 (28 30 28) long
             ; first mode 7 stuff is from 0 to 28.  Drawn from physical line $20.
@@ -522,7 +610,9 @@ scrupdate:
             ; so its map data starts at 28+18-3 = 3D
             ; and goes to 42.
             ; then the next mode 7 stuff is from 58 to 80.  Drawn from line $78.
-
+redrawmap:
+            lda CurrMap
+            jsr getmapptr       ; load mapptr for CurrMap.
             lda #$20            ; top field starts at display line $20
             sta CurrLine        ; CurrLine is the current actual line on the screen
 hiresline:  ldx CurrLine
@@ -752,7 +842,7 @@ startmid:
             lda MapPtrH
             adc #$05
             sta MapPtrH
-
+redrawplay:
             lda #$09
             sta CurrLine
 loresline:
@@ -825,9 +915,14 @@ loresline:
             beq :+
             jmp loresline       ; more lines to draw, go draw them
 :
+            ; if we only needed to redraw the playfield we are done
+            lda RedrawMap
+            bne :+
+            jmp hiresdone
+            
             ; top and middle fields now drawn, go back and do the bottom one
             ; skip ahead $15 (from $43 to $58).
-            lda MapPtrL
+:           lda MapPtrL
             clc
             adc #$40
             sta MapPtrL
@@ -847,6 +942,11 @@ lowstats:
 
             ; restore ZP and come back
 updatedone:
+            ; reset the update flags
+            lda #$00
+            sta RedrawMap
+            sta RedrawPlay
+            
             lda ZPSave
             sta R_ZP
 
@@ -869,10 +969,8 @@ seedRandom:
             sta R_ZP
             rts
 
-; build the playfield representation
-; the map is 64 units wide and 256 units tall
-; so, that's $40 pages, I'll put it in $1000-$4FFF.
-; and in bank 1 I guess.
+; build the map.
+; the map is $40 units wide and $100 units tall.  Lives in bank 2, $1000-4FFF.
 ; the random numbers aren't going to look very random
 ; unless I keep reseeding them, so I will.
 ; This is still deterministic, but at least it should look
@@ -950,10 +1048,16 @@ InnerCol:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $C0, $F0, $F0
 			.byte $D0, $E0, $90, $F0, $F0, $F0, $F0, $F0, $F0, $F0
 			.byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
 
-paintback:  
-            ; paint static parts, assumes that it has already been cleared?
-			; mode 1 text page
-			; lines 0-1: score status
+; initialize graphics and draw static background
+drawback:   lda #$01            ; Apple III color text
+            jsr setdisplay
+            bit D_PAGEONE
+            bit D_SCROLLOFF
+            lda #$00
+            jsr setnudge
+            jsr cleartext
+            jsr clearhgr
+            ; text lines 0-1: score status
 			ldy #$27
 :           lda StatTextA, y
 			sta $400, y
@@ -1178,5 +1282,7 @@ sdhires:    bit D_HIRES
 			rts
 
 			.include "lookups.s"
+            
+            .include "gamefont.s"
 
 CodeEnd     = *
