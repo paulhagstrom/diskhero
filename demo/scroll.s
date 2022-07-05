@@ -73,6 +73,8 @@ ZPtrB       = $22
 ZPtrC       = $24
 ZPtrD       = $26
 
+; we have from A000 to B800 before SOS arrives
+
             .org     $A000 - 14
             
 ; sos interp header
@@ -83,11 +85,15 @@ ZPtrD       = $26
 
 CodeStart:  jmp init
 
+            .include "lookups.s"
+            .include "gamefont.s"
+
 IRQSave:    .byte   0, 0 , 0        ; saved state
 ZPSave:     .byte   0
 BankSave:   .byte   0
 
 ExitFlag:   .byte   0               ; keyboard int makes this nonzero to trigger exit
+KeyCaught:  .byte   0               ; keyboard int pushes a caught key in here
 RedrawMap:  .byte   0               ; keyboard int makes this nonzero to trigger redraw
 RedrawPlay: .byte   0               ; keyboard int makes this nonzero to trigger redraw
 CurrMap:    .byte   0
@@ -100,7 +106,6 @@ FieldL:     .byte   $A8, $25, $A8, $28, $A8, $28
 FieldHC:    .byte   $08, $09, $09, $0A, $0A, $0B
 MapColors:  .byte   $00, $CC, $DD, $EE, $44
 PlayColors: .byte   $00, $1C, $2D, $3E, $C4
-PlayChars:  .byte   $41, $C2, $43, $21, $C7
 ; Screen layout:
 ; mode 1 (text)     lines 00-0F (10) 00-01  score
 ; mode 6 (bw hires) lines 10-1F (10)        b/w map display
@@ -198,38 +203,47 @@ postnudge:  lda ScrRegLen, x    ; reset the HBL counter to length of next mode
             sta RE_INTFLAG
             bne intreturn
 ; keyboard interrupt handler
+; TODO - buffer the key in KeyCaught and handle the logic in the event loop
 intkey:     lda IO_KEY          ; load keyboard register
             sta IO_KEYCLEAR     ; clear keyboard register
-            bpl keyreturn       ; no key pressed, return
+            bpl keyreturn       ; no key pressed, return (could that even happen? modifier only?)
             sta $0400           ; put it in the corner so I can see it
-            cmp #$C9            ; I (up)
+            cmp #$CD            ; M (down, scroll map up)
             bne :+
-            inc RedrawPlay
-            dec NudgePos
-            bne keyreturn
-            lda #$07
-            sta NudgePos
-            dec CurrMap
-            inc RedrawMap
-            bne keyreturn
-:           cmp #$CD            ; M (down)
+            inc RedrawPlay      ; need to redraw playfield
+            dec NudgePos        ; first try scrolling just by decreasing the nudge
+            bpl keyreturn
+            lda #$07            ; if we ran off the top of what we drew
+            sta NudgePos        ; reset nudge
+            lda CurrMap         ; and subtract 8 from CurrMap
+            sec
+            sbc #$08
+            sta CurrMap
+            inc RedrawMap       ; need to redraw whole map
+            jmp keyreturn
+:           cmp #$C9            ; I (up, scroll map down)
             bne :+
-            inc RedrawPlay
-            inc NudgePos
+            inc RedrawPlay      ; need to redraw playfield
+            inc NudgePos        ; first try scrolling just by increaing the nudge
             lda NudgePos
             cmp #$08
             bne keyreturn
-            lda #$00
-            sta NudgePos
-            inc CurrMap
-            inc RedrawMap
-            bne keyreturn
+            lda #$00            ; if we ran off the bottom of what we drew
+            sta NudgePos        ; reset nudge
+            lda CurrMap         ; and add 8 to CurrMap
+            clc
+            adc #$08
+            sta CurrMap
+            inc RedrawMap       ; need to redraw whole map
+            jmp keyreturn
 :           cmp #$CA            ; J (left)
             bne :+
-            inc RedrawPlay
+            ; TODO - do something here
+            inc RedrawPlay      ; need to redraw playfield
 :           cmp #$CB            ; K (right)
             bne :+
-            inc RedrawPlay
+            ; TODO - do something here
+            inc RedrawPlay      ; need to redraw playfield
 :           cmp #$C5            ; E (exit)
             bne keyreturn
             inc ExitFlag        ; tell event loop we are exiting
@@ -257,22 +271,22 @@ init:       sei                 ; no interrupts while we are setting up
             ;     -------1 F000.FFFF RAM (1=ROM)
             lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
             sta R_ENVIRON
-            lda #$1A            ; ZP to $1A00 (standard for interpreters)
+            lda #$1A            ; ZP to $1A00 (standard for interpreters, should already be here)
             sta R_ZP
             jsr herofont        ; load game font into character RAM
             ldx #$27            ; pull the FontDots and FontCol info into ZP for faster access
 :           lda FontDots, x
-            lda FontCol, x
             sta ZFontDots, x
+            lda FontCol, x
             sta ZFontCol, x
             dex
             bpl :-
             jsr drawback        ; draw static background
-            jsr makefield       ; set up map
+            jsr buildmap        ; set up map
             jsr setupenv        ; arm interrupts
             lda #$00
             sta ScrRegion
-            lda #$80            ; start at line 80 of the map, bottom half
+            lda #$60            ; start at line 60 of the map
             sta CurrMap
             lda #$00            ; start at nudge 0
             sta NudgePos
@@ -288,7 +302,7 @@ init:       sei                 ; no interrupts while we are setting up
 eventloop:  lda ExitFlag
             bne alldone
             jsr drawscore
-            inc GameScore + 2   ; DEV - constantly move score up
+            inc GameScore + 2   ; DEBUG - constantly move score up
             lda RedrawPlay      ; screen moved, at least playfield needs update
             bne :+
             jsr scrupdate
@@ -529,20 +543,6 @@ drawscore:
             bpl :-
             rts
 
-mapattern:
-            ; pattern 0
-            .byte   %00100010
-            .byte   %00110100
-            ; pattern 1
-            .byte   %01100010
-            .byte   %00110110
-            ; pattern 2
-            .byte   %10100110
-            .byte   %00110100
-            ; pattern 3
-            .byte   %00101010
-            .byte   %10110101
-
 ; compute map pointer, based on A.  Map data is in bank 2, $1000-4FFF.
 ; If CurrMap is something like 00000101 (5), shift bits to translate to:
 ; MapPtrL: 01000000 (40) MapPtrH: 00010001 (11) ($1140 and $40 bytes there)
@@ -607,6 +607,7 @@ redrawmap:
             lda #$20            ; top field starts at display line $20
             sta CurScrLine      ; CurScrLine is the current actual line on the screen
             lda CurrMap
+            sta $0401           ; DEBUG
             jsr getmapptr       ; load mapptr for CurrMap
 hiresline:
             ; prepare ground for pushing to this raster line
@@ -670,13 +671,12 @@ bufmap:     lda (ZScrHole), y
             ; the two pixels it will be displaying.
             ; this information comes from FontDots, which we cached into ZFontDots (1A ZP)
             pha
-            and #$70            ; test to see if this is 0-F (separate color info)
+            and #$30            ; test to see if this is 0-F (separate color info)
             beq :+              ; branch if this is an element with an indexed color
-            pla
-            tax                 ; this is an element with an intrinsic color (in ZFontDots)
+            pla                 ; this is an element with an intrinsic color (in ZFontDots)
+            tax
             lda ZFontDots, x
-            sec
-            bcs bufmap
+            jmp bufmappix
 :           pla                 ; recall the pixel data
             pha                 ; re-stash the pixel data
             and #$C0            ; isolate the color
@@ -736,6 +736,7 @@ bufmappix:  pha                 ; push buffered map elements onto the stack (saf
             asl
             ora ZPxScratch
             and #$7F
+            lda #$6A            ; DEBUG - insert something colorful
             sta Zero, x
             ; byte 1 (page 2): -6666555 [2+3] 8421842
             pla                 ; recall color of pixel 5
@@ -849,6 +850,7 @@ redrawplay:
             clc
             adc #$42
             adc NudgePos
+            sta $0403
             jsr getmapptr
             lda #$09
             sta CurScrLine
@@ -864,10 +866,8 @@ loresline:
             ; NOTE: This needs to be updated once we can move lores view to the right.
             ldy #$27
 loreschar:  lda (ZScrHole), y   ; load map data
-            tax
-            lda PlayChars, x    ; translate to displayed character
             pha                 ; store displayed character on stack
-            and #$70            ; test to see if this is 0-F (separate color info)
+            and #$30            ; test to see if this is 0-F (separate color info)
             beq :+              ; branch if this is an element with an indexed color
             pla                 ; recall character
             pha                 ; re-push character
@@ -903,6 +903,7 @@ gotcolor:   and #$F0            ; keep only the foreground color (background = b
             dey
             bpl :-
             ; push the colors onto the stack so they are available from color page ZP
+            ; TODO-- FFS there is no lda/sta ZP,y opcode.  Has to be ,x
             lda #$1A
             sta R_ZP            ; go back to 1A00 ZP
             ldy #$27
@@ -980,7 +981,7 @@ Seed:        .byte    0
 seedRandom:
             ; grab a random number seed from the fastest part of the realtime clock.
             lda #$00
-            sta R_ZP           ; request smallest RTC byte
+            sta R_ZP        ; request smallest RTC byte
             lda IO_CLOCK    ; close enough to random for now
             sta Seed
             lda #$1A
@@ -1029,7 +1030,7 @@ MFColor:    .byte 0
 MFBoxIndex: .byte 0
 MFPlaced:   .byte 0
     
-makefield:  lda R_ZP
+buildmap:   lda R_ZP
             sta ZPSave
             lda #$1A        ; go to 1A00 ZP (should already be there)
             sta R_ZP
@@ -1043,8 +1044,8 @@ makefield:  lda R_ZP
             jsr seedRandom
             ; zero out the map background
             ldx #$40        ; clearing $40 pages
-            lda #$00
-            tay
+            ldy #$00
+            lda C_HERO      ; DEBUG - put the hero everywhere instead of space
 mfzero:     sta (ZPtrA), y
             iny
             bne mfzero
@@ -1073,6 +1074,13 @@ mfzero:     sta (ZPtrA), y
             ; locate address in map for coordinate MFX, MFY
             lda #$00
             sta ZPtrA
+            ; rotate low bits of MFY into high bits of ZPtrA(L)
+            ; then add $1000 and store in ZPtrA(H)
+            ; so: if map coordinate MFY were $21, shift it so we have
+            ; MFY: 0010 0001 -> Zptr: 0100 0000 0001 1000 (40 18 -> $1840)
+            ; which is effectively multiplying Y by $40 and adding $1000
+            ; then add MFX to get the horizontal offset
+            ; ZPtrA will then point to the upper left corner of box target
             lda MFY
             lsr
             ror ZPtrA
@@ -1088,7 +1096,7 @@ mfzero:     sta (ZPtrA), y
             ; put a pattern row in the map
             ldy #$05
             sty MFPlaced        ; do 6 rows
-mfpattrow:  ldx MFBoxIndex
+mfpattrow:  ldx MFBoxIndex      ; x points to the row of the box pattern
 :           lda BoxPatt, x
             ora MFColor
             sta (ZPtrA), y
@@ -1098,11 +1106,14 @@ mfpattrow:  ldx MFBoxIndex
             ; done if we have completed 6 rows now
             dec MFPlaced
             bmi :+
-            ; move to next row
+            ; reset horizontal index to the end of the pattern
+            ldy #$05
+            ; move to next pattern row
             lda MFBoxIndex
             clc
             adc #$06
             sta MFBoxIndex
+            ; move to the next map row
             lda ZPtrA
             clc
             adc #$40
@@ -1152,6 +1163,22 @@ InnerCol:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $C0, $F0, $F0
             .byte $D0, $E0, $90, $F0, $F0, $F0, $F0, $F0, $F0, $F0
             .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
 
+FontDemo:   .byte C_SPACE, C_WALL_R, C_WALL_RD, C_WALL_RU
+            .byte C_WALL_RUD, C_WALL_H, C_WALL_L, C_WALL_LD
+            .byte C_WALL_LU, C_WALL_LUD, C_WALL_V, C_WALL_U
+            .byte C_WALL_D, C_WALL_LRU, C_WALL_LRD, C_DISK
+            .byte C_HERO, C_HHEADA, C_HHEADB, C_HHANDUA
+            .byte C_HHANDUB, C_HHANDDA, C_HHANDDB, C_HHANDRA
+            .byte C_HHANDRB, C_HHANDLA, C_HHANDLB, C_DRIVEL
+            .byte C_DRIVER, C_DRIVEU, C_DRIVED, C_FLUXA
+            .byte C_FLUXB, C_TRUCKLA, C_TRUCKLB, C_TRUCKRA
+            .byte C_TRUCKRB, C_UNUA, C_UNUB, C_UNUC
+
+FontDemoC:  .byte $D0, $F0, $E0, $F0, $E0, $F0, $F0, $C0, $F0, $F0
+            .byte $C0, $F0, $E0, $F0, $E0, $F0, $F0, $A0, $B0, $C0
+            .byte $D0, $E0, $90, $F0, $F0, $F0, $F0, $F0, $F0, $F0
+            .byte $C0, $F0, $E0, $F0, $E0, $F0, $F0, $A0, $B0, $C0
+
 ; initialize graphics and draw static background
 drawback:   lda #$01            ; Apple III color text
             jsr setdisplay
@@ -1183,9 +1210,9 @@ drawback:   lda #$01            ; Apple III color text
             sta $750, y
             lda StatColA, y
             sta $B50, y
-            lda StatTextA, y
+            lda FontDemo, y
             sta $7D0, y
-            lda StatColA, y
+            lda FontDemoC, y
             sta $BD0, y
             dey
             bpl :-
@@ -1382,9 +1409,5 @@ sdmix:      bit D_MIX
             bcc sdlores
 sdhires:    bit D_HIRES
             rts
-
-            .include "lookups.s"
-            
-            .include "gamefont.s"
 
 CodeEnd     = *
