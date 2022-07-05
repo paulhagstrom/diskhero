@@ -152,6 +152,49 @@ FontAscii:
             .byte   $26         ; unused
             .byte   $27         ; unused
 
+; name the characters so they can be referred to
+
+C_SPACE     = $00         ; space
+C_WALL_R    = $01         ; wall right end
+C_WALL_RD   = $02         ; wall right down
+C_WALL_RU   = $03         ; wall right up
+C_WALL_RUD  = $04         ; wall right up down
+C_WALL_H    = $05         ; wall horiz
+C_WALL_L    = $06         ; wall left end
+C_WALL_LD   = $07         ; wall left down
+C_WALL_LU   = $08         ; wall left up
+C_WALL_LUD  = $09         ; wall left up down
+C_WALL_V    = $0A         ; wall vert
+C_WALL_U    = $0B         ; wall up end
+C_WALL_D    = $0C         ; wall down end
+C_WALL_LRU  = $0D         ; wall left right up
+C_WALL_LRD  = $0E         ; wall left right down
+C_DISK      = $0F         ; disk
+C_HERO      = $10         ; hero
+C_HHEADA    = $11         ; hoarder head 1
+C_HHEADB    = $12         ; hoarder head 2
+C_HHANDUA   = $13         ; hoarder hands up 1
+C_HHANDUB   = $14         ; hoarder hands up 2
+C_HHANDDA   = $15         ; hoarder hands down 1
+C_HHANDDB   = $16         ; hoarder hands down 2
+C_HHANDRA   = $17         ; hoarder hands right 1
+C_HHANDRB   = $18         ; hoarder hands right 2
+C_HHANDLA   = $19         ; hoarder hands left 1
+C_HHANDLB   = $1A         ; hoarder hands left 2
+C_DRIVEL    = $1B         ; drive left
+C_DRIVER    = $1C         ; drive right
+C_DRIVEU    = $1D         ; drive up
+C_DRIVED    = $1E         ; drive down
+C_FLUXA     = $1F         ; flux 1
+C_FLUXB     = $20         ; flux 2
+C_TRUCKLA   = $21         ; truck left A
+C_TRUCKLB   = $22         ; truck left B
+C_TRUCKRA   = $23         ; truck right A
+C_TRUCKRB   = $24         ; truck right B
+C_UNUA      = $25         ; unused
+C_UNUB      = $26         ; unused
+C_UNUC      = $27         ; unused
+
 ; font data - note it is horizontally flipped, hi bit not used
 
 FontData:
