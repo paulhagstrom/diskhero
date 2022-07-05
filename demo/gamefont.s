@@ -152,6 +152,52 @@ FontAscii:
             .byte   $26         ; unused
             .byte   $27         ; unused
 
+; in the hires map, we have two pixels to represent each
+; character.  For walls and disks, color is separate, ANDed with bits here.
+; For other characters, this holds the two colors (left pixel, right pixel).
+
+FontDots:
+            .byte   #%00000000         ; space
+            .byte   #%00001111         ; wall right end
+            .byte   #%00001111         ; wall right down
+            .byte   #%00001111         ; wall right up
+            .byte   #%00001111         ; wall right up down
+            .byte   #%11111111         ; wall horiz
+            .byte   #%11110000         ; wall left end
+            .byte   #%11110000         ; wall left down
+            .byte   #%11110000         ; wall left up
+            .byte   #%11110000         ; wall left up down
+            .byte   #%11111111         ; wall vert
+            .byte   #%11111111         ; wall up end
+            .byte   #%11111111         ; wall down end
+            .byte   #%11111111         ; wall left right up
+            .byte   #%11111111         ; wall left right down
+            .byte   #%11111111         ; disk
+            .byte   #%10001000         ; hero
+            .byte   #%10011001         ; hoarder head 1
+            .byte   #%10011001         ; hoarder head 2
+            .byte   #%10011001         ; hoarder hands up 1
+            .byte   #%10011001         ; hoarder hands up 2
+            .byte   #%10011001         ; hoarder hands down 1
+            .byte   #%10011001         ; hoarder hands down 2
+            .byte   #%10011001         ; hoarder hands right 1
+            .byte   #%10011001         ; hoarder hands right 2
+            .byte   #%10011001         ; hoarder hands left 1
+            .byte   #%10011001         ; hoarder hands left 2
+            .byte   #%10001000         ; drive left
+            .byte   #%10001000         ; drive right
+            .byte   #%10001000         ; drive up
+            .byte   #%10001000         ; drive down
+            .byte   #%10101010         ; flux 1
+            .byte   #%10101010         ; flux 2
+            .byte   #%10111011         ; truck left A
+            .byte   #%10111011         ; truck left B
+            .byte   #%10111011         ; truck right A
+            .byte   #%10111011         ; truck right B
+            .byte   #%00000000         ; unused
+            .byte   #%00000000         ; unused
+            .byte   #%00000000         ; unused
+
 ; name the characters so they can be referred to
 
 C_SPACE     = $00         ; space
