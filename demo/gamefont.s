@@ -7,7 +7,7 @@ ZAsciiHole  = $A2
 ZFontPtr    = $A4
 ZCtlTemp    = $A6
 
-FontBlock:  .byte $0    ; current block of 8 we are working on
+BlockCount: .byte $0    ; countdown of 8-character blocks to send
 CurrChar:   .byte $0    ; index to table with current ASCII value
 FDataPtr:   .byte $0    ; offset into font data of the last line of character
 CurrHole:   .byte $0    ; current screen hole index of current group
@@ -21,23 +21,23 @@ HiholesH:   .byte   $08, $08, $09, $09, $0A, $0A, $0B, $0B
 ; so first low hole needs: c0r0 c1r0 c2r0 c3r0 c0r1 c1r1 c2r1 c3r1
 ; and first high hole needs: c0 c1 c2 c3 c0 c1 c2 c3
 ; then fifth holes move on to c4-c7.
+; 8 characters are transmitted at a time, 8 bytes/lines per character, so $40 bytes per block.
+; assume we are in $1A00 ZP (allowing for extended addressing, though we 8F-disable it)
 
 herofont: 
             lda #$8F                ; stay in s-bank
             sta ZDataHole + XByte
             sta ZAsciiHole + XByte
             sta ZFontPtr + XByte
-            lda #$27
-            sta CurrChar            ; CurrChar indexes the current character code
-            lda #$80                ; $28 chars, 5 blocks of 8, last block start offset
-            sta FontBlock           ; last block of 8 is first to be processed
-writeblock: clc
-            adc #<FontData
+            lda #$04                ; sending 5 blocks of characters
+            sta BlockCount
+            lda #<FontData
             sta ZFontPtr
             lda #>FontData
-            adc #$00
-            sta ZFontPtr + 1        ; ZFontPtr points to start of current block of 8
-            lda #$1F
+            sta ZFontPtr + 1        ; point ZFontPtr to the font data, first block
+            lda #$07                ; CurrChar indexes the current character code
+            sta CurrChar            ; counts backwards within a block, so this is last in first block
+writeblock: lda #$3F
             sta FDataPtr            ; FDataPtr indexes the last byte of data in this block
             lda #$03
             sta HoleSlice           ; the bit in the screen hole we're on (of 4)
@@ -76,17 +76,24 @@ fillhole:   lda HolesL, x           ; set up destination pointers into current l
             cpx #$03                ; passed the middle so on to second character
             bne fillhole            ; continue walking up the screen holes
             dec CurrChar
-            bpl fillhole
+            bpl fillhole            ; branch always
 :           dec CurrChar
             dec HoleSlice           ; move on to next bit in the screen hole
             bpl movechar
             jsr sendchars           ; finished a block, send it to character RAM
-            lda FontBlock           ; move to next block
-            sec
-            sbc #$20
-            bmi sendchars           ; finished the last one, we are done
-            sta FontBlock
-            bpl writeblock
+            dec BlockCount
+            bmi fontdone
+            lda ZFontPtr            ; move to the next block
+            clc
+            adc #$40
+            sta ZFontPtr
+            bcc :+
+            inc ZFontPtr + 1
+:           lda CurrChar            ; move CurrChar up to point at last character in next block
+            clc
+            adc #$10
+            sta CurrChar
+            jmp writeblock
             
 sendchars:  lda #$60                ; $60 = ind int, inp pos edge, CB1 neg act edge
             bit F_XFERON            ; cribbed from the monitor ROM
@@ -94,7 +101,7 @@ sendchars:  lda #$60                ; $60 = ind int, inp pos edge, CB1 neg act e
             lda #$20                ; $20 = ind int, inp neg edge, CB1 neg act edge
             jsr waitVBL
             bit F_XFEROFF
-            rts
+fontdone:   rts
 
 waitVBL:    sta ZCtlTemp    ; save bits to be stored
             lda RE_PERCTL   ; control port for CB2
@@ -294,7 +301,6 @@ C_UNUC      = $27         ; unused
 FontData:
 
 ; Walls
-
             .byte   %00000000   ; space
             .byte   %00000000
             .byte   %00000000
@@ -431,7 +437,6 @@ FontData:
             .byte   %00011100
 
 ; characters
-
             .byte   %01111111   ; disk
             .byte   %01110110
             .byte   %01100011
