@@ -3,8 +3,8 @@
 ; use HBL and VBL interrupts to split graphics modes
 ; scroll through a map using the smooth scroll parameter
 
-			.segment "CODE"
-			.setcpu "6502"
+            .segment "CODE"
+            .setcpu "6502"
 
 IO_KEY      = $C000     ; keyboard
 IO_KEYFLAG  = $C008     ; keyboard flag
@@ -46,7 +46,7 @@ RD_PERCTL   = $FFDC     ; ffdx peripheral control register
 RE_PERCTL   = $FFEC     ; ffex peripheral control register
 RD_INTFLAG  = $FFDD     ; ffdx interrupt flag register
 RE_INTFLAG  = $FFED     ; ffex interrupt flag register
-	; bit 0=kbd, 1=CA1, 2=shift, 3=CB2 (vblx8), 4=CB1 (vblx1), 5=timer 2, 6=timer 1, 7=IRQ
+    ; bit 0=kbd, 1=CA1, 2=shift, 3=CB2 (vblx8), 4=CB1 (vblx1), 5=timer 2, 6=timer 1, 7=IRQ
 RD_INTENAB  = $FFDE     ; ffdx interrupt enable register
 RE_INTENAB  = $FFEE     ; ffex interrupt enable register
 ; In III's Company Programming Q&A it was said
@@ -59,12 +59,12 @@ R_ZP        = $FFD0     ; zero page register
 IRQVECT     = $FFCD     ; Monitor IRQ points here
 
 ;SOS Calls
-;REQUEST_SEG    = $40
-;RELEASE_SEG    = $45
 TERMINATE   = $65
+;REQUEST_SEG = $40
+;RELEASE_SEG = $45
 ;OPEN        = $C8
 ;READ        = $CA
-;CLOSE        = $CC
+;CLOSE       = $CC
 
 ; indirect addressing
 XByte       = $1601     ; Interp extended address offset
@@ -73,8 +73,8 @@ ZPtrB       = $22
 ZPtrC       = $24
 ZPtrD       = $26
 
-			.org     $A000 - 14
-			
+            .org     $A000 - 14
+            
 ; sos interp header
             .byte    "SOS NTRP"
             .word    0000
@@ -90,32 +90,41 @@ BankSave:   .byte   0
 ExitFlag:   .byte   0               ; keyboard int makes this nonzero to trigger exit
 RedrawMap:  .byte   0               ; keyboard int makes this nonzero to trigger redraw
 RedrawPlay: .byte   0               ; keyboard int makes this nonzero to trigger redraw
-CurrTop: 	.byte	0
-CurrBottom: .byte	0
-CurrPlay: 	.byte	0
+CurrTop:    .byte   0
+CurrBottom: .byte   0
+CurrPlay:   .byte   0
 
-GameLevel:	.byte	0
-GameScore:	.byte	0, 0, 0
-ScrRegion:	.byte	0
+GameLevel:  .byte   0
+GameScore:  .byte   0, 0, 0
+ScrRegion:  .byte   0
 FieldH:     .byte   $04, $05, $05, $06, $06, $07
 FieldL:     .byte   $A8, $25, $A8, $28, $A8, $28
 FieldHC:    .byte   $08, $09, $09, $0A, $0A, $0B
 MapColors:  .byte   $00, $CC, $DD, $EE, $44
 PlayColors: .byte   $00, $1C, $2D, $3E, $C4
 PlayChars:  .byte   $41, $C2, $43, $21, $C7
-; screen regions.
-; mode is display mode, length is number of HBLs,
+; Screen layout:
+; mode 1 (text)     lines 00-0F (10) 00-01  score
+; mode 6 (bw hires) lines 10-1F (10)        b/w map display
+; mode 7 (a3 hires) lines 20-47 (28)        hires map upper field  map: 00-27 
+; mode 1 (text)     lines 48-7F (38) 09-0F  text play field        map: 28-5F show: 42-46 (5)
+; mode 7 (a3 hires) lines 80-A7 (28)        hires map lower field  map: 60-87
+; mode 1 (text)     lines A8-BF (18) 15-17  text status display
+; Define the screen region; mode is a display mode, length is number of HBLs.
 ; nudge is 0 if no nudge, else pos or neg depending on which nudge count to use
-ScrRegLen:	.byte	$0E, $0E, $27, $2F, $27, $1F, $00
+ScrRegLen:  .byte   $0E, $0E, $27, $37, $27, $17, $00
 ScrRegMode: .byte   $01, $06, $07, $01, $07, $01, $00
 ScrNudge:   .byte   $00, $80, $01, $00, $01, $00, $00
-NudgePos:	.byte	0
-NudgeNeg:	.byte	0
+NudgePos:   .byte   0
+NudgeNeg:   .byte   0
 
 ; I played with ScRegLen by trial and error a little.
 ; Not sure why I needed to go two down for region zero.
 ; Probably because the VBL code (or HBL code) takes long enough that we miss
 ; some HBLs here and there.
+
+ZFontDots   = $80   ; ZP cache for FontDots to speed up drawing
+ZBufCount   = $81   ; count for buffering map data
 
 ; these are in screen holes because we're using screen memory for ZP
 ZScrHole    = $78
@@ -126,7 +135,7 @@ ZCurrMapX   = $7E
 ZMapBuffer  = $F8
 ZPxScratch  = $FF
 Zero        = $00
-CurrLine:   .byte   0
+CurScrLine: .byte   0
 CurMapLine: .byte   0
 MapPtrL:    .byte   0
 MapPtrH:    .byte   0
@@ -253,14 +262,19 @@ init:       sei                 ; no interrupts while we are setting up
             lda #$1A            ; ZP to $1A00 (standard for interpreters)
             sta R_ZP
             jsr herofont        ; load game font into character RAM
+            ldx #$27            ; pull the FontDots info into ZP for faster access
+:           lda FontDots, x
+            sta ZFontDots, x
+            dex
+            bpl :-
             jsr drawback        ; draw static background
             jsr makefield       ; set up map
             jsr setupenv        ; arm interrupts
             lda #$00
             sta ScrRegion
-            lda #$80        	; start at line 80 of the map, bottom half
+            lda #$80            ; start at line 80 of the map, bottom half
             sta CurrMap
-            lda #$00        	; start at nudge 0
+            lda #$00            ; start at nudge 0
             sta NudgePos
             sta NudgeNeg
             lda #$00
@@ -281,44 +295,44 @@ eventloop:  lda ExitFlag
 :           jmp eventloop
 
 alldone:    lda #$7F            ;disable all interrupts
-			sta RD_INTENAB
-			sta RD_INTFLAG
-			lda #$7F
-			sta RE_INTENAB
-			sta RE_INTFLAG
+            sta RD_INTENAB
+            sta RD_INTFLAG
+            lda #$7F
+            sta RE_INTENAB
+            sta RE_INTFLAG
 
-			brk                  ; SOS TERMINATE
-			.byte   TERMINATE
-			.word   *-2
+            brk                  ; SOS TERMINATE
+            .byte   TERMINATE
+            .word   *-2
 
 ; arm interrupts
 
 setupenv:   ; save IRQ vector and then install ours
-			lda IRQVECT
-			sta IRQSave
-			lda IRQVECT + 1
-			sta IRQSave + 1
-			lda IRQVECT + 2
-			sta IRQSave + 2
-			lda #$4C             ; jmp
-			sta IRQVECT
-			lda #<inthandle
-			sta IRQVECT + 1
-			lda #>inthandle
-			sta IRQVECT + 2
-			
-			; bank register - $FFEF - E-VIA input register A
-			; we will just leave this as-is, which will be the highest
-			; available bank given the RAM in the machine.
-			
-			; ZP register - $FFD0 - D-VIA input/output register B
-			; Convention: user $1A, interrupts $00, SOS $18.
-			; extended addressing only works from $18-$1F(!)
-			; We will still try to point it at graphics pages occasionally.
-			; for now, leave it where it is, presumed to be $1A.
-			
-			; set environment - $FFDF - D-VIA input register A
-			; because we will use ZP to draw, we need stack to be true.
+            lda IRQVECT
+            sta IRQSave
+            lda IRQVECT + 1
+            sta IRQSave + 1
+            lda IRQVECT + 2
+            sta IRQSave + 2
+            lda #$4C             ; jmp
+            sta IRQVECT
+            lda #<inthandle
+            sta IRQVECT + 1
+            lda #>inthandle
+            sta IRQVECT + 2
+            
+            ; bank register - $FFEF - E-VIA input register A
+            ; we will just leave this as-is, which will be the highest
+            ; available bank given the RAM in the machine.
+            
+            ; ZP register - $FFD0 - D-VIA input/output register B
+            ; Convention: user $1A, interrupts $00, SOS $18.
+            ; extended addressing only works from $18-$1F(!)
+            ; We will still try to point it at graphics pages occasionally.
+            ; for now, leave it where it is, presumed to be $1A.
+            
+            ; set environment - $FFDF - D-VIA input register A
+            ; because we will use ZP to draw, we need stack to be true.
             ;     0------- 2MHz clock (1=1MHz)
             ;     -1------ C000.CFFF I/O (0=RAM)
             ;     --1----- video enabled (0=disabled)
@@ -327,154 +341,154 @@ setupenv:   ; save IRQ vector and then install ours
             ;     -----1-- True stack ($100) (0=alt stack)
             ;     ------1- ROM#1 (0=ROM#2)
             ;     -------1 F000.FFFF RAM (1=ROM)
-			lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
-			sta R_ENVIRON
-			
-			; D-VIA
-			; register A: environmental register (out)
-			; register B: zero page register - and RTC (out)
-			; CA1 - global slot IRQ
-			; CA2 - sw1, which I think is the open apple key
-			; CB1 - serial out, CB2 - serial in.  Usually printer.  Maybe joystick.
-			
-			; E-VIA
-			; register A:
-			; [x-------] Any IRQ (in)
-			; [-x------] Closed apple key (in)
-			; [--x-----] Slot 2 IRQ (in)
-			; [---x----] Slot 1 IRQ (in)
-			; [-----xxx] Selected bank (out)
-			; register B:
-			; [--xxxxxx] Sound generator (out)
-			; [-x------] I/O count
-			; [x-------] nmi in a slot
-			; CA1 - RTC interrupt (neg edge active in)
-			; CA2 - keyboard interrupt (ind neg edge active) - sets bit 0 of IFR
-			; CB1, CB2, shift - VBL
-			
-			; disable & clear all D-VIA interrupts (MSB=clear, other bits=interrupts)
-			; D-VIA Int - flag $FFDD, enable $FFDE
-			;     0------- disable
-			;     -1------ timer 1
-			;     --1----- timer 2
-			;     ---1---- CB1
-			;     ----1--- CB2
-			;     -----1-- shift register
-			;     ------1- CA1
-			;     -------1 CA2
-			lda #%01111111
-			sta RD_INTENAB
-			sta RD_INTFLAG
-			
-			; D-VIA Aux control - $FFDB
-			;     0------- T1 timer, PB7 disabled
-			;     1x------ T1 timer, PB7 one-shot output (10) or square wave output (11)
-			;     -0------ T1 timer, timed interrupt each time T1 is loaded (one-shot)
-			;     -1------ T1 timer, continueous interrupts
-			;     --0----- T2 timer, timed interrupt (1=count down with pulses on PB6)            
-			;     ---000-- Shift Reg: disabled
-			;     ---100-- Shift Reg: shift out free running at T2 rate
-			;     ---1---- Shift Reg: shift out
-			;     ---0---- Shift Reg: shift in
-			;     ----01-- Shift Reg: under control of T2
-			;     ----10-- Shift Reg: under control of O2
-			;     ----11-- Shift Reg: under control of ext clock
-			;     ------1- PB: Enable latching (0=disable)
-			;     -------1 PA: Enable latching (0=disable)
-			; D-VIA, no timers enabled            
-			lda #%00000000
-			sta RD_AUXCTL
-			
-			; D-VIA - CA1 is any slot IRQ, CA2 is some switch?; CB1, CB2 are SCO/SER, probably joystick?
-			; CB2 - [hi nibble: 011-] independent interrupt input pos edge
-			; CB1 - [hi nibble: ---1] pos active edge
-			; CA2 - [lo nibble: 011-] independent interrupt input pos edge
-			; CA1 - [lo nibble: ---0] neg active edge
-			; high nibble here is largely irrelevant, ineterrupts CB1, CB@ not used
-			; maybe CB1, CB2 relate to joystick.
-			lda #%01110110
-			sta RD_PERCTL
-			
-			; disable & clear certain E-VIA interrupts (MSB=clear, other bits=interrupts)
-			; not sure why only some are disabled and cleared, this is based on Atomic Defense
-			; E-VIA Int -  flag $FFED, enable $FFEE
-			;     0------- disable
-			;     -0------ timer 1
-			;     --0----- timer 2
-			;     ---0---- CB1 (VBL)
-			;     ----1--- CB2 (VBL)
-			;     -----1-- shift register (VBL)
-			;     ------1- CA1 (RTC)
-			;     -------0 CA2 (keyboard)
-			lda #%00001110        ; disable & clear CB2, shift register, CA1
-			sta RE_INTENAB
-			sta RE_INTFLAG
-			
-			; E-VIA Aux control - $FFEB
-			; [0-------] T1 timer, PB7 disabled
-			; [1x------] T1 timer, PB7 one-shot output (10) or square wave output (11)
-			; [-0------] T1 timer, timed interrupt each time T1 is loaded (one-shot)
-			; [-1------] T1 timer, continueous interrupts
-			; [--0-----] T2 timer, timed interrupt (1=count down with pulses on PB6)            
-			; [---000--] Shift Reg: disabled
-			; [---100--] Shift Reg: shift out free running at T2 rate
-			; [---1----] Shift Reg: shift out
-			; [---0----] Shift Reg: shift in
-			; [----01--] Shift Reg: under control of T2
-			; [----10--] Shift Reg: under control of O2
-			; [----11--] Shift Reg: under control of ext clock
-			; [------1-] PB: Enable latching (0=disable)
-			; [-------1] PA: Enable latching (0=disable)
-			; 
-			; T1 has two latches and a 16 bit counter.  Down to zero -> interrupt
-			; one shot keeps counting, free-run resets and counts again
-			; T2 can count PB6 negatives, or run in one shot mode.
-			; Count: load number to count into T2, dec on pulses, interrupt at zero, counting continues
-			; Is PB6 by any chance HBL? Seems likely.
-			; E-VIA: enable timer 2, one-shot.  HBL.
-			lda #%00100000
-			sta RE_AUXCTL
-			
-			; E-VIA - CA2 is keyboard, CA1 is clock; CB1, CB2 are VBL
-			; CB2 011- hi nibble - independent interrupt input pos edge (VBL)
-			; CB1 ---0 hi nibble - neg active edge (VBL)
-			; CA2     001- lo nibble independent interrupt input neg edge (keyboard)
-			; CA1     ---0 lo nibble neg active edge (clock)
-			lda #%01100010
-			sta RE_PERCTL
-			
-			; E-VIA Int Enable
-			;     1------- enable
-			;     -0------ timer 1
-			;     --1----- timer 2 (I/O count, HBL)
-			;     ---1---- CB1 (VBL)
-			;     ----0--- CB2 (VBL)
-			;     -----0-- shift register (VBL)
-			;     ------0- CA1 (clock)
-			;     -------1 CA2 (keyboard)
-			; E-VIA - enable timer2 (HBL), CB1 (VBL), CA2 (keyboard)
-			lda #%10110001
-			sta RE_INTENAB
-			
-			; E-VIA Int Flag
-			;     0------- no function I believe?
-			;     -0------ timer 1 
-			;     --1----- timer 2 (I/O count, HBL)
-			;     ---1---- CB1 (VBL)
-			;     ----0--- CB2 (VBL)
-			;     -----0-- shift register (VBL)
-			;     ------0- CA1 (clock)
-			;     -------1 CA2 (keyboard)
-			; clear timer2, CB1, CA2
-			lda #%00110001
-			sta RE_INTFLAG
-			
-			; set the HBL (E-VIA timer 2) going, kind of guarantees a fast interrupt
-			lda #24
-			sta RE_T2CL     ;get set
-			lda #$00
-			sta RE_T2CH     ;go
-			rts
+            lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
+            sta R_ENVIRON
+            
+            ; D-VIA
+            ; register A: environmental register (out)
+            ; register B: zero page register - and RTC (out)
+            ; CA1 - global slot IRQ
+            ; CA2 - sw1, which I think is the open apple key
+            ; CB1 - serial out, CB2 - serial in.  Usually printer.  Maybe joystick.
+            
+            ; E-VIA
+            ; register A:
+            ; [x-------] Any IRQ (in)
+            ; [-x------] Closed apple key (in)
+            ; [--x-----] Slot 2 IRQ (in)
+            ; [---x----] Slot 1 IRQ (in)
+            ; [-----xxx] Selected bank (out)
+            ; register B:
+            ; [--xxxxxx] Sound generator (out)
+            ; [-x------] I/O count
+            ; [x-------] nmi in a slot
+            ; CA1 - RTC interrupt (neg edge active in)
+            ; CA2 - keyboard interrupt (ind neg edge active) - sets bit 0 of IFR
+            ; CB1, CB2, shift - VBL
+            
+            ; disable & clear all D-VIA interrupts (MSB=clear, other bits=interrupts)
+            ; D-VIA Int - flag $FFDD, enable $FFDE
+            ;     0------- disable
+            ;     -1------ timer 1
+            ;     --1----- timer 2
+            ;     ---1---- CB1
+            ;     ----1--- CB2
+            ;     -----1-- shift register
+            ;     ------1- CA1
+            ;     -------1 CA2
+            lda #%01111111
+            sta RD_INTENAB
+            sta RD_INTFLAG
+            
+            ; D-VIA Aux control - $FFDB
+            ;     0------- T1 timer, PB7 disabled
+            ;     1x------ T1 timer, PB7 one-shot output (10) or square wave output (11)
+            ;     -0------ T1 timer, timed interrupt each time T1 is loaded (one-shot)
+            ;     -1------ T1 timer, continueous interrupts
+            ;     --0----- T2 timer, timed interrupt (1=count down with pulses on PB6)            
+            ;     ---000-- Shift Reg: disabled
+            ;     ---100-- Shift Reg: shift out free running at T2 rate
+            ;     ---1---- Shift Reg: shift out
+            ;     ---0---- Shift Reg: shift in
+            ;     ----01-- Shift Reg: under control of T2
+            ;     ----10-- Shift Reg: under control of O2
+            ;     ----11-- Shift Reg: under control of ext clock
+            ;     ------1- PB: Enable latching (0=disable)
+            ;     -------1 PA: Enable latching (0=disable)
+            ; D-VIA, no timers enabled            
+            lda #%00000000
+            sta RD_AUXCTL
+            
+            ; D-VIA - CA1 is any slot IRQ, CA2 is some switch?; CB1, CB2 are SCO/SER, probably joystick?
+            ; CB2 - [hi nibble: 011-] independent interrupt input pos edge
+            ; CB1 - [hi nibble: ---1] pos active edge
+            ; CA2 - [lo nibble: 011-] independent interrupt input pos edge
+            ; CA1 - [lo nibble: ---0] neg active edge
+            ; high nibble here is largely irrelevant, ineterrupts CB1, CB@ not used
+            ; maybe CB1, CB2 relate to joystick.
+            lda #%01110110
+            sta RD_PERCTL
+            
+            ; disable & clear certain E-VIA interrupts (MSB=clear, other bits=interrupts)
+            ; not sure why only some are disabled and cleared, this is based on Atomic Defense
+            ; E-VIA Int -  flag $FFED, enable $FFEE
+            ;     0------- disable
+            ;     -0------ timer 1
+            ;     --0----- timer 2
+            ;     ---0---- CB1 (VBL)
+            ;     ----1--- CB2 (VBL)
+            ;     -----1-- shift register (VBL)
+            ;     ------1- CA1 (RTC)
+            ;     -------0 CA2 (keyboard)
+            lda #%00001110        ; disable & clear CB2, shift register, CA1
+            sta RE_INTENAB
+            sta RE_INTFLAG
+            
+            ; E-VIA Aux control - $FFEB
+            ; [0-------] T1 timer, PB7 disabled
+            ; [1x------] T1 timer, PB7 one-shot output (10) or square wave output (11)
+            ; [-0------] T1 timer, timed interrupt each time T1 is loaded (one-shot)
+            ; [-1------] T1 timer, continueous interrupts
+            ; [--0-----] T2 timer, timed interrupt (1=count down with pulses on PB6)            
+            ; [---000--] Shift Reg: disabled
+            ; [---100--] Shift Reg: shift out free running at T2 rate
+            ; [---1----] Shift Reg: shift out
+            ; [---0----] Shift Reg: shift in
+            ; [----01--] Shift Reg: under control of T2
+            ; [----10--] Shift Reg: under control of O2
+            ; [----11--] Shift Reg: under control of ext clock
+            ; [------1-] PB: Enable latching (0=disable)
+            ; [-------1] PA: Enable latching (0=disable)
+            ; 
+            ; T1 has two latches and a 16 bit counter.  Down to zero -> interrupt
+            ; one shot keeps counting, free-run resets and counts again
+            ; T2 can count PB6 negatives, or run in one shot mode.
+            ; Count: load number to count into T2, dec on pulses, interrupt at zero, counting continues
+            ; Is PB6 by any chance HBL? Seems likely.
+            ; E-VIA: enable timer 2, one-shot.  HBL.
+            lda #%00100000
+            sta RE_AUXCTL
+            
+            ; E-VIA - CA2 is keyboard, CA1 is clock; CB1, CB2 are VBL
+            ; CB2 011- hi nibble - independent interrupt input pos edge (VBL)
+            ; CB1 ---0 hi nibble - neg active edge (VBL)
+            ; CA2     001- lo nibble independent interrupt input neg edge (keyboard)
+            ; CA1     ---0 lo nibble neg active edge (clock)
+            lda #%01100010
+            sta RE_PERCTL
+            
+            ; E-VIA Int Enable
+            ;     1------- enable
+            ;     -0------ timer 1
+            ;     --1----- timer 2 (I/O count, HBL)
+            ;     ---1---- CB1 (VBL)
+            ;     ----0--- CB2 (VBL)
+            ;     -----0-- shift register (VBL)
+            ;     ------0- CA1 (clock)
+            ;     -------1 CA2 (keyboard)
+            ; E-VIA - enable timer2 (HBL), CB1 (VBL), CA2 (keyboard)
+            lda #%10110001
+            sta RE_INTENAB
+            
+            ; E-VIA Int Flag
+            ;     0------- no function I believe?
+            ;     -0------ timer 1 
+            ;     --1----- timer 2 (I/O count, HBL)
+            ;     ---1---- CB1 (VBL)
+            ;     ----0--- CB2 (VBL)
+            ;     -----0-- shift register (VBL)
+            ;     ------0- CA1 (clock)
+            ;     -------1 CA2 (keyboard)
+            ; clear timer2, CB1, CA2
+            lda #%00110001
+            sta RE_INTFLAG
+            
+            ; set the HBL (E-VIA timer 2) going, kind of guarantees a fast interrupt
+            lda #24
+            sta RE_T2CL     ;get set
+            lda #$00
+            sta RE_T2CH     ;go
+            rts
 
 ; draw the level and score
 ; this is fast enough we can just do it whenever
@@ -545,6 +559,8 @@ getmapptr:  pha
             sta MapPtrH         ; floor(line/4) + $1000.
             rts
 
+; screen layout:
+; 
 ; the top hires portion of the screen occupies "lines $20 to $48."
 ; on the screen, due to nudging, we draw from lines $20 to $4F.
 ; the map repsents 2x2 patterns, so we draw map lines from N to N+$20
@@ -562,6 +578,18 @@ getmapptr:  pha
 ; But, then it also doesn't make the nice point. So maybe I just keep people from getting too close
 ; to walls.
 
+; characters 01-0F (walls and disk) have color information
+; MapColors provides a mapping between 2-bit color and displayed color
+; in the hires map, we will use that color for those elements
+
+; copied from the top just for ease of locating it
+; Screen layout:
+; mode 1 (text)     lines 00-0F (10) 00-01  score
+; mode 6 (bw hires) lines 10-1F (10)        b/w map display
+; mode 7 (a3 hires) lines 20-47 (28)        hires map upper field  map: 00-27 
+; mode 1 (text)     lines 48-7F (38) 09-0F  text play field        map: 28-5F show: 42-46 (5)
+; mode 7 (a3 hires) lines 80-A7 (28)        hires map lower field  map: 60-87
+; mode 1 (text)     lines A8-BF (18) 15-17  text status display
 
 scrupdate:
             ; update parts of the screen that need updating.
@@ -593,29 +621,18 @@ scrupdate:
 
             lda RedrawMap
             bne redrawmap
-            ; we only need to redraw the play field
-            ; so pop the map pointer down to there.  Should be at line 2C + NudgePos.
-            ; multiplied by $40, that can be added to MapPtr.
-            lda #$2C
-            clc
-            adc NudgePos
+            ; we only need to redraw the play field, so start the map pointer at $42
+            lda #$42
             jsr getmapptr
-            jmp redrawplay
-            
-            ; the map pointer is to what is displayed at the TOP of the entire display
-            ; the whole screen is 80 (28 30 28) long
-            ; first mode 7 stuff is from 0 to 28.  Drawn from physical line $20.
-            ; the mode 1 stuff is 28 lines down.  Drawn from physical line $09,
-            ; and 6 lines long (magnified by 8 vertically)
-            ; so its map data starts at 28+18-3 = 3D
-            ; and goes to 42.
-            ; then the next mode 7 stuff is from 58 to 80.  Drawn from line $78.
+            jmp redrawplay            
 redrawmap:
-            lda CurrMap
-            jsr getmapptr       ; load mapptr for CurrMap.
             lda #$20            ; top field starts at display line $20
-            sta CurrLine        ; CurrLine is the current actual line on the screen
-hiresline:  ldx CurrLine
+            sta CurScrLine      ; CurScrLine is the current actual line on the screen
+            lda CurrMap
+            jsr getmapptr       ; load mapptr for CurrMap
+hiresline:
+            ; prepare ground for pushing to this raster line
+            ldx CurScrLine
             lda YHiresHA, x     ; get 2000-based address of current line on screen
             ; engineer it so that ZOtherZP in hgr pages always points to the other ZP to flip quickly.
             sta ZOtherZP        ; store HGR1 page in 1A00 ZP.
@@ -642,16 +659,13 @@ hiresline:  ldx CurrLine
             sta ZScrHole + 1
             lda #$82
             sta ZScrHole + XByte
-            ; Zero, ZLineStart is now the left side of the draw line in graphics memory
-            ; strategy: follow the map data line down the map. 
-            ; draw top mode 7 part, middle mode 1 part, bottom mode 7 part.
             ; we have 64 map data bytes, will draw over 128 pixels.
             ; which really means drawing 63 bytes over 126 pixels.
-            ; doubling, so using 4 bytes to represent 14 pixels and 7 map data bytes.
+            ; using 4 bytes to represent 14 pixels and 7 map data bytes.
             ; mapbytes: 0  7  14  21  28  35  42  49  56  (63) (ZCurrMapX)
             ; pixbytes: 0  4   8  12  16  20  24  28  32  (36) (ZCurrDrawX)
             ; color lookup has color in both nibble to minimize shifting.
-            ; diagram of layout borrowed frmo Rob Justice:
+            ; diagram of pixel/video memory layout borrowed frmo Rob Justice:
             ; 140x192 16 color mode pixel layout
             ; 
             ; |    2000     |    4000     |    2001     |    4001     |
@@ -670,23 +684,44 @@ hiresline:  ldx CurrLine
             ; buffer the seven map elements we will represent in the stack.
             ; read them from right to left, then we draw them from left to right
 toplineseg:
+            lda #$06            ; we will buffer seven map elements
+            sta ZBufCount
             ldy ZCurrMapX
-            ldx #$06
-:           lda (ZScrHole), y
-            pha                 ; push buffered map elements onto the stack (safe from ZP switch)
+bufmap:     lda (ZScrHole), y
+            ; now that we have the byte from the map, we can tranlate this into
+            ; the two pixels it will be displaying.
+            ; this information comes from FontDots, which we cached into ZFontDots (1A ZP)
+            bit #$70            ; test to see if this is 0-F (separate color info)
+            beq :+              ; branch if this is an element with an indexed color
+            tax                 ; this is an element with an intrinsic color (in ZFontDots)
+            lda ZFontDots, x
+            sec
+            bcs bufmap
+:           pha                 ; stash the pixel data
+            and #$C0            ; isolate the color
+            clc
+            rol
+            rol
+            rol                 ; convert bits 6/7 to bits 0/1 (color 0-3)
+            tax
+            lda MapColors, x    ; load the indexed color
+            sta ZPxScratch
+            pla                 ; get the pixel data back
+            and ZPxScratch      ; apply the color
+bufmappix:  pha                 ; push buffered map elements onto the stack (safe from ZP switch)
             dey
-            dex
-            bpl :-
+            dec ZBufCount
+            bpl bufmap
             sty ZCurrMapX       ; save new pointer for end of next (to the left) block after this
+            ; the pixels have now been translated, we can send them to the screen
+            ; the 7 pixels on the stack each use 8 bits, but we need to smear them across the
+            ; 8 bytes of graphics memory using 7 bits at a time.  I know, right?
             ldx ZCurrDrawX      ; set x to the horizontal offset on screen
             lda ZOtherZP        ; go to HGR1 ZP for drawing
             sta R_ZP
-            ; MapColors strategically have both upper and lower nibbles containing color
             ; byte 0 (page 1): -1110000 [0+0] 4218421
-            pla                 ; first map element
-            tay
-            lda MapColors, y    ; color of pixels 0 and 1
-            pha                 ; stash for later
+            pla                 ; pixels 0-1
+            pha                 ; remember for later
             and #$7F
             sta Zero, x
             ; byte 0 (page 2): -3322221 [0+1+1] 2184218
@@ -696,10 +731,8 @@ toplineseg:
             bne :++
 :           lda #$00
 :           sta ZPxScratch      ; stash bit of pixel 1
-            pla                 ; second map element
-            tay
-            lda MapColors, y    ; color of pixels 2 and 3
-            pha                 ; stash for later
+            pla                 ; pixels 2-3
+            pha                 ; remember for later
             asl
             and #%011111110
             ora ZPxScratch
@@ -714,26 +747,22 @@ toplineseg:
             pla                 ; recall color of pixel 3
             lsr
             lsr
-            and #$03            ; isolate the color's higher two bits
+            and #$03            ; isolate the pixel 3 color's higher two bits
             sta ZPxScratch      ; and stash them
-            pla                 ; third map element
-            tay
-            lda MapColors, y    ; color of pixels 4 and 5
-            pha                 ; save for later
+            pla                 ; pixels 4-5
+            pha                 ; remember for later
             asl
             asl
             ora ZPxScratch
             and #$7F
             sta Zero, x
             ; byte 1 (page 2): -6666555 [2+3] 8421842
-            pla                 ; recall color of pixels 4 and 5
+            pla                 ; recall color of pixel 5
             lsr
             and #$07            ; chop off lowest bit
             sta ZPxScratch
-            pla                 ; fourth map element
-            tay
-            lda MapColors, y    ; color of pixels 6 and 7
-            pha                 ; stash for later
+            pla                 ; pixels 6-7
+            pha                 ; remember for later
             lsr
             and #%01111000
             ora ZPxScratch
@@ -745,13 +774,11 @@ toplineseg:
             sty R_ZP            ; go to page 1 ZP
             inx
             ; byte 2 (page 1): -8887777 [3+4] 4218421
-            pla                 ; recall color of pixels 6 and 7
+            pla                 ; recall color of pixel 7
             and #$0F
             sta ZPxScratch
-            pla                 ; fifth map element
-            tay
-            lda MapColors, y    ; color of pixels 8 and 9
-            pha                 ; stash for later
+            pla                 ; pixels 8-9
+            pha                 ; remember for later
             and #%01110000
             ora ZPxScratch
             sta Zero, x
@@ -761,10 +788,8 @@ toplineseg:
             lsr
             lsr
             sta ZPxScratch
-            pla                 ; sixth map element
-            tay
-            lda MapColors, y    ; color of pixels A and B
-            pha                 ; stash for later
+            pla                 ; pixels A-B
+            pha                 ; remember for later
             asl
             and #%01100000
             ora ZPxScratch
@@ -776,15 +801,13 @@ toplineseg:
             sty R_ZP            ; go to page 1 ZP
             inx
             ; byte 3 (page 1): -CBBBBAA [5+5+6] 1842184
-            pla                 ; recall color of pixels A and B
+            pla                 ; recall color of pixel A
             lsr
             lsr
             and #%00111111
             sta ZPxScratch
-            pla                 ; seventh map element
-            tay
-            lda MapColors, y    ; colors of pixels C and D
-            pha                 ; stash for later
+            pla                 ; pixels C-D
+            pha                 ; remember for later
             asl
             asl
             and #%01000000
@@ -803,7 +826,7 @@ toplineseg:
 
             ; the 14 pixels are now drawn
             ; continue back through the line
-            ; the map pointer was already decremented when we buffered it.
+            ; the map pointer was left pointing in the right place after we buffered it.
             ; move the pointer for the (left edge of) drawn pixels back by 4 bytes.
             
             lda ZCurrDrawX
@@ -820,31 +843,32 @@ toplineseg:
             sta MapPtrL
             bcc :+
             inc MapPtrH
-            ; advance the graphics line
-:           inc CurrLine
-            lda CurrLine
-            cmp #$A0            ; last line of bottom field complete? ($78-$A0)
-            beq hiresdone       ; if so, move to the lower status section
-            cmp #$48            ; last line of top field complete? ($20-$48)
-            beq startmid        ; if so, move on to the middle part
+            ; advance the graphics raster line
+:           inc CurScrLine
+            lda CurScrLine
+            cmp #$A8            ; last line of bottom field complete? ($80-$A7)
+            beq hiresdone       ; if so, move to the next screen region
+            cmp #$48            ; last line of top field complete? ($20-$47)
+            beq startmid        ; if so, move on to the middle playfield region
             jmp hiresline       ; otherwise, do the next line
 hiresdone:            
             jmp lowstats
 startmid:
-            ; top hires field complete.
-            ; middle lores field starts at $09
-            ; pointer should be pointing at 28, skip to 3D (+$15 lines = +540) and draw to $42.
-            ; $100 is 4 lines ahead, $400 is $10 lines ahead, $500 is $14, $540 is $15.
+            ; the middle lores field starts at map offset $42 and draws to offset $46
+            ; after drawing top hires, map pointer will be pointing at $28.
+            ; so advance it by $1A map lines (x $40 = $0680 bytes)
+            ; $100 is 4 lines ahead, $400 is $10 lines ahead, $500 is $14, $600 is $18, $680 is $1A.
+            ; TODO: Account for nudging of the hires field, needs to offsel lores field.
             lda MapPtrL
             clc
-            adc #$40
+            adc #$80
             sta MapPtrL
             lda MapPtrH
-            adc #$05
+            adc #$06
             sta MapPtrH
 redrawplay:
             lda #$09
-            sta CurrLine
+            sta CurScrLine
 loresline:
             lda MapPtrL
             sta ZScrHole
@@ -865,7 +889,7 @@ loresline:
             dey
             bpl :-
             ; send to screen
-            ldx CurrLine
+            ldx CurScrLine
             lda YLoresL, x
             sta ZLineStart
             lda YLoresHA, x     ; $400 base (character space)
@@ -888,7 +912,7 @@ loresline:
             dey
             bpl :-
             ; draw the colors
-            ldx CurrLine
+            ldx CurScrLine
             lda YLoresHB, x     ; $800 base (color space)
             ldx ZLineStart
             sta R_ZP            ; go to color space ZP
@@ -909,8 +933,8 @@ loresline:
             bcc :+
             inc MapPtrH
             ; advance screen line
-:           inc CurrLine
-            lda CurrLine
+:           inc CurScrLine
+            lda CurScrLine
             cmp #$0F
             beq :+
             jmp loresline       ; more lines to draw, go draw them
@@ -933,7 +957,7 @@ loresline:
 ;            jmp updatedone
             ; switch to the lower hires field and draw it from line $78
             lda #$78
-            sta CurrLine
+            sta CurScrLine
             jmp hiresline
             
 lowstats:
@@ -957,13 +981,13 @@ updatedone:
             
             rts
             
-Seed:		.byte	0
+Seed:        .byte    0
 
 seedRandom:
             ; grab a random number seed from the fastest part of the realtime clock.
             lda #$00
-            sta R_ZP       	; request smallest RTC byte
-            lda IO_CLOCK	; close enough to random for now
+            sta R_ZP           ; request smallest RTC byte
+            lda IO_CLOCK    ; close enough to random for now
             sta Seed
             lda #$1A
             sta R_ZP
@@ -971,18 +995,49 @@ seedRandom:
 
 ; build the map.
 ; the map is $40 units wide and $100 units tall.  Lives in bank 2, $1000-4FFF.
-; the random numbers aren't going to look very random
-; unless I keep reseeding them, so I will.
-; This is still deterministic, but at least it should look
-; a little better.  This should be improved at some point.
-; an individual location on the playfield can be 0 (empty)
-; 1 (wall), 2 (another wall), 3 (a third wall).  Should
-; be mostly empty space.
+; map bytes have shape info in lower 6 bits, color/variant info in higher 2
 
+; 6x6 box patterns for adding to the map.  Each pattern is $24 bytes long.
+BoxIndex:   .byte 0, $24, $48, $6C
+BoxPatt:
+            ; box open leftward
+            .byte C_WALL_R, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_LD
+            .byte C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
+            .byte C_SPACE, C_SPACE, C_SPACE, C_WALL_R, C_WALL_H, C_WALL_LUD
+            .byte C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
+            .byte C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
+            .byte C_WALL_R, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_LU
+            ; box open rightward
+            .byte C_WALL_RD, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_L
+            .byte C_WALL_V, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_SPACE
+            .byte C_WALL_RUD, C_WALL_H, C_WALL_L, C_SPACE, C_SPACE, C_SPACE
+            .byte C_WALL_V, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_SPACE
+            .byte C_WALL_V, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_SPACE
+            .byte C_WALL_RU, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_L
+            ; box open upward
+            .byte C_WALL_D, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_D
+            .byte C_WALL_V, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
+            .byte C_WALL_V, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
+            .byte C_WALL_V, C_SPACE, C_WALL_D, C_SPACE, C_SPACE, C_WALL_V
+            .byte C_WALL_V, C_SPACE, C_WALL_V, C_SPACE, C_SPACE, C_WALL_V
+            .byte C_WALL_RU, C_WALL_H, C_WALL_LRU, C_WALL_H, C_WALL_H, C_WALL_LU
+            ; box open downward
+            .byte C_WALL_RD, C_WALL_H, C_WALL_LRD, C_WALL_H, C_WALL_H, C_WALL_LD
+            .byte C_WALL_V, C_SPACE, C_WALL_V, C_SPACE, C_SPACE, C_WALL_V
+            .byte C_WALL_V, C_SPACE, C_WALL_U, C_SPACE, C_SPACE, C_WALL_V
+            .byte C_WALL_V, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
+            .byte C_WALL_V, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
+            .byte C_WALL_U, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_U
+            
+MFX         .byte 0
+MFY         .byte 0
+MFColor     .byte 0
+MFBoxIndex  .byte 0
+MFPlaced    .byte 0
+    
 makefield:  lda R_ZP
             sta ZPSave
-            lda #$1A        ; go to 1A00 ZP
-            lda #$00        ; no, go to actual ZP (no extended addr)
+            lda #$1A        ; go to 1A00 ZP (should already be there)
             sta R_ZP
             lda #$00
             sta ZPtrA
@@ -990,25 +1045,80 @@ makefield:  lda R_ZP
             sta ZPtrA + 1
             lda #$82
             sta ZPtrA + XByte
-mfseed:     jsr seedRandom
+            ; seed the "random" number list
+            jsr seedRandom
+            ; zero out the map background
+            ldx #$40        ; clearing $40 pages
+            lda #$00
+            tay
+mfzero:     sta (ZPtrA), y
+            iny
+            bne mfzero
+            inc ZPtrA + 1
+            dex
+            bne mfzero
+            ; place some boxes
+            ; every 8x8 cell gets a 6x6 box centered in it
+            ; since we're always going one down and one in, start at 1, 1
+            lda #$01
+            sta MFX
+            lda #$01
+            sta MFY
             ldx Seed
-            ldy #$3F
-mfline:     lda Random, x
-            ;txa             ; DEBUG- be less random
-            and #$07
-            sta (ZPtrA), y
-            inx             ; next random number
-            dey             ; next x coordinate
-            bpl mfline
-            lda ZPtrA       ; move to next map line
+            lda Random, x   ; pick a random box shape
+            and #$03
+            tay
+            lda BoxIndex, y
+            sta MFBoxIndex
+            inx
+            lda Random, x   ; pick a random box color
+            and #$C0
+            sta MFColor
+            inx
+            stx Seed
+            ; locate address in map for coordinate MFX, MFY
+            lda #$00
+            sta ZPtrA
+            lda MFY
+            lsr
+            ror ZPtrA
+            lsr
+            ror ZPtrA
+            clc
+            adc #$10
+            sta ZPtrA + 1
+            lda ZPtrA
+            clc
+            adc MFX
+            sta ZPtrA
+            ; put a pattern row in the map
+            ldy #$05
+            sty MFPlaced        ; do 6 rows
+mfpattrow:  ldx MFBoxIndex
+:           lda BoxPatt, x
+            ora MFColor
+            sta (ZptrA), y
+            dex
+            dey
+            bpl :-
+            ; done if we have completed 6 rows now
+            dec MFPlaced
+            bmi :+
+            ; move to next row
+            lda MFBoxIndex
+            clc
+            adc #$06
+            sta MFBoxIndex
+            lda ZPtrA
             clc
             adc #$40
             sta ZPtrA
-            bcc mfseed
+            bcc mfpattrow
             inc ZPtrA + 1
-            lda ZPtrA + 1
-            cmp #$50        ; map occupies $4000 bytes
-            bne mfseed
+            bcs mfpattrow
+:
+; TODO place some disks
+; TODO place some hoarders
             lda ZPSave
             sta R_ZP
             rts
@@ -1016,37 +1126,37 @@ mfline:     lda Random, x
 ; paint the static parts of the page
 
 StatTextA:  .byte "Level:    "
-			.byte "Score:    "
-			.byte "         S"
-			.byte "CROLLDEMO "
-			.byte $0
+            .byte "Score:    "
+            .byte "         S"
+            .byte "CROLLDEMO "
+            .byte $0
 
 StatColA:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $C0, $F0, $F0
-			.byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
-			.byte $D0, $E0, $90, $F0, $F0, $F0, $F0, $F0, $0E, $0E
-			.byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
+            .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
+            .byte $D0, $E0, $90, $F0, $F0, $F0, $F0, $F0, $0E, $0E
+            .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
 
 FrameText:  .byte "XXXXXXXXXX"
-			.byte "XXXXXXXXXX"
-			.byte "XXXXXXXXXX"
-			.byte "XXXXXXXXXX"
-			.byte $0
+            .byte "XXXXXXXXXX"
+            .byte "XXXXXXXXXX"
+            .byte "XXXXXXXXXX"
+            .byte $0
 
 FrameCol:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $C0, $F0, $F0
-			.byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
-			.byte $D0, $E0, $90, $F0, $F0, $F0, $F0, $F0, $F0, $F0
-			.byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
+            .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
+            .byte $D0, $E0, $90, $F0, $F0, $F0, $F0, $F0, $F0, $F0
+            .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
 
 InnerText:  .byte "XX        "
-			.byte "          "
-			.byte "          "
-			.byte "        XX"
-			.byte $0
+            .byte "          "
+            .byte "          "
+            .byte "        XX"
+            .byte $0
 
 InnerCol:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $C0, $F0, $F0
-			.byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
-			.byte $D0, $E0, $90, $F0, $F0, $F0, $F0, $F0, $F0, $F0
-			.byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
+            .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
+            .byte $D0, $E0, $90, $F0, $F0, $F0, $F0, $F0, $F0, $F0
+            .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
 
 ; initialize graphics and draw static background
 drawback:   lda #$01            ; Apple III color text
@@ -1057,104 +1167,102 @@ drawback:   lda #$01            ; Apple III color text
             jsr setnudge
             jsr cleartext
             jsr clearhgr
-            ; text lines 0-1: score status
-			ldy #$27
+            ; text lines 00-01: score status
+            ldy #$27
 :           lda StatTextA, y
-			sta $400, y
-			lda StatColA, y
-			sta $800, y
-			lda StatTextA, y
-			sta $480, y
-			lda StatColA, y
-			sta $880, y
-			dey
-			bpl :-
-			; lines 20-23: progress status
-			ldy #$27
+            sta $400, y
+            lda StatColA, y
+            sta $800, y
+            lda StatTextA, y
+            sta $480, y
+            lda StatColA, y
+            sta $880, y
+            dey
+            bpl :-
+            ; text lines 15-17: progress status
+            ldy #$27
 :           lda StatTextA, y
-			sta $650, y
-			lda StatColA, y
-			sta $A50, y
-			lda StatTextA, y
-			sta $6D0, y
-			lda StatColA, y
-			sta $AD0, y
-			lda StatTextA, y
-			sta $750, y
-			lda StatColA, y
-			sta $B50, y
-			lda StatTextA, y
-			sta $7D0, y
-			lda StatColA, y
-			sta $BD0, y
-			dey
-			bpl :-
-			; lines 9-14: playfield (frame)
-			ldy #$27
+            sta $6D0, y
+            lda StatColA, y
+            sta $AD0, y
+            lda StatTextA, y
+            sta $750, y
+            lda StatColA, y
+            sta $B50, y
+            lda StatTextA, y
+            sta $7D0, y
+            lda StatColA, y
+            sta $BD0, y
+            dey
+            bpl :-
+            ; text lines 09-0F: playfield (frame)
+            ldy #$27
 :           lda FrameText, y
-			sta $4A8, y
-			sta $728, y
-			lda FrameCol, y
-			sta $8A8, y ; 
-			sta $B28, y ; 
-			lda InnerText, y
-			sta $528, y
-			sta $5A8, y
-			sta $628, y
-			sta $6A8, y
-			lda InnerCol, y
-			sta $928, y
-			sta $9A8, y
-			sta $A28, y
-			sta $AA8, y
-			dey
-			bpl :-
-			; mode 6 super hires
-			; 16 lines, from 16-31.
-			; draw frame for now
-			lda #$8F
-			sta ZPtrA + XByte
-			sta ZPtrB + XByte
-			ldx #$1F
+            sta $4A8, y
+            sta $7A8, y
+            lda FrameCol, y
+            sta $8A8, y ; 
+            sta $BA8, y ; 
+            lda InnerText, y
+            sta $528, y
+            sta $5A8, y
+            sta $628, y
+            sta $6A8, y
+            sta $728, y
+            lda InnerCol, y
+            sta $928, y
+            sta $9A8, y
+            sta $A28, y
+            sta $AA8, y
+            sta $B28, y
+            dey
+            bpl :-
+            ; mode 6 super hires
+            ; 16 lines, from 10-1F.
+            ; draw frame for now
+            lda #$8F
+            sta ZPtrA + XByte
+            sta ZPtrB + XByte
+            ldx #$1F
  mapline:   lda YHiresL, x
-			sta ZPtrA
-			sta ZPtrB
-			lda YHiresHA, x
-			sta ZPtrA + 1
-			lda YHiresHB, x
-			sta ZPtrB + 1
-			ldy #$27
-			cpx #$10
-			beq mapsolid
-			cpx #$1F
-			beq mapsolid
-			lda #$5A
-			ldy #$27
-			sta (ZPtrA), y
-			sta (ZPtrB), y
-			dey
-			lda #$00
+            sta ZPtrA
+            sta ZPtrB
+            lda YHiresHA, x
+            sta ZPtrA + 1
+            lda YHiresHB, x
+            sta ZPtrB + 1
+            ldy #$27
+            cpx #$10
+            beq mapsolid
+            cpx #$1F
+            beq mapsolid
+            lda #$5A
+            ldy #$27
+            sta (ZPtrA), y
+            sta (ZPtrB), y
+            dey
+            lda #$00
 :           sta (ZPtrA), y
-			sta (ZPtrB), y
-			dey
-			bne :-
-			lda #$5A
-			sta (ZPtrA), y
-			sta (ZPtrB), y
-			bne :++
+            sta (ZPtrB), y
+            dey
+            bne :-
+            lda #$5A
+            sta (ZPtrA), y
+            sta (ZPtrB), y
+            bne :++
 mapsolid:   lda #$7F
 :           sta (ZPtrA), y
-			sta (ZPtrB), y
-			dey
-			bpl :-
+            sta (ZPtrB), y
+            dey
+            bpl :-
 :           dex
             bpl mapline
             
             ; mode 7 A3 Hires
-            ; lines 32-61(+8) and then lines 110-150(+8)
+            ; lines 20-47(+8) and then lines 80-A7(+8)
             ; there really isn't anything static here, so
             ; just clear it.
-            ldx #32
+            ldx #$20
 clrhgr:     lda YHiresL, x
             sta ZPtrA
             sta ZPtrB
@@ -1179,78 +1287,78 @@ clrhgr:     lda YHiresL, x
             dey
             bpl :-
             inx
-            cpx #159
+            cpx #$AF            ; one past bottom field + 8
             beq clrhgrdone
-            cpx #70
+            cpx #$50            ; one past top field + 8
             bne clrhgr
-            ldx #110
+            ldx #$80            ; skip to start of bottom field
             bne clrhgr
 clrhgrdone: 
             rts
 
 ; clear graphics pages (just fill with nonsense for now)
 
-clearhgr:	lda #$00
-			sta ZPtrA
-			lda #$20
-			sta ZPtrA + 1
-			lda #$8F
-			sta ZPtrA + XByte
-			ldx #$80
-			lda #$40
-			ldy #$00
-:			sta (ZPtrA), y
-			iny
-			bne :-
-			inc ZPtrA + 1
-			dex
-			bne :-
-			rts
-			
+clearhgr:   lda #$00
+            sta ZPtrA
+            lda #$20
+            sta ZPtrA + 1
+            lda #$8F
+            sta ZPtrA + XByte
+            ldx #$80
+            lda #$40
+            ldy #$00
+:           sta (ZPtrA), y
+            iny
+            bne :-
+            inc ZPtrA + 1
+            dex
+            bne :-
+            rts
+            
 ; clear text page (blank page one, F0 colors on page two)
 
 cleartext:  lda #$00
-			sta ZPtrA
-			lda #$04
-			sta ZPtrA + 1
-			lda #$8F
-			sta ZPtrA + XByte
-			ldx #$04
-			lda #$A0
-			ldy #$00
+            sta ZPtrA
+            lda #$04
+            sta ZPtrA + 1
+            lda #$8F
+            sta ZPtrA + XByte
+            ldx #$04
+            lda #$A0
+            ldy #$00
 :           sta (ZPtrA), y
-			iny
-			bne :-
-			inc ZPtrA + 1
-			dex
-			bne :-
-			cmp #$F0
-			beq :+
-			lda #$F0
-			ldx #$04
-			bne :-
+            iny
+            bne :-
+            inc ZPtrA + 1
+            dex
+            bne :-
+            cmp #$F0
+            beq :+
+            lda #$F0
+            ldx #$04
+            bne :-
 :           rts
-			
+            
 ; Set smooth scroll offset to the number (0-7) in A
 
 setnudge:   ror
-			bcs snxxy
-			bit SS_XXN
-			ror
-			bcs snxyx
+            bcs snxxy
+            bit SS_XXN
+            ror
+            bcs snxyx
 snxnx:      bit SS_XNX
-			ror
-			bcs snyxx
+            ror
+            bcs snyxx
 snnxx:      bit SS_NXX
-			rts
+            rts
 snxxy:      bit SS_XXY
-			ror
-			bcc snxnx     
+            ror
+            bcc snxnx     
 snxyx:      bit SS_XYX
-			ror
-			bcc snnxx
+            ror
+            bcc snnxx
 snyxx:      bit SS_YXX
-			rts
+            rts
 
 ; set display to number in A
 ; 0 = 40 char Apple II b/w                  gr      nomix   lores
@@ -1263,25 +1371,25 @@ snyxx:      bit SS_YXX
 ; 7 = 140x192 A Hires (140x192, color)      text    mix     hires
 
 setdisplay: ror
-			bcs sdtext
-			bit D_GRAPHICS
-			ror
-			bcs sdmix
+            bcs sdtext
+            bit D_GRAPHICS
+            ror
+            bcs sdmix
 sdnomix:    bit D_NOMIX
-			ror
-			bcs sdhires
+            ror
+            bcs sdhires
 sdlores:    bit D_LORES
-			rts
+            rts
 sdtext:     bit D_TEXT
-			ror
-			bcc sdnomix     
+            ror
+            bcc sdnomix     
 sdmix:      bit D_MIX
-			ror
-			bcc sdlores
+            ror
+            bcc sdlores
 sdhires:    bit D_HIRES
-			rts
+            rts
 
-			.include "lookups.s"
+            .include "lookups.s"
             
             .include "gamefont.s"
 
