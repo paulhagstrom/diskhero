@@ -90,9 +90,7 @@ BankSave:   .byte   0
 ExitFlag:   .byte   0               ; keyboard int makes this nonzero to trigger exit
 RedrawMap:  .byte   0               ; keyboard int makes this nonzero to trigger redraw
 RedrawPlay: .byte   0               ; keyboard int makes this nonzero to trigger redraw
-CurrTop:    .byte   0
-CurrBottom: .byte   0
-CurrPlay:   .byte   0
+CurrMap:    .byte   0
 
 GameLevel:  .byte   0
 GameScore:  .byte   0, 0, 0
@@ -124,7 +122,8 @@ NudgeNeg:   .byte   0
 ; some HBLs here and there.
 
 ZFontDots   = $80   ; ZP cache for FontDots to speed up drawing
-ZBufCount   = $81   ; count for buffering map data
+ZFontCol    = $B0   ; ZP cache for FontCol to speed up drawing
+ZBufCount   = $7F   ; count for buffering map data
 
 ; these are in screen holes because we're using screen memory for ZP
 ZScrHole    = $78
@@ -183,12 +182,11 @@ inttimer:   inc ScrRegion       ; advance region
             lda ScrRegMode, x   ; move display to correct mode
             jsr setdisplay
             lda D_SCROLLOFF     ; nudge off
-            sec                 ; set up bcs/jmp
             lda ScrNudge, x     ; nudge if this region needs nudging
             beq postnudge       ; do no nudging
             bmi negnudge        ; using negative (alt) nudge?
             lda NudgePos        ; nope, use the positive (regular) nudge value
-            bcs gonudge
+            jmp gonudge
 negnudge:   lda NudgeNeg        ; yep, use the negative (alternate) nudge value
 gonudge:    jsr setnudge        ; twiddle the nudge bits
             lda D_SCROLLON      ; turn on nudging
@@ -262,9 +260,11 @@ init:       sei                 ; no interrupts while we are setting up
             lda #$1A            ; ZP to $1A00 (standard for interpreters)
             sta R_ZP
             jsr herofont        ; load game font into character RAM
-            ldx #$27            ; pull the FontDots info into ZP for faster access
+            ldx #$27            ; pull the FontDots and FontCol info into ZP for faster access
 :           lda FontDots, x
+            lda FontCol, x
             sta ZFontDots, x
+            sta ZFontCol, x
             dex
             bpl :-
             jsr drawback        ; draw static background
@@ -559,50 +559,31 @@ getmapptr:  pha
             sta MapPtrH         ; floor(line/4) + $1000.
             rts
 
-; screen layout:
-; 
-; the top hires portion of the screen occupies "lines $20 to $48."
-; on the screen, due to nudging, we draw from lines $20 to $4F.
-; the map repsents 2x2 patterns, so we draw map lines from N to N+$20
-; the middle text section represents $28 across, drawn from line $09 to line $0E.
-; it obscures $18 map lines, displaying the middle 6.  So it represents N+$26 to N+$2C.
-; then the lower section picks up from N+$38 to N+$58.
-; the text section is always redrawn and is not nudged. Its top map line is N+$26+nudge.
-; YOU ARE HERE
-; ACTUALLY, I think I may want to nudge the text section sort of.
-; have text characters that represent on and off zero?
-; BUT: if something is off zero, though, would we expect something to be able to be up close to it?
-; like if a wall block stops halfway up, shouldn't a character be able to be up next to it?
-; so maybe would be better if playfield were GIANT?
-; so that it is just three map lines, double tall?  The we would not need partial characters.
-; But, then it also doesn't make the nice point. So maybe I just keep people from getting too close
-; to walls.
+; copied from the top just for ease of locating it
+            ; Screen layout:
+            ; mode 1 (text)     lines 00-0F (10) 00-01  score
+            ; mode 6 (bw hires) lines 10-1F (10)        b/w map display
+            ; mode 7 (a3 hires) lines 20-47 (28)        hires map upper field  map: 00-27(2F)
+            ; mode 1 (text)     lines 48-7F (38) 09-0F  text play field        map: 28-5F show: 42-46 (5)
+            ; mode 7 (a3 hires) lines 80-A7 (28)        hires map lower field  map: 60-87(8F)
+            ; mode 1 (text)     lines A8-BF (18) 15-17  text status display
 
+; the top hires region occupies "lines $20 to $47" but to accommodate nudging we go to $4F
+; the middle text section obscures $38 map lines, we display the middle 5 (N+$42 to N+$36)
+; the text playfield section is always redrawn and is not nudged. Its top map line is N+$42+nudge.
 ; characters 01-0F (walls and disk) have color information
 ; MapColors provides a mapping between 2-bit color and displayed color
 ; in the hires map, we will use that color for those elements
 
-; copied from the top just for ease of locating it
-; Screen layout:
-; mode 1 (text)     lines 00-0F (10) 00-01  score
-; mode 6 (bw hires) lines 10-1F (10)        b/w map display
-; mode 7 (a3 hires) lines 20-47 (28)        hires map upper field  map: 00-27 
-; mode 1 (text)     lines 48-7F (38) 09-0F  text play field        map: 28-5F show: 42-46 (5)
-; mode 7 (a3 hires) lines 80-A7 (28)        hires map lower field  map: 60-87
-; mode 1 (text)     lines A8-BF (18) 15-17  text status display
+; TODO -- need to handle display going past the map (draw zeros), since otherwise cannot
+; even reach most of the map in the playfield.
 
 scrupdate:
             ; update parts of the screen that need updating.
             ; redrawPlay is set if the playfield in the middle needs updating
             ; redrawMap is set if the map above and below playfield needs updating too
             ; The map can be moved by NudgePos without redrawing, while the playfield cannot.
-            ; CurrTop is the top map line of the top map we are looking at.
-            ; CurrBottom is the top map line of the bottom map we are looking at.
-            ; CurrPlay is the top map line of the playfield.
-            ; Those three should always be kept in sync programmatically, but no need to
-            ; burn cycles continually adding things together when we could just cache.
-            ; The map lines will represent patterns that are 2 by 4, which roughly matches the
-            ; proportions of the 40 column characters.
+            ; CurrMap is the top map line of the top map we are looking at.
             ; 
             ; update playfield (lines 9-14)
             ; CurrMap represents the line in the map data at top of playfield
@@ -621,9 +602,6 @@ scrupdate:
 
             lda RedrawMap
             bne redrawmap
-            ; we only need to redraw the play field, so start the map pointer at $42
-            lda #$42
-            jsr getmapptr
             jmp redrawplay            
 redrawmap:
             lda #$20            ; top field starts at display line $20
@@ -691,13 +669,16 @@ bufmap:     lda (ZScrHole), y
             ; now that we have the byte from the map, we can tranlate this into
             ; the two pixels it will be displaying.
             ; this information comes from FontDots, which we cached into ZFontDots (1A ZP)
-            bit #$70            ; test to see if this is 0-F (separate color info)
+            pha
+            and #$70            ; test to see if this is 0-F (separate color info)
             beq :+              ; branch if this is an element with an indexed color
+            pla
             tax                 ; this is an element with an intrinsic color (in ZFontDots)
             lda ZFontDots, x
             sec
             bcs bufmap
-:           pha                 ; stash the pixel data
+:           pla                 ; recall the pixel data
+            pha                 ; re-stash the pixel data
             and #$C0            ; isolate the color
             clc
             rol
@@ -846,27 +827,29 @@ bufmappix:  pha                 ; push buffered map elements onto the stack (saf
             ; advance the graphics raster line
 :           inc CurScrLine
             lda CurScrLine
-            cmp #$A8            ; last line of bottom field complete? ($80-$A7)
+            cmp #$B0            ; last line of bottom field complete? ($80-$AF) (8 extra)
             beq hiresdone       ; if so, move to the next screen region
-            cmp #$48            ; last line of top field complete? ($20-$47)
-            beq startmid        ; if so, move on to the middle playfield region
+            cmp #$50            ; last line of top field complete? ($20-$4F) (8 extra)
+            beq redrawplay      ; if so, move on to the middle playfield region
             jmp hiresline       ; otherwise, do the next line
 hiresdone:            
             jmp lowstats
-startmid:
-            ; the middle lores field starts at map offset $42 and draws to offset $46
-            ; after drawing top hires, map pointer will be pointing at $28.
-            ; so advance it by $1A map lines (x $40 = $0680 bytes)
-            ; $100 is 4 lines ahead, $400 is $10 lines ahead, $500 is $14, $600 is $18, $680 is $1A.
-            ; TODO: Account for nudging of the hires field, needs to offsel lores field.
-            lda MapPtrL
-            clc
-            adc #$80
-            sta MapPtrL
-            lda MapPtrH
-            adc #$06
-            sta MapPtrH
 redrawplay:
+            ; the middle lores field starts at map $42 and draws to $46 (plus NudgePos)
+            ; TODO - should be some boundary check on movement to handle overflow potential here
+            ; TODO - once you can move left and right should draw frame sides as well.
+            ; plan: reserve 4 bytes for frame, so display is only covering 36 bytes of the map
+            ; frame will be 1...3 for x between 0 and 19
+            ; frame will be 2...2 for x between 20 and 41
+            ; frame will be 3...1 for x between 43 and 63
+            ; or something like that.  Gives an indication of how far over you are.
+            ; might also subdivide frame using the last font characters for more granular effect
+            ; might also want to indicate somewhere else on the hires as well, like a scroll bar
+            lda CurrMap
+            clc
+            adc #$42
+            adc NudgePos
+            jsr getmapptr
             lda #$09
             sta CurScrLine
 loresline:
@@ -880,14 +863,30 @@ loresline:
             ; buffer all diplayed map bytes into the stack, from right to left
             ; NOTE: This needs to be updated once we can move lores view to the right.
             ldy #$27
-:           lda (ZScrHole), y   ; load map data
+loreschar:  lda (ZScrHole), y   ; load map data
             tax
             lda PlayChars, x    ; translate to displayed character
             pha                 ; store displayed character on stack
-            lda PlayColors, x   ; translate to displayed color
+            and #$70            ; test to see if this is 0-F (separate color info)
+            beq :+              ; branch if this is an element with an indexed color
+            pla                 ; recall character
+            pha                 ; re-push character
+            tax                 ; this is an element with an intrinsic color (in ZFontCol)
+            lda ZFontCol, x
+            jmp gotcolor
+:           pla                 ; recall character
+            pha                 ; re-push character
+            and #$C0            ; isolate the color
+            clc
+            rol
+            rol
+            rol                 ; convert bits 6/7 to bits 0/1 (color 0-3)
+            tax
+            lda PlayColors, x   ; load the indexed color
+gotcolor:   and #$F0            ; keep only the foreground color (background = black/0)
             sta Zero, y         ; store color in 1A00 page
             dey
-            bpl :-
+            bpl loreschar
             ; send to screen
             ldx CurScrLine
             lda YLoresL, x
@@ -935,7 +934,7 @@ loresline:
             ; advance screen line
 :           inc CurScrLine
             lda CurScrLine
-            cmp #$0F
+            cmp #$10
             beq :+
             jmp loresline       ; more lines to draw, go draw them
 :
@@ -945,18 +944,13 @@ loresline:
             jmp hiresdone
             
             ; top and middle fields now drawn, go back and do the bottom one
-            ; skip ahead $15 (from $43 to $58).
-:           lda MapPtrL
+            ; move the map pointer to $60
+:           lda CurrMap
             clc
-            adc #$40
-            sta MapPtrL
-            lda MapPtrH
-            adc #$05
-            sta MapPtrH
-
-;            jmp updatedone
-            ; switch to the lower hires field and draw it from line $78
-            lda #$78
+            adc #$60
+            jsr getmapptr
+            ; switch to the lower hires field and draw it from line $80
+            lda #$80
             sta CurScrLine
             jmp hiresline
             
@@ -1029,11 +1023,11 @@ BoxPatt:
             .byte C_WALL_V, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
             .byte C_WALL_U, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_U
             
-MFX         .byte 0
-MFY         .byte 0
-MFColor     .byte 0
-MFBoxIndex  .byte 0
-MFPlaced    .byte 0
+MFX:        .byte 0
+MFY:        .byte 0
+MFColor:    .byte 0
+MFBoxIndex: .byte 0
+MFPlaced:   .byte 0
     
 makefield:  lda R_ZP
             sta ZPSave
@@ -1097,7 +1091,7 @@ mfzero:     sta (ZPtrA), y
 mfpattrow:  ldx MFBoxIndex
 :           lda BoxPatt, x
             ora MFColor
-            sta (ZptrA), y
+            sta (ZPtrA), y
             dex
             dey
             bpl :-
