@@ -699,28 +699,28 @@ toplineseg:
             sta ZBufCount
             ldy ZCurrMapX
 bufmap:     lda (ZScrHole), y
-            ; now that we have the byte from the map, we can tranlate this into
+            ; now that we have the byte from the map, we can translate this into
             ; the two pixels it will be displaying.
             ; this information comes from FontDots, which we cached into ZFontDots (1A ZP)
             pha                 ; stash the map byte
-            and #$30            ; test to see if this is 0-F (separate color info in two high bits)
-            beq :+              ; branch if this is an element with an indexed color
-            pla                 ; recall map byte, an element with an intrinsic color (from ZFontDots)
+            and #$3F            ; strip any color bits
             tax
-            lda ZFontDots, x    ; look up the color dots for this element
-            jmp bufmappix       ; proceed to push
-:           pla                 ; recall the map byte to isolate the color
-            pha                 ; re-stash the map byte
-            and #$C0            ; isolate the color (top two bits)
-            clc
+            lda ZFontDots, x    ; get the pixels
+            sta ZPxScratch      ; stash the pixels
+            txa
+            and #%00110000      ; test to see if this is 0-F (separate color info in two high bits)
+            beq :+              ; branch if this is an element with an indexed color
+            pla                 ; throw away the map byte
+            lda ZPxScratch      ; these are the final pixels
+            jmp bufmappix
+:           pla                 ; recall the map byte to grab the color
+            asl
             rol
-            rol
-            rol                 ; convert bits 6/7 to bits 0/1 (color 0-3)
+            rol                 ; move color bits into lower two bits to serve as color index
+            and #$03
             tax
             lda MapColors, x    ; load the indexed color
-            sta ZPxScratch      ; stash the color we found
-            pla                 ; get the pixel data back (generally FF or 00 for two pixels)
-            and ZPxScratch      ; apply the color
+            and ZPxScratch      ; apply to the pixels
 bufmappix:  pha                 ; push buffered pixels onto the stack (safe from ZP switch)
             dey
             dec ZBufCount
@@ -772,7 +772,7 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             sta Zero, x
             ; byte 1 (byte 0 page 2): -3322221 [0+1+1] 21/8421/8
             pla                 ; recall color of pixel 1
-            rol                 ; move hi bit of pixel 1 color
+            asl                 ; move hi bit of pixel 1 color
             rol                 ; into lo bit of byte 1
             and #$01
             sta ZPxScratch      ; stash bit of pixel 1
@@ -791,7 +791,7 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             inx
             ; byte 2 (byte 1 page 1): -5444433 [1+2+2] 1/8421/84
             pla                 ; recall color of pixel 3
-            rol
+            asl
             rol
             rol                 ; put pixel 3's hi bits in low bits
             and #$03            ; isolate the pixel 3 color's higher two bits
@@ -806,7 +806,7 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             sta Zero, x
             ; byte 3 (byte 1 page 2): -6666555 [2+3] 8421/842
             pla                 ; recall color of pixel 5
-            rol                 ; move higher 3 bits of pixel 5 into low 3 bits
+            asl                 ; move higher 3 bits of pixel 5 into low 3 bits
             rol
             rol
             rol
@@ -853,7 +853,7 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             pla                 ; pixels A-B
             ;lda #$CB            ; DEBUG troubleshoot blit
             pha                 ; remember for later
-            ror
+            lsr
             ror
             ror
             ror
@@ -875,7 +875,7 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             pla                 ; pixels C-D
             ;lda #$ED            ; DEBUG troubleshoot blit
             pha                 ; remember for later
-            ror
+            lsr
             ror
             and #%01000000
             ora ZPxScratch
@@ -964,6 +964,7 @@ innerplay:
             lda CurrMap
             clc
             adc #$20
+            lda CurrMap         ; DEBUG - put playfield back at the top like top field
             adc NudgePos
             sta $0403
             jsr setmapptr
@@ -984,7 +985,7 @@ loresline:
             tay
 loreschar:  lda (ZScrHole), y   ; load map data
             pha                 ; store displayed character on stack
-            and #$30            ; test to see if this is 0-F (separate color info)
+            and #%00110000      ; test to see if this is 0-F (separate color info)
             beq :+              ; branch if this is an element with an indexed color
             pla                 ; recall character
             pha                 ; re-push character
@@ -993,11 +994,10 @@ loreschar:  lda (ZScrHole), y   ; load map data
             jmp gotcolor
 :           pla                 ; recall character
             pha                 ; re-push character
-            and #$C0            ; isolate the color bits
-            clc
+            asl
             rol
-            rol
-            rol                 ; convert bits 6/7 to bits 0/1 (color 0-3)
+            rol                 ; move color bits into lower two bits to serve as color index
+            and #$03
             tax
             pla                 ; recall character
             and #$3F            ; strip the color bits
