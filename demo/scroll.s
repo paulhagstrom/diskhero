@@ -120,6 +120,7 @@ ScrRegMode: .byte   $01, $06, $07, $01, $07, $01, $00
 ScrNudge:   .byte   $00, $80, $01, $00, $01, $00, $00
 NudgePos:   .byte   0
 NudgeNeg:   .byte   0
+PlayX:      .byte   0
 
 ; I played with ScRegLen by trial and error a little.
 ; Not sure why I needed to go two down for region zero.
@@ -250,6 +251,8 @@ init:       sei                 ; no interrupts while we are setting up
             sta ScrRegion
             lda #$60            ; start at line 60 of the map
             sta CurrMap
+            lda #$10            ; start playfield kind of in the middle
+            sta PlayX
             lda #$00            ; start at nudge 0
             sta NudgePos
             sta NudgeNeg
@@ -288,8 +291,8 @@ alldone:    lda #$7F            ;disable all interrupts
 ; process keypress
 
 handlekey:  
-            cmp #$CD            ; M (down, scroll map up)
-            bne keyi
+            cmp #$C9            ; I (up, scroll map down)
+            bne keym
             inc RedrawPlay      ; need to redraw playfield
             dec NudgePos        ; first try scrolling just by decreasing the nudge
             bpl keydone
@@ -301,7 +304,7 @@ handlekey:
             sta CurrMap
             inc RedrawMap       ; need to redraw whole map
             jmp keydone
-keyi:       cmp #$C9            ; I (up, scroll map down)
+keym:       cmp #$CD            ; M (down, scroll map up)
             bne keyj
             inc RedrawPlay      ; need to redraw playfield
             inc NudgePos        ; first try scrolling just by increaing the nudge
@@ -318,14 +321,22 @@ keyi:       cmp #$C9            ; I (up, scroll map down)
             jmp keydone
 keyj:       cmp #$CA            ; J (left)
             bne keyk
-            ; TODO - do something here
-            inc RedrawPlay      ; need to redraw playfield
+            dec PlayX
+            lda PlayX
+            cmp #$FF
+            bne :+
+            inc PlayX
+:           inc RedrawPlay      ; need to redraw playfield
 keyk:       cmp #$CB            ; K (right)
             bne keye
-            ; TODO - do something here
-            inc RedrawPlay      ; need to redraw playfield
+            inc PlayX
+            lda PlayX
+            cmp #$18
+            bne :+
+            dec PlayX
+:           inc RedrawPlay      ; need to redraw playfield
 keye:       cmp #$C5            ; E (exit)
-            bne keydone
+            bne keydone            
             inc ExitFlag        ; tell event loop we are exiting
 keydone:    lda #$00
             sta KeyCaught
@@ -873,8 +884,12 @@ loresline:
             sta ZScrHole + XByte
             ; (ZScrHole), 0 is now the left side of the map data line
             ; buffer all diplayed map bytes into the stack, from right to left
-            ; NOTE: This needs to be updated once we can move lores view to the right.
-            ldy #$27
+            lda #$27
+            sta ZPxScratch
+            lda PlayX
+            clc
+            adc #$27
+            tay
 loreschar:  lda (ZScrHole), y   ; load map data
             pha                 ; store displayed character on stack
             and #$30            ; test to see if this is 0-F (separate color info)
@@ -897,9 +912,10 @@ loreschar:  lda (ZScrHole), y   ; load map data
             pha                 ; and re-push
             lda PlayColors, x   ; load the indexed color
 gotcolor:   and #$0F            ; keep only the foreground color (background = black/0)
-            ; lacking a STA ZP,y instrcution, this is better cyclewise than moving y to x
-            sta Zero1A, y       ; store color in 1A00 page
+            ldx ZPxScratch
+            sta Zero, x         ; store color in ZP (1A00)
             dey
+            dec ZPxScratch
             bpl loreschar
             ; send to screen
             ldx CurScrLine
