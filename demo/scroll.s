@@ -583,12 +583,13 @@ setmapptr:  pha
             lda #$00
             sta MapPtrL
             pla
-            lsr                 ; shift lower bits of map line into higher bits of MPL
+            lsr                 ; shift lower two bits of map line
+            ror MapPtrL         ; into higher bits of MPL
+            lsr                 ; (multiplying by $40, the length of a map line)
             ror MapPtrL
-            lsr
-            ror MapPtrL
-            ora #$10            ; map data starts at $1000.
-            sta MapPtrH         ; floor(line/4) + $1000.
+            clc
+            adc #$10            ; map data starts at $1000.
+            sta MapPtrH
             rts
 
 ; REVISED plan, does not hide anything under the playfield, and make the playfield bigger
@@ -728,35 +729,7 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             ; the pixels have now been translated, we can send them to the screen
             ; the 7 pixels on the stack each use 8 bits, but we need to smear them across the
             ; 8 bytes of graphics memory using 7 bits at a time.  I know, right?
-            ; YOU ARE HERE - TODO - I think somehow the pixels are going up backwards.
-            ; maybe in the groups of 7? But it seems like the right column of a box is drawn on its left
-            ; what I have done matches what is drawn in the Apple service manual.
-            ; but maybe that is wrong?  Could it be that byte 0 is -0000111 instead of -1110000?
-            ; first guess is no, it's not wrong, but then unclear what I have done wrong.
-            ; the MAP is correct because it shows up correctly in the playfield.
-            ; maybe a problem with FontDots?  Maybe so.  I might have drawn them backwards.
-            ; in FontDots, something like %00001111 was expected to be displayed as off-on from L to R.
-            ; so P1 is 0000 and P2 is 1111
-            ; I store: 0000111- in the first byte as -1110000
-            ; which should be right?  BTW, is the COLOR's MSB on the right too?
-            ; it seems like it is getting the colors right but the orientation wrong.
-            
-            ; blit debug seems to reveal:
-            ; 2147677899FBFE 0010 0001 0100 0111 0110 0111 0111 1000 1001 1001 1111 1110
-            ;                AAAA BBBB CCCC DDDD EEEE FFFF
-            ; when it should have been
-            ; 21436587A9CBED 0010 0001 0100 0011 0110 0101 1000 0111 1100 1001 1110 1101
-            ;                AAAA BBBB CCCC DDDD EEEE FFFF
-            ; so when pixels 1-4 are 00010010 00110100
-            ; we did
-            ; xBBBAAAA - xDDCCCCB - xFEEEEDD
-            ; x0010101 - x1101000 - x
-            ; but should have done... what?
-            ; x1010010 - x0001101
-            ; x0000111 - x3322221
-            ; what we did should yield - not quite
-            ; 0010 1011 0011 .. 2 B 3 darkblue pink purple
-            ; 
+            ;
             ; As per the Apple /// Level 2 Service Reference Manual:
             ; There are two distinct screen pages in this mode but the mapping of the
             ; individual pages is, at first encounter, a bit difficult to master. Good
@@ -786,20 +759,7 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             ; 0010 2 darkblue   0110 6 medblue      1010 A grey2    1110 E aqua
             ; 0011 3 purple     0111 7 lightblue    1011 B pink     1111 F white
             ;
-            ; The bits seem to increase steadily in significance from pixel 1 to pixel 7.
-            ; 
-            ; The fact that the bits are organized left to right backwards (LSB->MSB)
-            ; makes this very hard to comprehend.  Are the color bits for pixel 1 reversed?
-            ; If 2000 contains xxxx0011, is pixel 1 green (1100, reversed) or purple (0011)?
-            ; The most consistent-looking interpretation is that it would be green.
-            ; Which is weird, but workable.
-            ;
-            ; So to render this chart in a more normally-comprehensible way, it
-            ; should look like this, where ABCD represents the bits in the order
-            ; above, MSB (A) to LSB (D)
-            ;
-            ; P1: 2000: 0000ABCD
-            ; 
+            ; The bits increase steadily in significance from pixel 1 to pixel 7.
             
             ldx ZCurrDrawX      ; set x to the horizontal offset on screen
             lda ZOtherZP        ; go to HGR1 ZP for drawing
