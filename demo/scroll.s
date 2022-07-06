@@ -736,7 +736,6 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             asl
             ora ZPxScratch
             and #$7F
-            lda #$6A            ; DEBUG - insert something colorful
             sta Zero, x
             ; byte 1 (page 2): -6666555 [2+3] 8421842
             pla                 ; recall color of pixel 5
@@ -1057,9 +1056,8 @@ mfzero:     sta (ZPtrA), y
             ; since we're always going one down and one in, start at 1, 1
             lda #$01
             sta MFX
-            lda #$01
             sta MFY
-            ldx Seed
+mfbox:      ldx Seed
             lda Random, x   ; pick a random box shape
             and #$03
             tay
@@ -1122,6 +1120,24 @@ mfpattrow:  ldx MFBoxIndex      ; x points to the row of the box pattern
             inc ZPtrA + 1
             bcs mfpattrow
 :
+            lda MFX             ; move to next X coordinate
+            cmp #$39            ; is this the last X coordinate on the line?
+            beq :+
+            clc
+            adc #$08
+            sta MFX
+            jmp mfbox
+:
+            lda #$01            ; back to left side
+            sta MFX
+            lda MFY             ; move to next Y coordinate
+            cmp #$F9            ; is the the last Y coordinate on the map?
+            beq :+
+            clc
+            adc #$08
+            sta MFY
+            jmp mfbox
+:            
 ; TODO place some disks
 ; TODO place some hoarders
             lda ZPSave
