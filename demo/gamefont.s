@@ -319,16 +319,7 @@ FontData:
             .byte   %00000000
             .byte   %00000000
 
-            .byte   %00011100   ; wall right down
-            .byte   %00011100
-            .byte   %01111100
-            .byte   %01111100
-            .byte   %01111100
-            .byte   %01111100
-            .byte   %00000000
-            .byte   %00000000
-
-            .byte   %00000000   ; wall right up
+            .byte   %00000000   ; wall right down
             .byte   %00000000
             .byte   %01111100
             .byte   %01111100
@@ -336,6 +327,15 @@ FontData:
             .byte   %01111100
             .byte   %00011100
             .byte   %00011100
+            
+            .byte   %00011100   ; wall right up
+            .byte   %00011100
+            .byte   %01111100
+            .byte   %01111100
+            .byte   %01111100
+            .byte   %01111100
+            .byte   %00000000
+            .byte   %00000000
             
             .byte   %00011100   ; wall right up down
             .byte   %00011100
@@ -438,13 +438,13 @@ FontData:
 
 ; characters
             .byte   %01111111   ; disk
-            .byte   %01110110
+            .byte   %01111110
+            .byte   %01110111
             .byte   %01100011
             .byte   %01110111
             .byte   %01111111
             .byte   %01110111
-            .byte   %01110111
-            .byte   %01111111  
+            .byte   %01110111  
 
             .byte   %00011100   ; hero
             .byte   %00100010

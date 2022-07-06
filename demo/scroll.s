@@ -999,7 +999,7 @@ BoxIndex:   .byte 0, $24, $48, $6C
 BoxPatt:
             ; box open leftward
             .byte C_WALL_R, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_LD
-            .byte C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
+            .byte C_SPACE, C_DISK, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
             .byte C_SPACE, C_SPACE, C_SPACE, C_WALL_R, C_WALL_H, C_WALL_LUD
             .byte C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
             .byte C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
@@ -1009,7 +1009,7 @@ BoxPatt:
             .byte C_WALL_V, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_SPACE
             .byte C_WALL_RUD, C_WALL_H, C_WALL_L, C_SPACE, C_SPACE, C_SPACE
             .byte C_WALL_V, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_SPACE
-            .byte C_WALL_V, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_SPACE
+            .byte C_WALL_V, C_SPACE, C_SPACE, C_DISK, C_SPACE, C_SPACE
             .byte C_WALL_RU, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_L
             ; box open upward
             .byte C_WALL_D, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_D
@@ -1097,7 +1097,10 @@ mfbox:      ldx Seed
             ; put a pattern row in the map
             ldy #$05
             sty MFPlaced        ; do 6 rows
-mfpattrow:  ldx MFBoxIndex      ; x points to the row of the box pattern
+mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
+            clc
+            adc #$05
+            tax
 :           lda BoxPatt, x
             ora MFColor
             sta (ZPtrA), y
