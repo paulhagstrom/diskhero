@@ -104,8 +104,8 @@ ScrRegion:  .byte   0
 FieldH:     .byte   $04, $05, $05, $06, $06, $07
 FieldL:     .byte   $A8, $25, $A8, $28, $A8, $28
 FieldHC:    .byte   $08, $09, $09, $0A, $0A, $0B
-MapColors:  .byte   $00, $CC, $DD, $EE, $44
-PlayColors: .byte   $00, $1C, $2D, $3E, $C4
+MapColors:  .byte   $CC, $DD, $EE, $44
+PlayColors: .byte   $1C, $2D, $3E, $C4
 ; Screen layout:
 ; mode 1 (text)     lines 00-0F (10) 00-01  score
 ; mode 6 (bw hires) lines 10-1F (10)        b/w map display
