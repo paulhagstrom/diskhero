@@ -881,8 +881,11 @@ loreschar:  lda (ZScrHole), y   ; load map data
             rol
             rol                 ; convert bits 6/7 to bits 0/1 (color 0-3)
             tax
+            pla                 ; recall character
+            and #$3F            ; strip the color bits
+            pha                 ; and re-push
             lda PlayColors, x   ; load the indexed color
-gotcolor:   and #$F0            ; keep only the foreground color (background = black/0)
+gotcolor:   and #$0F            ; keep only the foreground color (background = black/0)
             ; lacking a STA ZP,y instrcution, this is better cyclewise than moving y to x
             sta Zero1A, y       ; store color in 1A00 page
             dey
@@ -1044,7 +1047,7 @@ buildmap:   lda R_ZP
             ; zero out the map background
             ldx #$40        ; clearing $40 pages
             ldy #$00
-            lda C_HERO      ; DEBUG - put the hero everywhere instead of space
+            lda C_SPACE
 mfzero:     sta (ZPtrA), y
             iny
             bne mfzero
