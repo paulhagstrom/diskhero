@@ -583,13 +583,13 @@ setmapptr:  pha
             sta MapPtrH         ; floor(line/4) + $1000.
             rts
 
-; copied from the top just for ease of locating it
+; REVISED plan, does not hide anything under the playfield
             ; Screen layout:
             ; mode 1 (text)     lines 00-0F (10) 00-01  score
             ; mode 6 (bw hires) lines 10-1F (10)        b/w map display
             ; mode 7 (a3 hires) lines 20-47 (28)        hires map upper field  map: 00-27(2F)
-            ; mode 1 (text)     lines 48-7F (38) 09-0F  text play field        map: 28-5F show: 42-46 (5)
-            ; mode 7 (a3 hires) lines 80-A7 (28)        hires map lower field  map: 60-87(8F)
+            ; mode 1 (text)     lines 48-7F (38) 09-0F  text play field        map: 28-2C
+            ; mode 7 (a3 hires) lines 80-A7 (28)        hires map lower field  map: 2D-55(5D)
             ; mode 1 (text)     lines A8-BF (18) 15-17  text status display
 
 ; the top hires region occupies "lines $20 to $47" but to accommodate nudging we go to $4F
@@ -900,7 +900,7 @@ innerplay:
             sta R_ZP            ; back to 1A00 ZP
             lda CurrMap
             clc
-            adc #$42
+            adc #$28
             adc NudgePos
             sta $0403
             jsr setmapptr
@@ -1006,7 +1006,7 @@ gotcolor:   and #$0F            ; keep only the foreground color (background = b
             ; move the map pointer to $60
 :           lda CurrMap
             clc
-            adc #$60
+            adc #$2D
             jsr setmapptr
             ; switch to the lower hires field and draw it from line $80
             lda #$80
