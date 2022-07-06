@@ -204,50 +204,11 @@ postnudge:  lda ScrRegLen, x    ; reset the HBL counter to length of next mode
             sta RE_INTFLAG
             bne intreturn
 ; keyboard interrupt handler
-; TODO - buffer the key in KeyCaught and handle the logic in the event loop
 intkey:     lda IO_KEY          ; load keyboard register
             sta IO_KEYCLEAR     ; clear keyboard register
             bpl keyreturn       ; no key pressed, return (could that even happen? modifier only?)
             sta $0400           ; put it in the corner so I can see it
-            cmp #$CD            ; M (down, scroll map up)
-            bne :+
-            inc RedrawPlay      ; need to redraw playfield
-            dec NudgePos        ; first try scrolling just by decreasing the nudge
-            bpl keyreturn
-            lda #$07            ; if we ran off the top of what we drew
-            sta NudgePos        ; reset nudge
-            lda CurrMap         ; and subtract 8 from CurrMap
-            sec
-            sbc #$08
-            sta CurrMap
-            inc RedrawMap       ; need to redraw whole map
-            jmp keyreturn
-:           cmp #$C9            ; I (up, scroll map down)
-            bne :+
-            inc RedrawPlay      ; need to redraw playfield
-            inc NudgePos        ; first try scrolling just by increaing the nudge
-            lda NudgePos
-            cmp #$08
-            bne keyreturn
-            lda #$00            ; if we ran off the bottom of what we drew
-            sta NudgePos        ; reset nudge
-            lda CurrMap         ; and add 8 to CurrMap
-            clc
-            adc #$08
-            sta CurrMap
-            inc RedrawMap       ; need to redraw whole map
-            jmp keyreturn
-:           cmp #$CA            ; J (left)
-            bne :+
-            ; TODO - do something here
-            inc RedrawPlay      ; need to redraw playfield
-:           cmp #$CB            ; K (right)
-            bne :+
-            ; TODO - do something here
-            inc RedrawPlay      ; need to redraw playfield
-:           cmp #$C5            ; E (exit)
-            bne keyreturn
-            inc ExitFlag        ; tell event loop we are exiting
+            sta KeyCaught       ; tell event loop to process this
 keyreturn:  rts
 
 ; VBL interrupt handler
@@ -302,10 +263,14 @@ init:       sei                 ; no interrupts while we are setting up
             cli                 ; all set up now, interrupt away
 eventloop:  lda ExitFlag
             bne alldone
-            jsr drawscore
+            lda KeyCaught
+            beq :+
+            jsr handlekey
+:            
             inc GameScore + 2   ; DEBUG - constantly move score up
+            jsr drawscore
             lda RedrawPlay      ; screen moved, at least playfield needs update
-            bne :+
+            beq :+
             jsr scrupdate
 :           jmp eventloop
 
@@ -319,6 +284,52 @@ alldone:    lda #$7F            ;disable all interrupts
             brk                  ; SOS TERMINATE
             .byte   TERMINATE
             .word   *-2
+
+; process keypress
+
+handlekey:  
+            cmp #$CD            ; M (down, scroll map up)
+            bne keyi
+            inc RedrawPlay      ; need to redraw playfield
+            dec NudgePos        ; first try scrolling just by decreasing the nudge
+            bpl keydone
+            lda #$07            ; if we ran off the top of what we drew
+            sta NudgePos        ; reset nudge
+            lda CurrMap         ; and subtract 8 from CurrMap
+            sec
+            sbc #$08
+            sta CurrMap
+            inc RedrawMap       ; need to redraw whole map
+            jmp keydone
+keyi:       cmp #$C9            ; I (up, scroll map down)
+            bne keyj
+            inc RedrawPlay      ; need to redraw playfield
+            inc NudgePos        ; first try scrolling just by increaing the nudge
+            lda NudgePos
+            cmp #$08
+            bne keydone
+            lda #$00            ; if we ran off the bottom of what we drew
+            sta NudgePos        ; reset nudge
+            lda CurrMap         ; and add 8 to CurrMap
+            clc
+            adc #$08
+            sta CurrMap
+            inc RedrawMap       ; need to redraw whole map
+            jmp keydone
+keyj:       cmp #$CA            ; J (left)
+            bne keyk
+            ; TODO - do something here
+            inc RedrawPlay      ; need to redraw playfield
+keyk:       cmp #$CB            ; K (right)
+            bne keye
+            ; TODO - do something here
+            inc RedrawPlay      ; need to redraw playfield
+keye:       cmp #$C5            ; E (exit)
+            bne keydone
+            inc ExitFlag        ; tell event loop we are exiting
+keydone:    lda #$00
+            sta KeyCaught
+            rts
 
 ; arm interrupts
 
@@ -832,7 +843,7 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             cmp #$50            ; last line of top field complete? ($20-$4F) (8 extra)
             beq redrawplay      ; if so, move on to the middle playfield region
             jmp hiresline       ; otherwise, do the next line
-hiresdone:            
+hiresdone:
             jmp lowstats
 redrawplay:
             ; the middle lores field starts at map $42 and draws to $46 (plus NudgePos)
@@ -944,7 +955,7 @@ gotcolor:   and #$0F            ; keep only the foreground color (background = b
             ; if we only needed to redraw the playfield we are done
             lda RedrawMap
             bne :+
-            jmp hiresdone
+            jmp lowstats
             
             ; top and middle fields now drawn, go back and do the bottom one
             ; move the map pointer to $60
