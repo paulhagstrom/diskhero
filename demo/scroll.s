@@ -118,8 +118,8 @@ PlayColors: .byte   $08, $06, $03, $04
 ; mode 1 (text)     lines 00-0F (10) 00-01  score
 ; mode 6 (bw hires) lines 10-1F (10)        b/w map display
 ; mode 7 (a3 hires) lines 20-3F (20)        hires map upper field  map: 00-1F(27)
-; mode 1 (text)     lines 40-87 (48) 08-11  text play field        map: 20-28
-; mode 7 (a3 hires) lines 88-A7 (20)        hires map lower field  map: 29-48(50)
+; mode 1 (text)     lines 40-87 (48) 08-10  text play field        map: 20-26
+; mode 7 (a3 hires) lines 88-A7 (20)        hires map lower field  map: 27-48(50)
 ; mode 1 (text)     lines A8-BF (18) 15-17  text status display
 ; Define the screen region; mode is a display mode, length is number of HBLs.
 ; nudge is 0 if no nudge, else pos or neg depending on which nudge count to use
@@ -728,25 +728,99 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             ; the pixels have now been translated, we can send them to the screen
             ; the 7 pixels on the stack each use 8 bits, but we need to smear them across the
             ; 8 bytes of graphics memory using 7 bits at a time.  I know, right?
+            ; YOU ARE HERE - TODO - I think somehow the pixels are going up backwards.
+            ; maybe in the groups of 7? But it seems like the right column of a box is drawn on its left
+            ; what I have done matches what is drawn in the Apple service manual.
+            ; but maybe that is wrong?  Could it be that byte 0 is -0000111 instead of -1110000?
+            ; first guess is no, it's not wrong, but then unclear what I have done wrong.
+            ; the MAP is correct because it shows up correctly in the playfield.
+            ; maybe a problem with FontDots?  Maybe so.  I might have drawn them backwards.
+            ; in FontDots, something like %00001111 was expected to be displayed as off-on from L to R.
+            ; so P1 is 0000 and P2 is 1111
+            ; I store: 0000111- in the first byte as -1110000
+            ; which should be right?  BTW, is the COLOR's MSB on the right too?
+            ; it seems like it is getting the colors right but the orientation wrong.
+            
+            ; blit debug seems to reveal:
+            ; 2147677899FBFE 0010 0001 0100 0111 0110 0111 0111 1000 1001 1001 1111 1110
+            ;                AAAA BBBB CCCC DDDD EEEE FFFF
+            ; when it should have been
+            ; 21436587A9CBED 0010 0001 0100 0011 0110 0101 1000 0111 1100 1001 1110 1101
+            ;                AAAA BBBB CCCC DDDD EEEE FFFF
+            ; so when pixels 1-4 are 00010010 00110100
+            ; we did
+            ; xBBBAAAA - xDDCCCCB - xFEEEEDD
+            ; x0010101 - x1101000 - x
+            ; but should have done... what?
+            ; x1010010 - x0001101
+            ; x0000111 - x3322221
+            ; what we did should yield - not quite
+            ; 0010 1011 0011 .. 2 B 3 darkblue pink purple
+            ; 
+            ; As per the Apple /// Level 2 Service Reference Manual:
+            ; There are two distinct screen pages in this mode but the mapping of the
+            ; individual pages is, at first encounter, a bit difficult to master. Good
+            ; luck!
+            ;  o The display dot represents a sequence of 4 data bits in the RAM
+            ;    display area.
+            ;  o Two rams are used starting at 2000 and 4000 respectively and alternate
+            ;    bytes are fetched from each ram area.
+            ;  o In any video mode only 7 of the 8 bits of each byte are displayed
+            ; With this information in mind...and remembering that each pixel in this mode
+            ; is made from 4 bits...you can see that you need 4 bytes of information to get
+            ; 7 pixels.  The way in which these bytes may into picture elements is shown
+            ; below.
+            ;
+            ; [conspiracy-corkboard.jpg]
+            ;
+            ; |   2000      |   4000      |   2001      |   4001      |
+            ; | | | | | | | | | | | | | | | | | | | | | | | | | | | | |
+            ; |LSB       MSB|             |             |             | 
+            ; |-- P1 -|-- P2 -|-- P3 -|-- P4 -|-- P5 -|-- P6 -|-- P7 -|
+            ;
+            ; end quote
+            ; 
+            ; Colors:
+            ; 0000 0 black      0100 4 darkgreen    1000 8 brown    1100 C green
+            ; 0001 1 magenta    0101 5 grey1        1001 9 orange   1101 D yellow
+            ; 0010 2 darkblue   0110 6 medblue      1010 A grey2    1110 E aqua
+            ; 0011 3 purple     0111 7 lightblue    1011 B pink     1111 F white
+            ;
+            ; The bits seem to increase steadily in significance from pixel 1 to pixel 7.
+            ; 
+            ; The fact that the bits are organized left to right backwards (LSB->MSB)
+            ; makes this very hard to comprehend.  Are the color bits for pixel 1 reversed?
+            ; If 2000 contains xxxx0011, is pixel 1 green (1100, reversed) or purple (0011)?
+            ; The most consistent-looking interpretation is that it would be green.
+            ; Which is weird, but workable.
+            ;
+            ; So to render this chart in a more normally-comprehensible way, it
+            ; should look like this, where ABCD represents the bits in the order
+            ; above, MSB (A) to LSB (D)
+            ;
+            ; P1: 2000: 0000ABCD
+            ; 
+            
             ldx ZCurrDrawX      ; set x to the horizontal offset on screen
             lda ZOtherZP        ; go to HGR1 ZP for drawing
             sta R_ZP
-            ; byte 0 (page 1): -1110000 [0+0] 4218421
+            ; byte 0 (byte 0 page 1): -1110000 [0+0] 421/8421
             pla                 ; pixels 0-1
+            ;lda #$21            ; DEBUG troubleshoot blit
             pha                 ; remember for later
             and #$7F
             sta Zero, x
-            ; byte 0 (page 2): -3322221 [0+1+1] 2184218
+            ; byte 1 (byte 0 page 2): -3322221 [0+1+1] 21/8421/8
             pla                 ; recall color of pixel 1
-            bpl :+
-            lda #$01
-            bne :++
-:           lda #$00
-:           sta ZPxScratch      ; stash bit of pixel 1
+            rol                 ; move hi bit of pixel 1 color
+            rol                 ; into lo bit of byte 1
+            and #$01
+            sta ZPxScratch      ; stash bit of pixel 1
             pla                 ; pixels 2-3
+            ;lda #$43            ; DEBUG troubleshoot blit
             pha                 ; remember for later
-            asl
-            and #%011111110
+            asl                 ; move pixel 2's and 3's bits up
+            and #%011111110     ; and chop off the two hi bits of pixel 3
             ora ZPxScratch
             ; put this pixel data on the other ZP (page 2)
             ldy ZOtherZP
@@ -755,29 +829,37 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             ldy ZOtherZP
             sty R_ZP            ; go to page 1 ZP
             inx
-            ; byte 1 (page 1): -5444433 [1+2+2] 1842184
+            ; byte 2 (byte 1 page 1): -5444433 [1+2+2] 1/8421/84
             pla                 ; recall color of pixel 3
-            lsr
-            lsr
+            rol
+            rol
+            rol                 ; put pixel 3's hi bits in low bits
             and #$03            ; isolate the pixel 3 color's higher two bits
             sta ZPxScratch      ; and stash them
             pla                 ; pixels 4-5
+            ;lda #$65            ; DEBUG troubleshoot blit
             pha                 ; remember for later
             asl
             asl
             ora ZPxScratch
             and #$7F
             sta Zero, x
-            ; byte 1 (page 2): -6666555 [2+3] 8421842
+            ; byte 3 (byte 1 page 2): -6666555 [2+3] 8421/842
             pla                 ; recall color of pixel 5
-            lsr
-            and #$07            ; chop off lowest bit
+            rol                 ; move higher 3 bits of pixel 5 into low 3 bits
+            rol
+            rol
+            rol
+            and #$07
             sta ZPxScratch
             pla                 ; pixels 6-7
+            ;lda #$87            ; DEBUG troubleshoot blit
             pha                 ; remember for later
-            lsr
-            and #%01111000
+            asl
+            asl
+            asl
             ora ZPxScratch
+            and #$7F
             ; put this data on the page 2 ZP
             ldy ZOtherZP
             sty R_ZP            ; go to page 2 ZP
@@ -785,24 +867,36 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             ldy ZOtherZP
             sty R_ZP            ; go to page 1 ZP
             inx
-            ; byte 2 (page 1): -8887777 [3+4] 4218421
+            ; byte 4 (byte 2 page 1): -8887777 [3+4] 421/8421
             pla                 ; recall color of pixel 7
-            and #$0F
+            lsr
+            lsr
+            lsr
+            lsr
             sta ZPxScratch
             pla                 ; pixels 8-9
+            ;lda #$A9            ; DEBUG troubleshoot blit
             pha                 ; remember for later
-            and #%01110000
+            asl
+            asl
+            asl
+            asl
             ora ZPxScratch
+            and #$7F
             sta Zero, x
-            ; byte 2 (page 2): -AA99998 [4+4+5]  2184218
+            ; byte 5 (byte 2 page 2): -AA99998 [4+4+5]  21/8421/8
             pla                 ; recall color of pixels 8 and 9
             lsr
             lsr
             lsr
             sta ZPxScratch
             pla                 ; pixels A-B
+            ;lda #$CB            ; DEBUG troubleshoot blit
             pha                 ; remember for later
-            asl
+            ror
+            ror
+            ror
+            ror
             and #%01100000
             ora ZPxScratch
             ; put this data on the other ZP
@@ -812,20 +906,21 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             ldy ZOtherZP
             sty R_ZP            ; go to page 1 ZP
             inx
-            ; byte 3 (page 1): -CBBBBAA [5+5+6] 1842184
+            ; byte 6 (byte 3 page 1): -CBBBBAA [5+5+6] 1842184
             pla                 ; recall color of pixel A
             lsr
             lsr
             and #%00111111
             sta ZPxScratch
             pla                 ; pixels C-D
+            ;lda #$ED            ; DEBUG troubleshoot blit
             pha                 ; remember for later
-            asl
-            asl
+            ror
+            ror
             and #%01000000
             ora ZPxScratch
             sta Zero, x
-            ; byte 3 (page 2): -DDDDCCC [6+6] 4218421
+            ; byte 7 (byte 3 page 2): -DDDDCCC [6+6] 4218421
             pla                 ; recall color of pixels C and D
             lsr
             and #$7F
