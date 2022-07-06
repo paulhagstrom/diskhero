@@ -104,8 +104,8 @@ ScrRegion:  .byte   0
 FieldH:     .byte   $04, $05, $05, $06, $06, $07
 FieldL:     .byte   $A8, $25, $A8, $28, $A8, $28
 FieldHC:    .byte   $08, $09, $09, $0A, $0A, $0B
-MapColors:  .byte   $CC, $DD, $EE, $44
-PlayColors: .byte   $1C, $2D, $3E, $C4
+MapColors:  .byte   $88, $66, $33, $44
+PlayColors: .byte   $08, $06, $03, $04
 ; Screen layout:
 ; mode 1 (text)     lines 00-0F (10) 00-01  score
 ; mode 6 (bw hires) lines 10-1F (10)        b/w map display
@@ -262,6 +262,7 @@ init:       sei                 ; no interrupts while we are setting up
             sta GameScore
             lda #$01
             sta RedrawMap       ; start by assuming we need to redraw whole thing
+            sta RedrawPlay      ; start by assuming we need to redraw whole thing
             bit IO_KEYCLEAR
             cli                 ; all set up now, interrupt away
 eventloop:  lda ExitFlag
@@ -331,7 +332,7 @@ keyk:       cmp #$CB            ; K (right)
             bne keye
             inc PlayX
             lda PlayX
-            cmp #$18
+            cmp #$19
             bne :+
             dec PlayX
 :           inc RedrawPlay      ; need to redraw playfield
@@ -867,14 +868,42 @@ redrawplay:
             ; or something like that.  Gives an indication of how far over you are.
             ; might also subdivide frame using the last font characters for more granular effect
             ; might also want to indicate somewhere else on the hires as well, like a scroll bar
+            lda #$09
+            sta CurScrLine
+            ; start with top and bottom borders, just colors, chars will already be there
+            ; for now just mark horizontal with a color change, but maybe later make it a scrollbar
+            tay
+borderh:    lda YLoresL, y
+            clc
+            adc #$27
+            tax
+            lda YLoresHB, y     ; $800 base (color space)
+            sta R_ZP            ; go to color memory
+            ldy #$27            ; draw $28 colors
+            lda #$50            ; grey1 background
+:           sta Zero, x
+            dex
+            dey
+            bmi :+
+            cpy PlayX
+            bne :-
+            lda #$A0            ; grey2 background
+            bne :-
+:           lda CurScrLine
+            cmp #$0A            ; if we have done both top and bottom
+            beq innerplay       ; move on to the middle
+            inc CurScrLine      ; set exit condition for next time
+            ldy #$0F            ; do the bottom line
+            bne borderh         ; branch always
+innerplay:
+            lda #$1A
+            sta R_ZP            ; back to 1A00 ZP
             lda CurrMap
             clc
             adc #$42
             adc NudgePos
             sta $0403
             jsr setmapptr
-            lda #$09
-            sta CurScrLine
 loresline:
             lda MapPtrL
             sta ZScrHole
@@ -964,7 +993,7 @@ gotcolor:   and #$0F            ; keep only the foreground color (background = b
             ; advance screen line
 :           inc CurScrLine
             lda CurScrLine
-            cmp #$10
+            cmp #$0F
             beq :+
             jmp loresline       ; more lines to draw, go draw them
 :
