@@ -113,9 +113,17 @@ PlayColors: .byte   $08, $06, $03, $04
 ; mode 1 (text)     lines 48-7F (38) 09-0F  text play field        map: 28-5F show: 42-46 (5)
 ; mode 7 (a3 hires) lines 80-A7 (28)        hires map lower field  map: 60-87
 ; mode 1 (text)     lines A8-BF (18) 15-17  text status display
+; REVISED plan, does not hide anything under the playfield, and make the playfield bigger
+; Screen layout:
+; mode 1 (text)     lines 00-0F (10) 00-01  score
+; mode 6 (bw hires) lines 10-1F (10)        b/w map display
+; mode 7 (a3 hires) lines 20-3F (20)        hires map upper field  map: 00-1F(27)
+; mode 1 (text)     lines 40-87 (48) 08-11  text play field        map: 20-28
+; mode 7 (a3 hires) lines 88-A7 (20)        hires map lower field  map: 29-48(50)
+; mode 1 (text)     lines A8-BF (18) 15-17  text status display
 ; Define the screen region; mode is a display mode, length is number of HBLs.
 ; nudge is 0 if no nudge, else pos or neg depending on which nudge count to use
-ScrRegLen:  .byte   $0E, $0E, $27, $37, $27, $17, $00
+ScrRegLen:  .byte   $0E, $0E, $1E, $46, $1E, $16, $00
 ScrRegMode: .byte   $01, $06, $07, $01, $07, $01, $00
 ScrNudge:   .byte   $00, $80, $01, $00, $01, $00, $00
 NudgePos:   .byte   0
@@ -249,7 +257,7 @@ init:       sei                 ; no interrupts while we are setting up
             jsr setupenv        ; arm interrupts
             lda #$00
             sta ScrRegion
-            lda #$60            ; start at line 60 of the map
+            lda #$00            ; start at line 60 of the map
             sta CurrMap
             lda #$10            ; start playfield kind of in the middle
             sta PlayX
@@ -583,13 +591,13 @@ setmapptr:  pha
             sta MapPtrH         ; floor(line/4) + $1000.
             rts
 
-; REVISED plan, does not hide anything under the playfield
+; REVISED plan, does not hide anything under the playfield, and make the playfield bigger
             ; Screen layout:
             ; mode 1 (text)     lines 00-0F (10) 00-01  score
             ; mode 6 (bw hires) lines 10-1F (10)        b/w map display
-            ; mode 7 (a3 hires) lines 20-47 (28)        hires map upper field  map: 00-27(2F)
-            ; mode 1 (text)     lines 48-7F (38) 09-0F  text play field        map: 28-2C
-            ; mode 7 (a3 hires) lines 80-A7 (28)        hires map lower field  map: 2D-55(5D)
+            ; mode 7 (a3 hires) lines 20-3F (20)        hires map upper field  map: 00-1F(27)
+            ; mode 1 (text)     lines 40-87 (48) 08-10  text play field        map: 20-26
+            ; mode 7 (a3 hires) lines 88-A7 (20)        hires map lower field  map: 27-48(50)
             ; mode 1 (text)     lines A8-BF (18) 15-17  text status display
 
 ; the top hires region occupies "lines $20 to $47" but to accommodate nudging we go to $4F
@@ -850,9 +858,9 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             ; advance the graphics raster line
 :           inc CurScrLine
             lda CurScrLine
-            cmp #$B0            ; last line of bottom field complete? ($80-$AF) (8 extra)
+            cmp #$B0            ; last line of bottom field complete? ($88-$AF) (8 extra)
             beq hiresdone       ; if so, move to the next screen region
-            cmp #$50            ; last line of top field complete? ($20-$4F) (8 extra)
+            cmp #$48            ; last line of top field complete? ($20-$47) (8 extra)
             beq redrawplay      ; if so, move on to the middle playfield region
             jmp hiresline       ; otherwise, do the next line
 hiresdone:
@@ -868,7 +876,7 @@ redrawplay:
             ; or something like that.  Gives an indication of how far over you are.
             ; might also subdivide frame using the last font characters for more granular effect
             ; might also want to indicate somewhere else on the hires as well, like a scroll bar
-            lda #$09
+            lda #$08
             sta CurScrLine
             ; start with top and bottom borders, just colors, chars will already be there
             ; for now just mark horizontal with a color change, but maybe later make it a scrollbar
@@ -890,17 +898,17 @@ borderh:    lda YLoresL, y
             lda #$A0            ; grey2 background
             bne :-
 :           lda CurScrLine
-            cmp #$0A            ; if we have done both top and bottom
+            cmp #$09            ; if we have done both top and bottom
             beq innerplay       ; move on to the middle
             inc CurScrLine      ; set exit condition for next time
-            ldy #$0F            ; do the bottom line
+            ldy #$10            ; do the bottom line
             bne borderh         ; branch always
 innerplay:
             lda #$1A
             sta R_ZP            ; back to 1A00 ZP
             lda CurrMap
             clc
-            adc #$28
+            adc #$20
             adc NudgePos
             sta $0403
             jsr setmapptr
@@ -993,7 +1001,7 @@ gotcolor:   and #$0F            ; keep only the foreground color (background = b
             ; advance screen line
 :           inc CurScrLine
             lda CurScrLine
-            cmp #$0F
+            cmp #$10
             beq :+
             jmp loresline       ; more lines to draw, go draw them
 :
@@ -1003,13 +1011,13 @@ gotcolor:   and #$0F            ; keep only the foreground color (background = b
             jmp lowstats
             
             ; top and middle fields now drawn, go back and do the bottom one
-            ; move the map pointer to $60
+            ; move the map pointer to start of bottom one
 :           lda CurrMap
             clc
-            adc #$2D
+            adc #$27
             jsr setmapptr
-            ; switch to the lower hires field and draw it from line $80
-            lda #$80
+            ; switch to the lower hires field and draw it from line $88
+            lda #$88
             sta CurScrLine
             jmp hiresline
             
@@ -1294,26 +1302,30 @@ drawback:   lda #$01            ; Apple III color text
             sta $BD0, y
             dey
             bpl :-
-            ; text lines 09-0F: playfield (frame)
+            ; text lines 08-11: playfield (frame)
             ldy #$27
 :           lda FrameText, y
-            sta $4A8, y
-            sta $7A8, y
+            sta $428, y
+            sta $450, y
             lda FrameCol, y
-            sta $8A8, y ; 
-            sta $BA8, y ; 
+            sta $828, y ; 
+            sta $850, y ; 
             lda InnerText, y
+            sta $4A8, y
             sta $528, y
             sta $5A8, y
             sta $628, y
             sta $6A8, y
             sta $728, y
+            sta $7A8, y
             lda InnerCol, y
+            sta $8A8, y
             sta $928, y
             sta $9A8, y
             sta $A28, y
             sta $AA8, y
             sta $B28, y
+            sta $BA8, y
             dey
             bpl :-
             ; mode 6 super hires
