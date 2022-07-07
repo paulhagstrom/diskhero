@@ -327,7 +327,7 @@ movey:      lda VelocityY
             beq movedone
             bmi moveup
             lda NudgePos        ; check if we can just increase nudge
-            cmp #$08
+            cmp #$07
             beq :+              ; no, we need to move map pointer
             clc
             jsr updatemap       ; scroll the hires graphics
@@ -744,8 +744,13 @@ updatemap:  php                 ; stash carry flag
             sta BankSave        ; but assume we are already in 1A00 ZP
             lda #$00            ; go to bank 0, where (hires) graphics memory lives
             sta R_BANK
+            plp                 ; restore carry flag
+            php                 ; re-stash carry flag
+            bcs :+
             lda #$20            ; first line of top map field
-            clc
+            bne :++
+:           lda #$38            ; first line of last group of top map field
+:           clc
             adc NudgePos
             plp                 ; restore carry flag
             php                 ; re-stash carry flag
@@ -758,8 +763,13 @@ updatemap:  php                 ; stash carry flag
             bcs topdec          ; if dec'ing copy line +$0 to last target (easy math)
             adc #$20            ; if inc'ing copy line +$20 to the last target
 topdec:     jsr drawline        ; draw the new line
+            plp                 ; restore carry flag
+            php                 ; re-stash carry flag
+            bcs :+
             lda #$88            ; first line of bottom map field
-            clc
+            bne :++
+:           lda #$A0            ; first line of last group of bottom map field
+:           clc
             adc NudgePos
             plp                 ; restore carry flag
             php                 ; re-stash carry flag
