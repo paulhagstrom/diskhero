@@ -97,6 +97,10 @@ KeyCaught:  .byte   0               ; keyboard int pushes a caught key in here
 RedrawMap:  .byte   0               ; keyboard int makes this nonzero to trigger redraw
 RedrawPlay: .byte   0               ; keyboard int makes this nonzero to trigger redraw
 CurrMap:    .byte   0
+VoidL:      .byte   0
+VoidR:      .byte   0
+VoidU:      .byte   0
+VoidD:      .byte   0
 
 GameLevel:  .byte   0
 GameScore:  .byte   0, 0, 0
@@ -109,10 +113,11 @@ PlayColors: .byte   $08, $06, $03, $04
 ; Screen layout:
 ; mode 1 (text)     lines 00-0F (10) 00-01  score
 ; mode 6 (bw hires) lines 10-1F (10)        b/w map display
-; mode 7 (a3 hires) lines 20-3F (20)        hires map upper field  map: 00-1F(27)
+; mode 7 (a3 hires) lines 20-3F (20)        hires map upper field  map: 00-1F
 ; mode 1 (text)     lines 40-87 (48) 08-10  text play field        map: 20-26
-; mode 7 (a3 hires) lines 88-A7 (20)        hires map lower field  map: 27-48(50)
+; mode 7 (a3 hires) lines 88-A7 (20)        hires map lower field  map: 27-46
 ; mode 1 (text)     lines A8-BF (18) 15-17  text status display
+;
 ; Define the screen region; mode is a display mode, length is number of HBLs.
 ; nudge is 0 if no nudge, else pos or neg depending on which nudge count to use
 ScrRegLen:  .byte   $0E, $0E, $1E, $47, $1E, $16, $00
@@ -120,7 +125,9 @@ ScrRegMode: .byte   $01, $06, $07, $01, $07, $01, $00
 ScrNudge:   .byte   $00, $80, $01, $00, $01, $00, $00
 NudgePos:   .byte   0
 NudgeNeg:   .byte   0
-PlayX:      .byte   0
+HeroX:      .byte   0
+HeroY:      .byte   0
+HeroDir:    .byte   0
 VelocityX:  .byte   0
 VelocityY:  .byte   0
 VBLTick:    .byte   0
@@ -262,7 +269,9 @@ init:       sei                 ; no interrupts while we are setting up
             lda #$00            ; start at line 60 of the map
             sta CurrMap
             lda #$10            ; start playfield kind of in the middle
-            sta PlayX
+            sta HeroX
+            lda #$F0
+            sta HeroY
             lda #$00            ; start at nudge 0
             sta NudgePos
             sta NudgeNeg
@@ -270,6 +279,7 @@ init:       sei                 ; no interrupts while we are setting up
             sta GameScore
             sta VelocityX
             sta VelocityY
+            sta HeroDir
             lda MoveDelay
             sta VBLTick
             lda #$01
@@ -310,18 +320,18 @@ alldone:    lda #$7F            ;disable all interrupts
 domove:     lda VelocityX
             beq movey           ; no X movement, go to check for Y-movement
             bmi moveleft
-            lda PlayX
+            lda HeroX
             cmp #$19            ; are we already at the right edge?
             beq stopx           ; yes, so stop X and move on to Y
-            inc PlayX
+            inc HeroX
             inc RedrawPlay      ; need to redraw playfield
             jmp movey
 stopx:      lda #$00            ; stop X and move on to Y
             sta VelocityX
             beq movey
-moveleft:   lda PlayX           ; are we already at the left edge?
+moveleft:   lda HeroX           ; are we already at the left edge?
             beq stopx           ; yes, so stop X and move on to Y
-            dec PlayX
+            dec HeroX
             inc RedrawPlay      ; need to redraw playfield
 movey:      lda VelocityY
             beq movedone
@@ -666,7 +676,7 @@ drawscore:
             rts
 
 ; compute map pointer, based on A.  Map data is in bank 2, $1000-4FFF.
-; If CurrMap is something like 00000101 (5), shift bits to translate to:
+; If current map pointer is something like 00000101 (5), shift bits to translate to:
 ; MapPtrL: 01000000 (40) MapPtrH: 00010001 (11) ($1140 and $40 bytes there)
 
 setmapptr:  pha
@@ -682,13 +692,11 @@ setmapptr:  pha
             sta MapPtrH
             rts
 
-; REVISED plan, does not hide anything under the playfield, and make the playfield bigger
-            ; Screen layout:
-            ; mode 1 (text)     lines 00-0F (10) 00-01  score
+; mode 1 (text)     lines 00-0F (10) 00-01  score
             ; mode 6 (bw hires) lines 10-1F (10)        b/w map display
-            ; mode 7 (a3 hires) lines 20-3F (20)        hires map upper field  map: 00-1F(27)
+            ; mode 7 (a3 hires) lines 20-3F (20)        hires map upper field  map: 00-1F
             ; mode 1 (text)     lines 40-87 (48) 08-10  text play field        map: 20-26
-            ; mode 7 (a3 hires) lines 88-A7 (20)        hires map lower field  map: 27-48(50)
+            ; mode 7 (a3 hires) lines 88-A7 (20)        hires map lower field  map: 27-48
             ; mode 1 (text)     lines A8-BF (18) 15-17  text status display
 
 ; the top hires region occupies "lines $20 to $47" but to accommodate nudging we go to $4F
@@ -701,37 +709,13 @@ setmapptr:  pha
 ; TODO -- need to handle display going past the map (draw zeros), since otherwise cannot
 ; even reach most of the map in the playfield.
 
-; the nudging wraps every 8 lines.
-; this means that if we are at currmap 0 nudge 0 and want to move down (currmap 0 nudge 1)
-; it will draw the 0th line on line 7.
-; which means that we will want to transfer line 7 to line 0
-; the current plan has 4 group of 8 in each hires window, so when we nudge down from 0 to 1, we
-; copy line 08 to line 00 rendered: 01-07 then 00 (now map line 08)
-; copy line 10 to line 08 rendered: 09-0F then 08 (now map line 10)
-; copy line 18 to line 10 rendered: 11-17 then 10 (now map line 18) 
-; draw line 20 on line 18 rendered: 19-1F then 18 (now map line 20)
-; then from 1 to 2, we (additionally)
-; copy line 09 to line 01 rendered: 02-07 then 00-01 (now map lines 08-09)
-; copy line 11 to line 09 rendered: 0A-0F then 08-09 (now map lines 10-11)
-; copy line 19 to line 11 rendered: 12-17 then 10-11 (now map lines 18-19) 
-; draw line 21 on line 19 rendered: 1A-1F then 18-19 (now map lines 20-21)
-; and so on until we reach the last step when nudging from 7 to 0, we
-; copy line 0F to line 07 rendered: 00-07 (now map lines 08-0F)
-; copy line 17 to line 0F rendered: 08-0F (now map lines 10-17)
-; copy line 1F to line 17 rendered: 10-17 (now map lines 18-1F) 
-; draw line 27 on line 1F rendered: 18-1F (now map lines 20-27)
-; in general, that is:
+; in general, increasing nudge:
 ; copy graphics line 08 + oldnudge to 00 + oldnudge
 ; copy graphics line 10 + oldnudge to 08 + oldnudge
 ; copy graphics line 18 + oldnudge to 10 + oldnudge
 ; draw map line for graphics line 20 + oldnudge on graphics line 18 + oldnudge
 ; and then advance nudge and #$07.
-; to move back up from 2 to 1, we reverse it by doing this:
-; copy screen line 11 to line 19 rendered: 19-1F then 18 (map line 20)
-; copy screen line 09 to line 11 rendered: 11-17 then 10 (map line 18) 
-; copy screen line 01 to line 09 rendered: 09-0F then 08 (map line 10)
-; draw screen line 01 on line 01 rendered: 01-07 then 00 (map line 08)
-; or
+; to move back up (decreasing nudge)
 ; copy graphics line 10 + newnudge to 18 + newnudge
 ; copy graphics line 08 + newnudge to 10 + newnudge
 ; copy graphics line 00 + newnudge to 08 + newnudge
@@ -836,6 +820,13 @@ lmtrgb:     sta $4000, y
             jmp lmnext
 :           rts
 
+; seven magenta pixels for the left and right two bytes in the map region
+BorderBits: .byte %00010001
+            .byte %00100010
+            .byte %01000100
+            .byte %00001000
+            ; 00010001 00100010 01000100 00001000
+
 ; enter with X holding the target line on the graphics page
 ; and A holding the map line we will be drawing there
 ; drawlineb is a second entry point if the map pointer is already set
@@ -857,6 +848,48 @@ drawlineb:  lda YHiresHA, x     ; get 2000-based address of current line on scre
             ; lo byte is same on either page, store it in 1A00 page.
             lda YHiresL, x
             sta ZLineStart
+            tax
+            ; draw border bits
+            lda ZOtherZP        ; HGR1
+            sta R_ZP
+            lda BorderBits + 2
+            tay
+            lda BorderBits
+            pha
+            sta Zero, x
+            inx
+            tya
+            sta Zero, x
+            txa
+            clc
+            adc #$26
+            tax
+            tya
+            sta Zero, x
+            dex
+            pla
+            sta Zero, x
+            lda ZOtherZP        ; HGR2
+            sta R_ZP
+            lda BorderBits + 3
+            tay
+            lda BorderBits + 1
+            pha
+            sta Zero, x
+            inx
+            tya
+            sta Zero, x
+            txa
+            sec
+            sbc #$26
+            tax
+            tya
+            sta Zero, x
+            dex
+            pla
+            sta Zero, x
+            lda #$1A
+            sta R_ZP
             ; push left edge right 14 pixels to center it
             inc ZLineStart
             inc ZLineStart
@@ -872,16 +905,6 @@ drawlineb:  lda YHiresHA, x     ; get 2000-based address of current line on scre
             ; using 4 bytes to represent 14 pixels and 7 map data bytes.
             ; mapbytes: 0  7  14  21  28  35  42  49  56  (63) (ZCurrMapX)
             ; pixbytes: 0  4   8  12  16  20  24  28  32  (36) (ZCurrDrawX)
-            ; diagram of pixel/video memory layout borrowed frmo Rob Justice:
-            ; 140x192 16 color mode pixel layout
-            ; 
-            ; |    2000     |    4000     |    2001     |    4001     |
-            ; | | | | | | | | | | | | | | | | | | | | | | | | | | | | |
-            ; |  P1   |  P2   |  P3   |  P4   |  P5   |  P6   |  P7   |
-            ;  B           B B           B B           B B           B
-            ;  i           i i           i i           i i           i
-            ;  t           t t           t t           t t           t
-            ;  0           7 0           7 0           7 0           7
             lda #62
             sta ZCurrMapX        ; right edge of last group of map bytes
             lda ZLineStart       ; add 32 to left edge of graphics memory for line
@@ -956,7 +979,11 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             ; 0011 3 purple     0111 7 lightblue    1011 B pink     1111 F white
             ;
             ; The bits increase steadily in significance from pixel 1 to pixel 7.
-            
+            ; LSB->MSB
+            ;  1000100  0100010  0010001  0001000
+            ; MSB->LSB
+            ;  0010001  0100010  1000100  0001000
+            ; 00010001 00100010 01000100 00001000
             ldx ZCurrDrawX      ; set x to the horizontal offset on screen
             lda ZOtherZP        ; go to HGR1 ZP for drawing
             sta R_ZP
@@ -1131,7 +1158,7 @@ borderh:    lda YLoresL, y
             dex
             dey
             bmi :+
-            cpy PlayX
+            cpy HeroX
             bne :-
             lda #$A0            ; grey2 background
             bne :-
@@ -1161,7 +1188,7 @@ loresline:
             ; buffer all diplayed map bytes into the stack, from right to left
             lda #$27
             sta ZPxScratch
-            lda PlayX
+            lda HeroX
             clc
             adc #$27
             tay
@@ -1267,6 +1294,8 @@ scrpaint:
             beq redrawplay      ; if we only need to redraw playfield, jump there
             lda #$20            ; top field starts at display line $20
             sta CurScrLine      ; CurScrLine is the current actual line on the screen
+            lda HeroY           ; compute how many lines of void (non-map) there are
+            sec
             lda CurrMap
             sta $0401           ; DEBUG
             jsr setmapptr       ; load mapptr for CurrMap
@@ -1471,10 +1500,58 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             sta MFY
             jmp mfbox
 :            
-; TODO place some disks
-; TODO place some hoarders
-            lda ZPSave
+            lda #$30            ; disks to scatter around
+            sta MFPlaced
+:           jsr mfrndspot
+            ; TODO - remember where they were and distribute according to value
+            ldx Seed
+            lda Random, x
+            inx
+            stx Seed
+            and #$C0            ; pick a random color
+            ora C_DISK
+            sta (ZPtrA), y
+            dec MFPlaced
+            bpl :-
+            
+            lda #$10            ; hoarders to scatter around
+            sta MFPlaced
+:           jsr mfrndspot
+            ; TODO - remember where they were
+            lda C_HHEADA
+            sta (ZPtrA), y
+            iny
+            lda C_HHANDRA
+            sta (ZPtrA), y
+            dec MFPlaced
+            bpl :-
+
+mfdone:     lda ZPSave
             sta R_ZP
+            rts
+
+; find a random spot that is open in the map
+mfrndspot:  ldx Seed
+            lda Random, x
+            inx
+            jsr setmapptr
+            lda Random, x
+            inx
+            stx Seed
+            and #$3F
+            tay
+            lda MapPtrL
+            sta ZPtrA
+            lda MapPtrH
+            sta ZPtrA + 1
+            lda #$82
+            sta ZPtrA + XByte
+            lda (ZPtrA), y
+            bne mfrndspot           ; if spot wasn't empty keep looking maybe forever
+            iny                     ; spot needs to have space to its right as well
+            lda (ZPtrA), y
+            bne mfrndspot           ; if spot wasn't empty keep looking maybe forever
+            dey
             rts
 
 ; paint the static parts of the page
