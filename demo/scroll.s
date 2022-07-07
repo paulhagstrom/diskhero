@@ -109,31 +109,32 @@ PlayColors: .byte   $08, $06, $03, $04
 ; Screen layout:
 ; mode 1 (text)     lines 00-0F (10) 00-01  score
 ; mode 6 (bw hires) lines 10-1F (10)        b/w map display
-; mode 7 (a3 hires) lines 20-47 (28)        hires map upper field  map: 00-27 
-; mode 1 (text)     lines 48-7F (38) 09-0F  text play field        map: 28-5F show: 42-46 (5)
-; mode 7 (a3 hires) lines 80-A7 (28)        hires map lower field  map: 60-87
-; mode 1 (text)     lines A8-BF (18) 15-17  text status display
-; REVISED plan, does not hide anything under the playfield, and make the playfield bigger
-; Screen layout:
-; mode 1 (text)     lines 00-0F (10) 00-01  score
-; mode 6 (bw hires) lines 10-1F (10)        b/w map display
 ; mode 7 (a3 hires) lines 20-3F (20)        hires map upper field  map: 00-1F(27)
 ; mode 1 (text)     lines 40-87 (48) 08-10  text play field        map: 20-26
 ; mode 7 (a3 hires) lines 88-A7 (20)        hires map lower field  map: 27-48(50)
 ; mode 1 (text)     lines A8-BF (18) 15-17  text status display
 ; Define the screen region; mode is a display mode, length is number of HBLs.
 ; nudge is 0 if no nudge, else pos or neg depending on which nudge count to use
-ScrRegLen:  .byte   $0E, $0E, $1E, $46, $1E, $16, $00
+ScrRegLen:  .byte   $0E, $0E, $1E, $47, $1E, $16, $00
 ScrRegMode: .byte   $01, $06, $07, $01, $07, $01, $00
 ScrNudge:   .byte   $00, $80, $01, $00, $01, $00, $00
 NudgePos:   .byte   0
 NudgeNeg:   .byte   0
 PlayX:      .byte   0
+VelocityX:  .byte   0
+VelocityY:  .byte   0
+VBLTick:    .byte   0
+MoveDelay   = 5            ; VBL tick delay between moves
 
 ; I played with ScRegLen by trial and error a little.
 ; Not sure why I needed to go two down for region zero.
 ; Probably because the VBL code (or HBL code) takes long enough that we miss
 ; some HBLs here and there.
+; Also worth noting that it is not fully consistent between MAME and real hardware.
+; May want to put some black gaps between switches to fudge that a little, so that
+; I don't have to wait for MAME to catch up (and can continue to develop in MAME)
+; Since I suspect it is somewhat dependent on workload (some HBLs are missed?) may want
+; to wait until it is closer to operational to tweak that.
 
 ZFontDots   = $80   ; ZP cache for FontDots to speed up drawing
 ZFontCol    = $B0   ; ZP cache for FontCol to speed up drawing
@@ -229,6 +230,7 @@ intvbl:     lda ScrRegLen       ; reset the HBL counter to the length of top reg
             lda ScrRegMode      ; move display to correct mode
             jsr setdisplay
             lda D_SCROLLOFF     ; smooth scrolling off is assumed for top region
+            dec VBLTick
             rts
 
 init:       sei                 ; no interrupts while we are setting up
@@ -264,14 +266,17 @@ init:       sei                 ; no interrupts while we are setting up
             lda #$00            ; start at nudge 0
             sta NudgePos
             sta NudgeNeg
-            lda #$00
             sta GameLevel
-            lda #$00
             sta GameScore
+            sta VelocityX
+            sta VelocityY
+            lda MoveDelay
+            sta VBLTick
             lda #$01
             sta RedrawMap       ; start by assuming we need to redraw whole thing
             sta RedrawPlay      ; start by assuming we need to redraw whole thing
             bit IO_KEYCLEAR
+            jsr scrpaint        ; paint the initial screen
             cli                 ; all set up now, interrupt away
 eventloop:  lda ExitFlag
             bne alldone
@@ -281,9 +286,11 @@ eventloop:  lda ExitFlag
 :            
             inc GameScore + 2   ; DEBUG - constantly move score up
             jsr drawscore
-            lda RedrawPlay      ; screen moved, at least playfield needs update
-            beq :+
-            jsr scrupdate
+            lda VBLTick
+            bpl :+
+            jsr domove
+            lda MoveDelay
+            sta VBLTick
 :           jmp eventloop
 
 alldone:    lda #$7F            ;disable all interrupts
@@ -297,54 +304,92 @@ alldone:    lda #$7F            ;disable all interrupts
             .byte   TERMINATE
             .word   *-2
 
-; process keypress
+; do moving (called maximally once per MoveDelay VBLs)
+; (since otherwise it can be too fast, though this might be a way to make it harder)
 
-handlekey:  
-            cmp #$C9            ; I (up, scroll map down)
-            bne keym
+domove:     lda VelocityX
+            beq movey           ; no X movement, go to check for Y-movement
+            bmi moveleft
+            lda PlayX
+            cmp #$19            ; are we already at the right edge?
+            beq stopx           ; yes, so stop X and move on to Y
+            inc PlayX
             inc RedrawPlay      ; need to redraw playfield
-            dec NudgePos        ; first try scrolling just by decreasing the nudge
-            bpl keydone
-            lda #$07            ; if we ran off the top of what we drew
-            sta NudgePos        ; reset nudge
-            lda CurrMap         ; and subtract 8 from CurrMap
-            sec
-            sbc #$08
-            sta CurrMap
-            inc RedrawMap       ; need to redraw whole map
-            jmp keydone
-keym:       cmp #$CD            ; M (down, scroll map up)
-            bne keyj
+            jmp movey
+stopx:      lda #$00            ; stop X and move on to Y
+            sta VelocityX
+            beq movey
+moveleft:   lda PlayX           ; are we already at the left edge?
+            beq stopx           ; yes, so stop X and move on to Y
+            dec PlayX
             inc RedrawPlay      ; need to redraw playfield
-            inc NudgePos        ; first try scrolling just by increaing the nudge
-            lda NudgePos
+movey:      lda VelocityY
+            beq movedone
+            bmi moveup
+            lda NudgePos        ; check if we can just increase nudge
             cmp #$08
-            bne keydone
-            lda #$00            ; if we ran off the bottom of what we drew
-            sta NudgePos        ; reset nudge
-            lda CurrMap         ; and add 8 to CurrMap
+            beq :+              ; no, we need to move map pointer
+            inc NudgePos        ; yes, increase nudge
+            inc RedrawPlay      ; need to redraw playfield
+            jmp movedone
+:           lda CurrMap         ; add 8 to CurrMap
             clc
             adc #$08
+            beq stopy           ; wait, we already hit bottom, do nothing
             sta CurrMap
+            lda #$00            ; if we ran off the bottom of what we drew
+            sta NudgePos        ; reset nudge
             inc RedrawMap       ; need to redraw whole map
-            jmp keydone
-keyj:       cmp #$CA            ; J (left)
-            bne keyk
-            dec PlayX
-            lda PlayX
-            cmp #$FF
+            inc RedrawPlay
+            jmp movedone
+stopy:      sta VelocityY       ; stop Y
+            jmp movedone
+moveup:     lda NudgePos        ; check if we can just decrease nudge
+            beq :+              ; no, we need to move map pointer
+            dec NudgePos
+            inc RedrawPlay
+            jmp movedone
+:           lda CurrMap         ; can we move map pointer?
+            beq stopy           ; no, we already hit top, do nothing
+            sec                 ; subtract 8 from CurrMap
+            sbc #$08
+            sta CurrMap
+            lda #$07            ; reset nudge
+            sta NudgePos
+            inc RedrawMap       ; need to redraw whole map
+            inc RedrawPlay
+movedone:   jsr scrpaint
+            rts
+            
+; process keypress
+
+handlekey:  cmp #$C9            ; I (up, scroll map down)
             bne :+
-            inc PlayX
-:           inc RedrawPlay      ; need to redraw playfield
-keyk:       cmp #$CB            ; K (right)
-            bne keye
-            inc PlayX
-            lda PlayX
-            cmp #$19
+            lda #$80
+            sta VelocityY
+            bne keydone
+:           cmp #$CD            ; M (down, scroll map up)
             bne :+
-            dec PlayX
-:           inc RedrawPlay      ; need to redraw playfield
-keye:       cmp #$C5            ; E (exit)
+            lda #$01
+            sta VelocityY
+            bne keydone
+:           cmp #$CA            ; J (left)
+            bne :+
+            lda #$80
+            sta VelocityX
+            bne keydone
+:           cmp #$CB            ; K (right)
+            bne :+
+            lda #$01
+            sta VelocityX
+            bne keydone
+:           cmp #$A0            ; space
+            bne :+
+            lda #$00
+            sta VelocityX
+            sta VelocityY
+            beq keydone
+:           cmp #$C5            ; E (exit)
             bne keydone            
             inc ExitFlag        ; tell event loop we are exiting
 keydone:    lda #$00
@@ -611,41 +656,138 @@ setmapptr:  pha
 ; TODO -- need to handle display going past the map (draw zeros), since otherwise cannot
 ; even reach most of the map in the playfield.
 
-scrupdate:
-            ; update parts of the screen that need updating.
-            ; redrawPlay is set if the playfield in the middle needs updating
-            ; redrawMap is set if the map above and below playfield needs updating too
-            ; The map can be moved by NudgePos without redrawing, while the playfield cannot.
-            ; CurrMap is the top map line of the top map we are looking at.
-            ; 
-            ; update playfield (lines 9-14)
-            ; CurrMap represents the line in the map data at top of playfield
-            ; playfield representation starts at 2000 in bank 2, each line is $40 long
-            ; so lines at 2000, 2040, 2080, 20C0, 2100, 2140, etc.
-            ; anything interacting with the map should activate $1A00 ZP
-            ; we will temporarily switch to graphics-based ZP when necessary
-            lda R_ZP
-            sta ZPSave          ; save current ZP
-            lda R_BANK
-            sta BankSave        ; save current bank
-            lda #$1A
-            sta R_ZP            ; switch ZP to $1A00
-            lda #$00            ; swap in bank zero,
-            sta R_BANK          ; where (hires) graphics memory lives
+; the nudging wraps every 8 lines.
+; this means that if we are at currmap 0 nudge 0 and want to move down (currmap 0 nudge 1)
+; it will draw the 0th line on line 7.
+; which means that we will want to transfer line 7 to line 0
+; the current plan has 4 group of 8 in each hires window, so when we nudge down from 0 to 1, we
+; copy line 08 to line 00 rendered: 01-07 then 00 (now map line 08)
+; copy line 10 to line 08 rendered: 09-0F then 08 (now map line 10)
+; copy line 18 to line 10 rendered: 11-17 then 10 (now map line 18) 
+; draw line 20 on line 18 rendered: 19-1F then 18 (now map line 20)
+; then from 1 to 2, we (additionally)
+; copy line 09 to line 01 rendered: 02-07 then 00-01 (now map lines 08-09)
+; copy line 11 to line 09 rendered: 0A-0F then 08-09 (now map lines 10-11)
+; copy line 19 to line 11 rendered: 12-17 then 10-11 (now map lines 18-19) 
+; draw line 21 on line 19 rendered: 1A-1F then 18-19 (now map lines 20-21)
+; and so on until we reach the last step when nudging from 7 to 0, we
+; copy line 0F to line 07 rendered: 00-07 (now map lines 08-0F)
+; copy line 17 to line 0F rendered: 08-0F (now map lines 10-17)
+; copy line 1F to line 17 rendered: 10-17 (now map lines 18-1F) 
+; draw line 27 on line 1F rendered: 18-1F (now map lines 20-27)
+; in general, that is:
+; copy graphics line 08 + oldnudge to 00 + oldnudge
+; copy graphics line 10 + oldnudge to 08 + oldnudge
+; copy graphics line 18 + oldnudge to 10 + oldnudge
+; draw map line for graphics line 20 + oldnudge on graphics line 18 + oldnudge
+; and then advance nudge and #$07.
+; to move back up from 2 to 1, we reverse it by doing this:
+; copy screen line 11 to line 19 rendered: 19-1F then 18 (map line 20)
+; copy screen line 09 to line 11 rendered: 11-17 then 10 (map line 18) 
+; copy screen line 01 to line 09 rendered: 09-0F then 08 (map line 10)
+; draw screen line 01 on line 01 rendered: 01-07 then 00 (map line 08)
+; or
+; copy graphics line 10 + newnudge to 18 + newnudge
+; copy graphics line 08 + newnudge to 10 + newnudge
+; copy graphics line 00 + newnudge to 08 + newnudge
+; draw map line for graphics line 00 + newnudge on graphics line 00 + newnudge
 
-            lda RedrawMap
-            bne redrawmap
-            jmp redrawplay      ; if we only need to redraw playfield, jump there
-redrawmap:
-            lda #$20            ; top field starts at display line $20
-            sta CurScrLine      ; CurScrLine is the current actual line on the screen
-            lda CurrMap
-            sta $0401           ; DEBUG
-            jsr setmapptr       ; load mapptr for CurrMap
-hiresline:
-            ; prepare ground for pushing to this hires raster line
-            ldx CurScrLine
-            lda YHiresHA, x     ; get 2000-based address of current line on screen
+; enter with carry clear to increase nudge (with old NudgePos),
+; or carry set to decrease nudge (with new already-decreased NudgePos).
+
+updatemap:  php                 ; stash carry flag
+            lda R_BANK          ; save bank
+            sta BankSave        ; but assume we are already in 1A00 ZP
+            lda #$00            ; go to bank 0, where (hires) graphics memory lives
+            sta R_BANK
+            lda #$20            ; first line of top map field
+            clc
+            adc NudgePos
+            plp                 ; restore carry flag
+            php                 ; re-stash carry flag
+            jsr copylines
+            lda CurrMap         ; find map line to draw on last target
+            clc                 
+            adc NudgePos
+            plp                 ; restore carry flag
+            php                 ; re-stash carry flag
+            bcs topdec          ; if dec'ing copy line +$0 to last target (easy math)
+            adc #$20            ; if inc'ing copy line +$20 to the last target
+topdec:     jsr drawline        ; draw the new line
+            lda #$88            ; first line of bottom map field
+            clc
+            adc NudgePos
+            plp                 ; restore carry flag
+            php                 ; re-stash carry flag
+            jsr copylines
+            lda CurrMap         ; find map line to draw on last target
+            clc
+            adc NudgePos
+            plp                 ; restore carry flag
+            bcs botdec          ; if dec'ing...
+            adc #$49            ; if inc'ing copy line +$49 to last target
+            bcc botdraw
+botdec:     adc #$27            ; if dec'ing copy line +$27 to last target
+botdraw:    jsr drawline
+            lda BankSave        ; put the bank back
+            sta R_BANK
+            rts
+
+; copylines uses self-modifying code to quickly copy the three graphics lines
+; enter with graphics line (top line plus NudgePos), carry clear for increase nudge, set for decrease nudge
+; exits with x still holding the line that would be the target of new draw (was last source)
+copylines:  tax
+            lda #$02            ; move three lines, count in ZPxScratch
+            sta ZPxScratch
+            lda YHiresL, x
+            sta lmtrga + 1      ; target A low
+            sta lmtrgb + 1      ; target B low
+            lda YHiresHA, x
+            sta lmtrga + 2      ; target A high
+            lda YHiresHB, x
+            sta lmtrgb + 2      ; target B high
+lmnext:     txa
+            bcs :+              ; if carry is set we are subtracting
+            adc #$08            ; if carry is clear we are adding
+            clc
+            bcc lmprep
+:           sbc #$08
+            sec            
+lmprep:     tax
+            lda YHiresL, x
+            sta lmsrca + 1      ; source A low
+            sta lmsrcb + 1      ; source B low
+            lda YHiresHA, x
+            sta lmsrca + 2      ; source A high
+            lda YHiresHB, x
+            sta lmsrcb + 2      ; source B high
+            ldy #$27
+lmsrca:     lda $2000, y
+lmtrga:     sta $4000, y
+lmsrcb:     lda $2000, y
+lmtrgb:     sta $4000, y
+            dey
+            bpl lmsrca
+            dec ZPxScratch
+            bmi :+              ; done moving lines
+            ; prior source becomes new target
+            lda lmsrca + 1
+            sta lmtrga + 1
+            lda lmsrca + 2
+            sta lmtrga + 2
+            lda lmsrcb + 1
+            sta lmtrgb + 1
+            lda lmsrcb + 2
+            sta lmtrgb + 2
+            jmp lmnext
+:           rts
+
+; enter with X holding the target line on the graphics page
+; and A holding the map line we will be drawing there
+; drawlineb is a second entry point if the map pointer is already set
+; this assumes that 1A00 is the normal ZP we start in, and bank 0 (hgr) is switched in
+drawline:   jsr setmapptr       ; load mapptr for map line to draw
+drawlineb:  lda YHiresHA, x     ; get 2000-based address of current line on screen
             ; engineer it so that ZOtherZP in hgr pages always points to the other ZP to flip quickly.
             sta ZOtherZP        ; store HGR1 page in 1A00 ZP.
             sta R_ZP            ; switch to HGR page 1 ZP
@@ -903,24 +1045,11 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             sbc #$04
             sta ZCurrDrawX
             jmp toplineseg
-            ; with the line now drawn, advance the map pointer to the next line
-:           lda MapPtrL
-            clc
-            adc #$40
-            sta MapPtrL
-            bcc :+
-            inc MapPtrH
-            ; advance the graphics raster line
-:           inc CurScrLine
-            lda CurScrLine
-            cmp #$B0            ; last line of bottom field complete? ($88-$AF) (8 extra)
-            beq hiresdone       ; if so, move to the next screen region
-            cmp #$48            ; last line of top field complete? ($20-$47) (8 extra)
-            beq redrawplay      ; if so, move on to the middle playfield region
-            jmp hiresline       ; otherwise, do the next line
-hiresdone:
-            jmp lowstats
-redrawplay:
+:           rts
+
+; draw the (text based) playfield in the middle
+
+drawplay:
             ; the middle lores field starts at map $42 and draws to $46 (plus NudgePos)
             ; TODO - should be some boundary check on movement to handle overflow potential here
             ; TODO - once you can move left and right should draw frame sides as well.
@@ -964,7 +1093,6 @@ innerplay:
             lda CurrMap
             clc
             adc #$20
-            lda CurrMap         ; DEBUG - put playfield back at the top like top field
             adc NudgePos
             sta $0403
             jsr setmapptr
@@ -1059,42 +1187,68 @@ gotcolor:   and #$0F            ; keep only the foreground color (background = b
             cmp #$10
             beq :+
             jmp loresline       ; more lines to draw, go draw them
-:
-            ; if we only needed to redraw the playfield we are done
+:           rts
+
+; paint the whole screen
+scrpaint:
+            ; update parts of the screen that need updating.
+            ; redrawPlay is set if the playfield in the middle needs updating
+            ; redrawMap is set if the map above and below playfield needs updating too
+            ; The map can be moved by NudgePos without redrawing, while the playfield cannot.
+            ; CurrMap is the top map line of the top map we are looking at.
+            ; 
+            ; update playfield (lines 9-14)
+            ; CurrMap represents the line in the map data at top of playfield
+            ; playfield representation starts at 2000 in bank 2, each line is $40 long
+            ; so lines at 2000, 2040, 2080, 20C0, 2100, 2140, etc.
+            ; anything interacting with the map should activate $1A00 ZP
+            ; we will temporarily switch to graphics-based ZP when necessary
+            lda R_ZP
+            sta ZPSave          ; save current ZP
+            lda R_BANK
+            sta BankSave        ; save current bank
+            lda #$00            ; swap in bank zero,
+            sta R_BANK          ; where (hires) graphics memory lives
             lda RedrawMap
-            bne :+
-            jmp lowstats
-            
-            ; top and middle fields now drawn, go back and do the bottom one
-            ; move the map pointer to start of bottom one
-:           lda CurrMap
+            beq redrawplay      ; if we only need to redraw playfield, jump there
+            lda #$20            ; top field starts at display line $20
+            sta CurScrLine      ; CurScrLine is the current actual line on the screen
+            lda CurrMap
+            sta $0401           ; DEBUG
+            jsr setmapptr       ; load mapptr for CurrMap
+hiresline:  ldx CurScrLine      ; target line on graphics screen
+            jsr drawlineb
+            lda MapPtrL         ; advance the map pointer to the next line
+            clc
+            adc #$40
+            sta MapPtrL
+            bcc :+
+            inc MapPtrH
+:           inc CurScrLine      ; advance the graphics raster line
+            lda CurScrLine
+            cmp #$A9            ; last line of bottom field complete? ($88-$A8)
+            beq redrawplay       ; if so, move to the next screen region
+            cmp #$40            ; last line of top field complete? ($20-$3F)
+            bne hiresline       ; nope, keep going
+            lda CurrMap         ; set up starting point for lower field
             clc
             adc #$27
             jsr setmapptr
-            ; switch to the lower hires field and draw it from line $88
-            lda #$88
+            lda #$88            ; draw lower hires field from line $88
             sta CurScrLine
             jmp hiresline
-            
-lowstats:
+redrawplay: jsr drawplay
+
             ; draw the last field on the screen, the mode 1 lower status region
             ; TOOD
 
-            ; restore ZP and come back
-updatedone:
-            ; reset the update flags
-            lda #$00
+            lda #$00            ; reset the update flags
             sta RedrawMap
             sta RedrawPlay
-            
-            lda ZPSave
+            lda ZPSave          ; restore ZP and bank
             sta R_ZP
-
-            ; restore bank to whatever it was
-            
             lda BankSave
             sta R_BANK
-            
             rts
             
 Seed:        .byte    0
