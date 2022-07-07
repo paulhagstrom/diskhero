@@ -363,32 +363,67 @@ movedone:   jsr scrpaint
             
 ; process keypress
 
-handlekey:  cmp #$C9            ; I (up, scroll map down)
+handlekey:  
+            cmp #$CB            ; U (up-left)
             bne :+
             lda #$80
+            sta VelocityX
             sta VelocityY
-            bne keydone
-:           cmp #$CD            ; M (down, scroll map up)
+            jmp keydone
+:           cmp #$C9            ; I (up, scroll map down)
+            bne :+
+            lda #$00
+            sta VelocityX
+            lda #$80
+            sta VelocityY
+            jmp keydone
+:           cmp #$CB            ; O (up-right)
             bne :+
             lda #$01
+            sta VelocityX
+            lda #$80
             sta VelocityY
-            bne keydone
+            jmp keydone
 :           cmp #$CA            ; J (left)
             bne :+
             lda #$80
             sta VelocityX
-            bne keydone
-:           cmp #$CB            ; K (right)
-            bne :+
-            lda #$01
-            sta VelocityX
-            bne keydone
-:           cmp #$A0            ; space
+            lda #$00
+            sta VelocityY
+            jmp keydone
+:           cmp #$CB            ; K (stop)
             bne :+
             lda #$00
             sta VelocityX
             sta VelocityY
-            beq keydone
+            jmp keydone
+:           cmp #$CC            ; L (right)
+            bne :+
+            lda #$01
+            sta VelocityX
+            lda #$00
+            sta VelocityY
+            jmp keydone
+:           cmp #$CD            ; M (down-left)
+            bne :+
+            lda #$80
+            sta VelocityX
+            lda #$01
+            sta VelocityY
+            jmp keydone
+:           cmp #$AC            ; , (down, scroll map up)
+            bne :+
+            lda #$00
+            sta VelocityX
+            lda #$01
+            sta VelocityY
+            jmp keydone
+:           cmp #$AE            ; . (down-right)
+            bne :+
+            lda #$01
+            sta VelocityX
+            sta VelocityY
+            jmp keydone
 :           cmp #$C5            ; E (exit)
             bne keydone            
             inc ExitFlag        ; tell event loop we are exiting
