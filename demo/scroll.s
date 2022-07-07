@@ -329,25 +329,32 @@ movey:      lda VelocityY
             lda NudgePos        ; check if we can just increase nudge
             cmp #$08
             beq :+              ; no, we need to move map pointer
+            clc
+            jsr updatemap       ; scroll the hires graphics
             inc NudgePos        ; yes, increase nudge
             inc RedrawPlay      ; need to redraw playfield
             jmp movedone
 :           lda CurrMap         ; add 8 to CurrMap
             clc
             adc #$08
-            beq stopy           ; wait, we already hit bottom, do nothing
+            beq stopy           ; wait, we already hit bottom, do nothing after all
+            pha                 ; stash new CurrMap
+            clc
+            jsr updatemap       ; scroll the screen graphics
+            pla                 ; retrieve new CurrMap
             sta CurrMap
-            lda #$00            ; if we ran off the bottom of what we drew
-            sta NudgePos        ; reset nudge
-            inc RedrawMap       ; need to redraw whole map
-            inc RedrawPlay
+            lda #$00            ; reset nudge
+            sta NudgePos
+            inc RedrawPlay      ; need to redraw playfield
             jmp movedone
 stopy:      sta VelocityY       ; stop Y
             jmp movedone
 moveup:     lda NudgePos        ; check if we can just decrease nudge
             beq :+              ; no, we need to move map pointer
             dec NudgePos
-            inc RedrawPlay
+            sec
+            jsr updatemap       ; scroll the screen graphics
+            inc RedrawPlay      ; need to redraw playfield
             jmp movedone
 :           lda CurrMap         ; can we move map pointer?
             beq stopy           ; no, we already hit top, do nothing
@@ -356,15 +363,18 @@ moveup:     lda NudgePos        ; check if we can just decrease nudge
             sta CurrMap
             lda #$07            ; reset nudge
             sta NudgePos
-            inc RedrawMap       ; need to redraw whole map
-            inc RedrawPlay
-movedone:   jsr scrpaint
-            rts
+            sec
+            jsr updatemap       ; scroll the screen graphics
+            inc RedrawPlay      ; need to redraw playfield
+movedone:   lda RedrawPlay
+            beq :+
+            jsr drawplay
+:           rts
             
 ; process keypress
 
 handlekey:  
-            cmp #$CB            ; U (up-left)
+            cmp #$D5            ; U (up-left)
             bne :+
             lda #$80
             sta VelocityX
@@ -377,7 +387,7 @@ handlekey:
             lda #$80
             sta VelocityY
             jmp keydone
-:           cmp #$CB            ; O (up-right)
+:           cmp #$CF            ; O (up-right)
             bne :+
             lda #$01
             sta VelocityX
@@ -729,7 +739,6 @@ setmapptr:  pha
 
 ; enter with carry clear to increase nudge (with old NudgePos),
 ; or carry set to decrease nudge (with new already-decreased NudgePos).
-
 updatemap:  php                 ; stash carry flag
             lda R_BANK          ; save bank
             sta BankSave        ; but assume we are already in 1A00 ZP
