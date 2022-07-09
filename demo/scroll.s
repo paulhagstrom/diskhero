@@ -131,7 +131,7 @@ HeroDir:    .byte   0
 VelocityX:  .byte   0
 VelocityY:  .byte   0
 VBLTick:    .byte   0
-MoveDelay   = 1            ; VBL tick delay between moves
+MoveDelay   = 2            ; VBL tick delay between moves
 
 ; I played with ScRegLen by trial and error a little.
 ; Not sure why I needed to go two down for region zero.
@@ -342,6 +342,7 @@ xleft:      dex
             stx VelocityX
 xchecked:   stx NewHeroX
             ldx HeroY
+            txa
             jsr setmapptr   ; locate old hero's y-coordinate on map
             lda MapPtrL
             sta ZPtrB
@@ -353,12 +354,13 @@ xchecked:   stx NewHeroX
             beq ychecked
             bmi yup
             inx
-            beq ychecked
+            bne ychecked
             dex             ; ran off the bottom, stop vertical motion
             stx VelocityY
             beq ychecked
 yup:        dex
-            bpl ychecked
+            cpx #$FF
+            bne ychecked
             inx             ; ran off the top, stop vertical motion
             stx VelocityY
 ychecked:   stx NewHeroY
@@ -372,16 +374,19 @@ ychecked:   stx NewHeroY
             sta ZPtrA + XByte
             ldy NewHeroX
             lda (ZPtrA), y
+            and #$3F        ; color bits don't block movement
             beq movedone
             cmp #C_DISK     ; disk is the only non-obstacle
             beq diagdisk
             ; we have hit something moving in the intended direction
             lda (ZPtrB), y  ; check old Y with new X
+            and #$3F        ; color bits don't block movement
             beq horizok
             cmp #C_DISK
             beq horizdisk
             ldy HeroX       ; no go, check new Y with old X
             lda (ZPtrA), y
+            and #$3F        ; color bits don't block movement
             beq vertok
             cmp #C_DISK
             beq vertdisk
@@ -1718,38 +1723,63 @@ seedRandom:
 ; the map is $40 units wide and $100 units tall.  Lives in bank 2, $1000-4FFF.
 ; map bytes have shape info in lower 6 bits, color/variant info in higher 2
 
-; 6x6 box patterns for adding to the map.  Each pattern is $24 bytes long.
-BoxIndex:   .byte 0, $24, $48, $6C
+; 5x5 box patterns for adding to the map.  Each pattern is $19 bytes long.
+BoxIndex:   .byte 0, 25, 50, 75, 100, 125, 150, 175
 BoxPatt:
             ; box open leftward
-            .byte C_WALL_R, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_LD
-            .byte C_SPACE, C_DISK, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
-            .byte C_SPACE, C_SPACE, C_SPACE, C_WALL_R, C_WALL_H, C_WALL_LUD
-            .byte C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
-            .byte C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
-            .byte C_WALL_R, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_LU
+            .byte   C_WALL_R,   C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_LD
+            .byte   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_V
+            .byte   C_SPACE,    C_SPACE,    C_WALL_R,   C_WALL_H,   C_WALL_LUD
+            .byte   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_V
+            .byte   C_WALL_R,   C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_LU
+            ; box open leftward
+            .byte   C_WALL_R,   C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_LD
+            .byte   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_V
+            .byte   C_SPACE,    C_SPACE,    C_WALL_R,   C_WALL_H,   C_WALL_LUD
+            .byte   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_V
+            .byte   C_WALL_R,   C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_LU
             ; box open rightward
-            .byte C_WALL_RD, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_L
-            .byte C_WALL_V, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_SPACE
-            .byte C_WALL_RUD, C_WALL_H, C_WALL_L, C_SPACE, C_SPACE, C_SPACE
-            .byte C_WALL_V, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_SPACE
-            .byte C_WALL_V, C_SPACE, C_SPACE, C_DISK, C_SPACE, C_SPACE
-            .byte C_WALL_RU, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_L
+            .byte   C_WALL_RD,  C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_L
+            .byte   C_WALL_V,   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE
+            .byte   C_WALL_RUD, C_WALL_H,   C_WALL_L,   C_SPACE,    C_SPACE
+            .byte   C_WALL_V,   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE
+            .byte   C_WALL_RU,  C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_L
             ; box open upward
-            .byte C_WALL_D, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_D
-            .byte C_WALL_V, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
-            .byte C_WALL_V, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
-            .byte C_WALL_V, C_SPACE, C_WALL_D, C_SPACE, C_SPACE, C_WALL_V
-            .byte C_WALL_V, C_SPACE, C_WALL_V, C_SPACE, C_SPACE, C_WALL_V
-            .byte C_WALL_RU, C_WALL_H, C_WALL_LRU, C_WALL_H, C_WALL_H, C_WALL_LU
+            .byte   C_WALL_D,   C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_D
+            .byte   C_WALL_V,   C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_V
+            .byte   C_WALL_V,   C_SPACE,    C_WALL_D,   C_SPACE,    C_WALL_V
+            .byte   C_WALL_V,   C_SPACE,    C_WALL_V,   C_SPACE,    C_WALL_V
+            .byte   C_WALL_RU,  C_WALL_H,   C_WALL_LRU, C_WALL_H,   C_WALL_LU
             ; box open downward
-            .byte C_WALL_RD, C_WALL_H, C_WALL_LRD, C_WALL_H, C_WALL_H, C_WALL_LD
-            .byte C_WALL_V, C_SPACE, C_WALL_V, C_SPACE, C_SPACE, C_WALL_V
-            .byte C_WALL_V, C_SPACE, C_WALL_U, C_SPACE, C_SPACE, C_WALL_V
-            .byte C_WALL_V, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
-            .byte C_WALL_V, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_V
-            .byte C_WALL_U, C_SPACE, C_SPACE, C_SPACE, C_SPACE, C_WALL_U
-            
+            .byte   C_WALL_RD,  C_WALL_H,   C_WALL_LRD, C_WALL_H,   C_WALL_LD
+            .byte   C_WALL_V,   C_SPACE,    C_WALL_V,   C_SPACE,    C_WALL_V
+            .byte   C_WALL_V,   C_SPACE,    C_WALL_U,   C_SPACE,    C_WALL_V
+            .byte   C_WALL_V,   C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_V
+            .byte   C_WALL_U,   C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_U
+            ; well open left and right
+            .byte   C_WALL_R,   C_WALL_H,   C_WALL_LRD, C_WALL_H,   C_WALL_L
+            .byte   C_SPACE,    C_SPACE,    C_WALL_V,   C_SPACE,    C_SPACE
+            .byte   C_SPACE,    C_SPACE,    C_WALL_V,   C_SPACE,    C_SPACE
+            .byte   C_SPACE,    C_SPACE,    C_WALL_V,   C_SPACE,    C_SPACE
+            .byte   C_WALL_R,   C_WALL_H,   C_WALL_LRU, C_WALL_H,   C_WALL_L
+            ; box open up and down
+            .byte   C_WALL_D,   C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_D
+            .byte   C_WALL_V,   C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_V
+            .byte   C_WALL_RUD, C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_LUD
+            .byte   C_WALL_V,   C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_V
+            .byte   C_WALL_U,   C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_U
+            ; box open up and right
+            .byte   C_WALL_D,   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE
+            .byte   C_WALL_V,   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE
+            .byte   C_WALL_V,   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE
+            .byte   C_WALL_V,   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE
+            .byte   C_WALL_RU,  C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_L
+            ; box open down and left
+            .byte   C_WALL_RD,  C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_L
+            .byte   C_WALL_D,   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE
+            .byte   C_WALL_D,   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE
+            .byte   C_WALL_D,   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE
+            .byte   C_WALL_D,   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE
 MFX:        .byte 0
 MFY:        .byte 0
 MFColor:    .byte 0
@@ -1779,14 +1809,14 @@ mfzero:     sta (ZPtrA), y
             dex
             bne mfzero
             ; place some boxes
-            ; every 8x8 cell gets a 6x6 box centered in it
+            ; every 8x8 cell gets a 5x5 box "centered" in it
             ; since we're always going one down and one in, start at 1, 1
             lda #$01
             sta MFX
             sta MFY
 mfbox:      ldx Seed
             lda Random, x   ; pick a random box shape
-            and #$03
+            and #$07
             tay
             lda BoxIndex, y
             sta MFBoxIndex
@@ -1819,11 +1849,11 @@ mfbox:      ldx Seed
             adc MFX
             sta ZPtrA
             ; put a pattern row in the map
-            ldy #$05
-            sty MFPlaced        ; do 6 rows
+            ldy #$04
+            sty MFPlaced        ; do 5 rows
 mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             clc
-            adc #$05
+            adc #$04
             tax
 :           lda BoxPatt, x
             ora MFColor
@@ -1835,11 +1865,11 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             dec MFPlaced
             bmi :+
             ; reset horizontal index to the end of the pattern
-            ldy #$05
+            ldy #$04
             ; move to next pattern row
             lda MFBoxIndex
             clc
-            adc #$06
+            adc #$05
             sta MFBoxIndex
             ; move to the next map row
             lda ZPtrA
@@ -1877,7 +1907,7 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             inx
             stx Seed
             and #$C0            ; pick a random color
-            ora C_DISK
+            ora #C_DISK
             sta (ZPtrA), y
             dec MFPlaced
             bpl :-
@@ -1886,10 +1916,10 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             sta MFPlaced
 :           jsr mfrndspot
             ; TODO - remember where they were
-            lda C_HHEADA
+            lda #C_HHEADA
             sta (ZPtrA), y
             iny
-            lda C_HHANDRA
+            lda #C_HHANDRA
             sta (ZPtrA), y
             dec MFPlaced
             bpl :-
