@@ -1210,7 +1210,8 @@ BorderV:    .byte 0
 BorderRYet: .byte 0
 
 BorderChar  = $00       ; C_SPACE
-BorderCol   = $AF       ; grey2 background
+BorderColA  = $AF       ; grey2 background
+BorderColB  = $5F       ; grey1 background
 
 drawplay:   
             ; the middle lores field starts at map $42 and draws to $46 (plus NudgePos)
@@ -1226,6 +1227,7 @@ drawplay:
             lsr
             lsr
             sta BorderR
+            ; TODO - compute scrollbar bounds
             ; compute the voids (areas in the display but off the edges of the map)
             lda #$11
             sec
@@ -1248,7 +1250,6 @@ drawplay:
 novoidu:    lda #$00
 :           sta VoidU
 dppostvoid: ; start with top and bottom borders, just colors, chars will already be there
-            ; for now just mark horizontal with a color change, but maybe later make it a scrollbar
             ldy CurScrLine
 borderh:    lda YLoresL, y
             clc
@@ -1352,8 +1353,9 @@ playvoid:   lda #$04            ; draw five border columns total
             pla                 ; recall index of right edge of line
             tax
             ldy #$27
-            lda #BorderCol
+            lda #BorderColB
 :           sta Zero, x
+            lda #BorderColA     ; switch to darker gray
             dex
             dey
             dec BorderV
@@ -1365,11 +1367,14 @@ playvoid:   lda #$04            ; draw five border columns total
             dey
             cpy BorderV
             bne :-
-            lda #BorderCol
+            lda #BorderColA
 :           sta Zero, x
             dex
             dey
             bpl :-
+            lda #BorderColB     ; replace last one with lighter gray
+            inx
+            sta Zero, x
             rts
 
 ; draw a lores line in the playfield, assumes ZP is 1A00 and MapPtr is set.
@@ -1388,11 +1393,12 @@ loresline:  lda MapPtrL
             ldx #$27
             ; draw the right border
             lda #BorderChar
-            ldy #BorderCol
+            ldy #BorderColB
 :           pha                 ; push the border character
             pha                 ; push it again because we want to recall it later
             tya
             sta Zero, x         ; store color
+            ldy #BorderColA     ; switch color to darker gray
             pla                 ; recall character for next push
             dex                 ; decrement drawn x coordinate
             dec BorderV         ; we've drawn one border element
@@ -1449,7 +1455,7 @@ leftvoid:   dex                 ; we touched the void, any left to draw?
             bne leftvoid
             ; draw the left border
 leftborder: lda #BorderChar
-            ldy #BorderCol
+            ldy #BorderColB
 :           pha                 ; push the character
             pha                 ; push it again because we want to recall it later
             tya
@@ -1458,6 +1464,10 @@ leftborder: lda #BorderChar
             dex                 ; decrement drawn x coordinate
             dec BorderV         ; we've drawn one border element
             bpl :-              ; we have not yet drawn ALL of the left side border elements
+            ; replace last color with lighter gray
+            lda #BorderColA
+            inx
+            sta Zero, x            
             ; send to screen
             ldx CurScrLine
             lda YLoresL, x
@@ -1811,10 +1821,10 @@ StatColA:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $C0, $F0, $F0
             .byte $D0, $E0, $90, $F0, $F0, $F0, $F0, $F0, $0E, $0E
             .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
 
-FrameText:  .byte "XXXXXXXXXX"
-            .byte "XXXXXXXXXX"
-            .byte "XXXXXXXXXX"
-            .byte "XXXXXXXXXX"
+FrameText:  .byte "          "
+            .byte "          "
+            .byte "          "
+            .byte "          "
             .byte $0
 
 FrameCol:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $C0, $F0, $F0
