@@ -1213,6 +1213,24 @@ BorderChar  = $00       ; C_SPACE
 BorderColA  = $AF       ; grey2 background
 BorderColB  = $5F       ; grey1 background
 
+; translation table between text column and hires map column, when drawing passes from right
+; scrollbar thumb toggles state
+ThumbXlate: .byte   $80, $80
+            .byte   $01, $03, $05, $07
+            .byte   $08, $0A, $0C, $0E
+            .byte   $0F, $11, $13, $15
+            .byte   $16, $18, $1A, $1C
+            .byte   $1D, $1F, $21, $23
+            .byte   $24, $26, $28, $2A
+            .byte   $2B, $2D, $2F, $31
+            .byte   $32, $34, $36, $38
+            .byte   $39, $3B, $3D, $3F
+            .byte   $80, $80
+ThumbTogg:  .byte   $00
+ThumbNext:  .byte   $00
+PlayLeft:   .byte   $00
+PlayRight:  .byte   $00
+
 drawplay:   
             ; the middle lores field starts at map $42 and draws to $46 (plus NudgePos)
             ; in order to keep hero in the middle, five columns are used by a frame
@@ -1227,7 +1245,19 @@ drawplay:
             lsr
             lsr
             sta BorderR
-            ; TODO - compute scrollbar bounds
+            ; compute thumb boundaries
+            lda HeroX
+            clc
+            adc #$11
+            sta ThumbTogg
+            sta PlayRight
+            lda HeroX
+            sec
+            sbc #$11            ; could derive left void from this but might not be faster
+            bpl :+
+            lda #$00
+:           sta PlayLeft
+            sta ThumbNext
             ; compute the voids (areas in the display but off the edges of the map)
             lda #$11
             sec
@@ -1259,17 +1289,35 @@ borderh:    lda YLoresL, y
             sta R_ZP            ; go to color memory
             ldy #$27            ; draw $28 colors
             lda #$50            ; grey1 background
-:           sta Zero, x
+borderhb:   sta Zero, x
             dex
             dey
-            bmi :+
-            cpy HeroX
-            bne :-
-            lda #$A0            ; grey2 background
-            bne :-
-:           lda CurScrLine
+            bmi borderhz
+            pha
+            lda ThumbXlate, y   ; what map column are we entering?
+            bmi borderfix       ; this column has a fixed color
+            cmp ThumbTogg       ; did we just pass the toggle?
+            bcc borderhtog      ; yes
+            pla
+            bne borderhb        ; branch always
+borderfix:  pla                 ; throw away the color
+            lda #$50            ; brighter gray
+            bne borderhb
+borderhtog: lda ThumbNext       ; arm new left side toggle
+            sta ThumbTogg
+            lda #$00            ; disable left side toggle
+            sta ThumbNext
+            pla                 ; and swap colors
+            eor #$A0
+            bne borderhb        ; branch always
+borderhz:   lda CurScrLine
             cmp #$09            ; if we have done both top and bottom
             beq innerplay       ; move on to the middle
+            lda PlayRight
+            sta ThumbTogg
+            lda PlayLeft
+            sta ThumbNext
+            lda #$50
             inc CurScrLine      ; set exit condition for next time (borderh does not use the value)
             ldy #$10            ; do the bottom line (Y holds the current screen line for borderh)
             bne borderh         ; branch always
@@ -1455,7 +1503,7 @@ leftvoid:   dex                 ; we touched the void, any left to draw?
             bne leftvoid
             ; draw the left border
 leftborder: lda #BorderChar
-            ldy #BorderColB
+            ldy #BorderColA
 :           pha                 ; push the character
             pha                 ; push it again because we want to recall it later
             tya
@@ -1465,7 +1513,7 @@ leftborder: lda #BorderChar
             dec BorderV         ; we've drawn one border element
             bpl :-              ; we have not yet drawn ALL of the left side border elements
             ; replace last color with lighter gray
-            lda #BorderColA
+            lda #BorderColB
             inx
             sta Zero, x            
             ; send to screen
