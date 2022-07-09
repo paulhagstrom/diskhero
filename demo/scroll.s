@@ -314,52 +314,118 @@ alldone:    lda #$7F            ;disable all interrupts
 
 ; do moving (called maximally once per MoveDelay VBLs)
 ; (since otherwise it can be too fast, though this might be a way to make it harder)
-; TODO - Add collision detect as a way to force a stop, maybe generalize that to edges.
 
-domove:     lda VelocityX
-            beq movey           ; no X movement, go to check for Y-movement
-            bmi moveleft
-            lda HeroX
-            cmp #$3F            ; are we already at the right edge?
-            beq stopx           ; yes, so stop X and move on to Y
-            inc HeroX
-            inc RedrawPlay      ; need to redraw playfield
-            jmp movey
-stopx:      lda #$00            ; stop X and move on to Y
+; determine where we would move
+; check for collision in x alone, y alone, x+y
+; if x+y collides with obstacle, but x does not, stop y move x
+; otherwise if y does not collide, stop x move y
+; otherwise stop (prefers horizontal momentum)
+; move if successful
+
+NewHeroX:   .byte   0
+NewHeroY:   .byte   0
+
+domove:     ldx HeroX
+            lda VelocityX
+            beq xchecked
+            bmi xleft
+            inx
+            cpx #$40
+            bne xchecked
+            dex             ; ran off the right edge, stop horizontal motion
+            lda #$00
             sta VelocityX
-            beq movey
-moveleft:   lda HeroX           ; are we already at the left edge?
-            beq stopx           ; yes, so stop X and move on to Y
-            dec HeroX
-            inc RedrawPlay      ; need to redraw playfield
-movey:      lda VelocityY
+            beq xchecked
+xleft:      dex
+            bpl xchecked
+            inx             ; ran off the left edge, stop horizontal motion
+            stx VelocityX
+xchecked:   stx NewHeroX
+            ldx HeroY
+            jsr setmapptr   ; locate old hero's y-coordinate on map
+            lda MapPtrL
+            sta ZPtrB
+            lda MapPtrH
+            sta ZPtrB + 1
+            lda #$82
+            sta ZPtrB + XByte
+            lda VelocityY
+            beq ychecked
+            bmi yup
+            inx
+            beq ychecked
+            dex             ; ran off the bottom, stop vertical motion
+            stx VelocityY
+            beq ychecked
+yup:        dex
+            bpl ychecked
+            inx             ; ran off the top, stop vertical motion
+            stx VelocityY
+ychecked:   stx NewHeroY
+            txa
+            jsr setmapptr   ; locate new hero's y-coordinate on map
+            lda MapPtrL
+            sta ZPtrA
+            lda MapPtrH
+            sta ZPtrA + 1
+            lda #$82
+            sta ZPtrA + XByte
+            ldy NewHeroX
+            lda (ZPtrA), y
             beq movedone
-            bmi moveup
-            inc HeroY
-            bne movedown
-            dec HeroY           ; we're already at the bottom edge, stop y and undo move
-            jmp stopy
-movedown:   clc
-            jsr updatemap       ; scroll the hires graphics - update nudge after
-            inc RedrawPlay      ; need to redraw playfield
+            cmp #C_DISK     ; disk is the only non-obstacle
+            beq diagdisk
+            ; we have hit something moving in the intended direction
+            lda (ZPtrB), y  ; check old Y with new X
+            beq horizok
+            cmp #C_DISK
+            beq horizdisk
+            ldy HeroX       ; no go, check new Y with old X
+            lda (ZPtrA), y
+            beq vertok
+            cmp #C_DISK
+            beq vertdisk
+            ; we have been stopped, move cannot be accomplished
+            lda #$00
+            sta VelocityX
+            sta VelocityY
+            jmp movenope
+horizdisk:  ; account for and remove disk at NewHeroX, HeroY
+horizok:    lda #$00            ; stop vertical movement
+            sta VelocityY
+            lda HeroY           ; new hero Y is unchanged
+            sta NewHeroY
+            lda ZPtrB           ; map line pointer for new Y is same as old Y
+            sta ZPtrA
+            lda ZPtrB + 1
+            sta ZPtrA + 1
             jmp movedone
-stopy:      sta VelocityY       ; stop Y
+vertdisk:   ; account for and remove disk at HeroX, NewHeroY
+vertok:     lda #$00            ; stop horizontal movement
+            sta VelocityX
+            lda HeroX           ; new hero X is unchanged
+            sta NewHeroX
             jmp movedone
-moveup:     lda HeroY
-            beq stopy           ; we're already at the top edge, stop y and do not move
-            dec HeroY
-            sec
-            jsr updatemap       ; scroll the screen graphics - update nudge before
-            inc RedrawPlay      ; need to redraw playfield
-movedone:   lda RedrawPlay
-            beq :+
-            jsr drawplay
-:           
-            ;lda #$00            ; DEBUG stop after one
-            ;sta VelocityX
-            ;sta VelocityY
-            rts
-            
+diagdisk:   ; account for and remove disk at NewHeroX, NewHeroY
+movedone:   lda #$00            ; remove old hero from map
+            ldy HeroX
+            sta (ZPtrB), y
+            lda #C_HERO         ; put new hero on map
+            ldy NewHeroX
+            sta (ZPtrA), y
+            sty HeroX
+            ldy NewHeroY
+            sty HeroY
+            lda VelocityY       ; scroll the map if we need to
+            beq scrollno
+            bmi scrolldown
+            clc
+            bcc scrolldo
+scrolldown: sec
+scrolldo:   jsr updatemap
+scrollno:   jsr drawplay
+movenope:   rts
+
 ; process keypress
 
 handlekey:  
