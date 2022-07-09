@@ -131,7 +131,7 @@ HeroDir:    .byte   0
 VelocityX:  .byte   0
 VelocityY:  .byte   0
 VBLTick:    .byte   0
-MoveDelay   = 5            ; VBL tick delay between moves
+MoveDelay   = 1            ; VBL tick delay between moves
 
 ; I played with ScRegLen by trial and error a little.
 ; Not sure why I needed to go two down for region zero.
@@ -266,11 +266,9 @@ init:       sei                 ; no interrupts while we are setting up
             jsr setupenv        ; arm interrupts
             lda #$00
             sta ScrRegion
-            lda #$00            ; start at line 60 of the map
-            sta CurrMap
             lda #$10            ; start playfield kind of in the middle
             sta HeroX
-            lda #$F0
+            lda #$C4            ; Start down near the bottom but at a nudge 0 spot
             sta HeroY
             lda #$00            ; start at nudge 0
             sta NudgePos
@@ -280,7 +278,7 @@ init:       sei                 ; no interrupts while we are setting up
             sta VelocityX
             sta VelocityY
             sta HeroDir
-            lda MoveDelay
+            lda #MoveDelay       ; set how many VBLs go by before movement advances
             sta VBLTick
             lda #$01
             sta RedrawMap       ; start by assuming we need to redraw whole thing
@@ -316,12 +314,13 @@ alldone:    lda #$7F            ;disable all interrupts
 
 ; do moving (called maximally once per MoveDelay VBLs)
 ; (since otherwise it can be too fast, though this might be a way to make it harder)
+; TODO - Add collision detect as a way to force a stop, maybe generalize that to edges.
 
 domove:     lda VelocityX
             beq movey           ; no X movement, go to check for Y-movement
             bmi moveleft
             lda HeroX
-            cmp #$19            ; are we already at the right edge?
+            cmp #$3F            ; are we already at the right edge?
             beq stopx           ; yes, so stop X and move on to Y
             inc HeroX
             inc RedrawPlay      ; need to redraw playfield
@@ -336,50 +335,30 @@ moveleft:   lda HeroX           ; are we already at the left edge?
 movey:      lda VelocityY
             beq movedone
             bmi moveup
-            lda NudgePos        ; check if we can just increase nudge
-            cmp #$07
-            beq :+              ; no, we need to move map pointer
-            clc
-            jsr updatemap       ; scroll the hires graphics
-            inc NudgePos        ; yes, increase nudge
-            inc RedrawPlay      ; need to redraw playfield
-            jmp movedone
-:           lda CurrMap         ; add 8 to CurrMap
-            clc
-            adc #$08
-            beq stopy           ; wait, we already hit bottom, do nothing after all
-            pha                 ; stash new CurrMap
-            clc
-            jsr updatemap       ; scroll the screen graphics
-            pla                 ; retrieve new CurrMap
-            sta CurrMap
-            lda #$00            ; reset nudge
-            sta NudgePos
+            inc HeroY
+            bne movedown
+            dec HeroY           ; we're already at the bottom edge, stop y and undo move
+            jmp stopy
+movedown:   clc
+            jsr updatemap       ; scroll the hires graphics - update nudge after
             inc RedrawPlay      ; need to redraw playfield
             jmp movedone
 stopy:      sta VelocityY       ; stop Y
             jmp movedone
-moveup:     lda NudgePos        ; check if we can just decrease nudge
-            beq :+              ; no, we need to move map pointer
-            dec NudgePos
+moveup:     lda HeroY
+            beq stopy           ; we're already at the top edge, stop y and do not move
+            dec HeroY
             sec
-            jsr updatemap       ; scroll the screen graphics
-            inc RedrawPlay      ; need to redraw playfield
-            jmp movedone
-:           lda CurrMap         ; can we move map pointer?
-            beq stopy           ; no, we already hit top, do nothing
-            sec                 ; subtract 8 from CurrMap
-            sbc #$08
-            sta CurrMap
-            lda #$07            ; reset nudge
-            sta NudgePos
-            sec
-            jsr updatemap       ; scroll the screen graphics
+            jsr updatemap       ; scroll the screen graphics - update nudge before
             inc RedrawPlay      ; need to redraw playfield
 movedone:   lda RedrawPlay
             beq :+
             jsr drawplay
-:           rts
+:           
+            ;lda #$00            ; DEBUG stop after one
+            ;sta VelocityX
+            ;sta VelocityY
+            rts
             
 ; process keypress
 
@@ -673,6 +652,10 @@ drawscore:
             dex
             dey
             bpl :-
+            lda NudgePos        ; DEBUG
+            sta $401
+            lda HeroY
+            sta $402
             rts
 
 ; compute map pointer, based on A.  Map data is in bank 2, $1000-4FFF.
@@ -693,21 +676,17 @@ setmapptr:  pha
             rts
 
 ; mode 1 (text)     lines 00-0F (10) 00-01  score
-            ; mode 6 (bw hires) lines 10-1F (10)        b/w map display
-            ; mode 7 (a3 hires) lines 20-3F (20)        hires map upper field  map: 00-1F
-            ; mode 1 (text)     lines 40-87 (48) 08-10  text play field        map: 20-26
-            ; mode 7 (a3 hires) lines 88-A7 (20)        hires map lower field  map: 27-48
-            ; mode 1 (text)     lines A8-BF (18) 15-17  text status display
+; mode 6 (bw hires) lines 10-1F (10)        b/w map display
+; mode 7 (a3 hires) lines 20-3F (20)        hires map upper field  map: 00-1F
+; mode 1 (text)     lines 40-87 (48) 08-10  text play field        map: 20-26
+; mode 7 (a3 hires) lines 88-A7 (20)        hires map lower field  map: 27-46
+; mode 1 (text)     lines A8-BF (18) 15-17  text status display
 
-; the top hires region occupies "lines $20 to $47" but to accommodate nudging we go to $4F
-; the middle text section obscures $38 map lines, we display the middle 5 (N+$42 to N+$36)
-; the text playfield section is always redrawn and is not nudged. Its top map line is N+$42+nudge.
-; characters 01-0F (walls and disk) have color information
-; MapColors provides a mapping between 2-bit color and displayed color
-; in the hires map, we will use that color for those elements
-
-; TODO -- need to handle display going past the map (draw zeros), since otherwise cannot
-; even reach most of the map in the playfield.
+; updatemap will effect a movement of the screen.
+; if you call it with carry clear, it will move the map up (hero downward)
+; if you call it with carry set, it will move the map down (hero upward)
+; it is assumed that the HeroY coordinate has just been changed, triggering this call.
+; it will finish by setting NudgePos correctly so that the interrupt handler will display it right.
 
 ; in general, increasing nudge:
 ; copy graphics line 08 + oldnudge to 00 + oldnudge
@@ -721,54 +700,103 @@ setmapptr:  pha
 ; copy graphics line 00 + newnudge to 08 + newnudge
 ; draw map line for graphics line 00 + newnudge on graphics line 00 + newnudge
 
+; parameters for increasing nudge, moving hero down, map up, carry clear on entry
+parminc:    .byte   $20         ; first copy target raster line in top field (copies go toward zero)
+            .byte   $38         ; raster offset for drawing new upper field line ($20 + $18)
+            .byte   $88         ; first copy target raster line of lower field (copies go toward zero)
+            .byte   $A0         ; raster offset for drawing new lower field line ($88 + $18)
+            .byte   $04         ; map offset back from HeroY for newly drawn line in top field.
+; parameters for decreasing nudge, moving hero up, map down, carry set on entry
+parmdec:    .byte   $38         ; first copy target raster line in lower field (copies toward higher coords)
+            .byte   $20         ; raster offset for drawing new upper field line ($20 + 0)
+            .byte   $A0         ; first copy target raster line in lower field (copies toward higher coords)
+            .byte   $88         ; raster offset for drawing new lower field line ($88 + 0)
+            .byte   $23         ; map offset back from HeroY for newly drawn line in top field.
+PTopRastA   = $30
+PTopRastD   = $31
+PBotRastA   = $32
+PBotRastD   = $33
+PTopMapOff  = $34
+
+PNudge      = $40
+TouchedVoid = $41
+MapOffset   = $42
+
 ; enter with carry clear to increase nudge (with old NudgePos),
 ; or carry set to decrease nudge (with new already-decreased NudgePos).
+; in other words, nudge should be the lowest of new and old
+; HeroY just got incremented (carry clear) or decremented (carry set) prior to calling this
 updatemap:  php                 ; stash carry flag
+            bcs :+
+            ldy #$04            ; end of parminc parameter block
+            bne :++
+:           ldy #$09            ; end of parmdec parameter block
+:           ldx #$04
+:           lda parminc, y
+            sta PTopRastA, x    ; copy into ZP parm block
+            dey
+            dex
+            bpl :-
             lda R_BANK          ; save bank
-            sta BankSave        ; but assume we are already in 1A00 ZP
+            sta BankSave        ; (but assume we are already in 1A00 ZP)
             lda #$00            ; go to bank 0, where (hires) graphics memory lives
             sta R_BANK
-            plp                 ; restore carry flag
-            php                 ; re-stash carry flag
-            bcs :+
-            lda #$20            ; first line of top map field
-            bne :++
-:           lda #$38            ; first line of last group of top map field
-:           clc
-            adc NudgePos
-            plp                 ; restore carry flag
-            php                 ; re-stash carry flag
-            jsr copylines
-            lda CurrMap         ; find map line to draw on last target
-            clc                 
-            adc NudgePos
-            plp                 ; restore carry flag
-            php                 ; re-stash carry flag
-            bcs topdec          ; if dec'ing copy line +$0 to last target (easy math)
-            adc #$20            ; if inc'ing copy line +$20 to the last target
-topdec:     jsr drawline        ; draw the new line
-            plp                 ; restore carry flag
-            php                 ; re-stash carry flag
-            bcs :+
-            lda #$88            ; first line of bottom map field
-            bne :++
-:           lda #$A0            ; first line of last group of bottom map field
-:           clc
-            adc NudgePos
-            plp                 ; restore carry flag
-            php                 ; re-stash carry flag
-            jsr copylines
-            lda CurrMap         ; find map line to draw on last target
+            sta TouchedVoid     ; reset "touched the void" flag
+            adc #$04            ; add 4 (inc, carry was 0) or 5 (dec, carry was 1)
+            adc HeroY           ; to HeroY, then
+            and #$07            ; do mod 8, to get the nudge/pudge value that is most useful.
+            sta PNudge          ; nudge/pudge
+            ; do the top field
+            lda HeroY           ; find the new data line for the top field
+            sec
+            sbc PTopMapOff
+            bcs notvoid
+            inc TouchedVoid     ; we have touched the void in the top field
+notvoid:    sta MapOffset       ; store the map offset we will draw top field line from
+            lda PTopRastA       ; first raster line processed in copy (inc=top, dec=bottom)
             clc
-            adc NudgePos
+            adc PNudge          ; newnudge/oldnudge
             plp                 ; restore carry flag
-            bcs botdec          ; if dec'ing...
-            adc #$49            ; if inc'ing copy line +$49 to last target
-            bcc botdraw
-botdec:     adc #$27            ; if dec'ing copy line +$27 to last target
-botdraw:    jsr drawline
-            lda BankSave        ; put the bank back
+            php                 ; re-stash carry flag
+            jsr copylines       ; copy lines that can be copied
+            lda PTopRastD       ; raster line that is target for new draw
+            clc
+            adc PNudge          ; plus nudge
+            tax                 ; move raster line to X for drawline
+            ldy TouchedVoid     ; if we are in the void, draw the void
+            beq :+              ; branch if we are not in the void
+            jsr drawvoid
+            jmp botfield
+:           lda MapOffset
+            jsr drawline        ; draw line (map pointer is still in A, raster pointer is in X)
+            ; do the bottom field
+botfield:   lda PBotRastA       ; first raster line processed in copy (inc=top, dec=bottom)
+            clc
+            adc PNudge          ; newnudge/oldnudge
+            plp                 ; restore carry flag
+            php                 ; re-stash carry flag
+            jsr copylines       ; copy lines that can be copied
+            lda PBotRastD       ; raster line that is target for new draw
+            clc
+            adc PNudge          ; plus nudge
+            tax                 ; move raster line to X for drawline
+            lda MapOffset       ; find map line for the bottom field
+            clc                 ; by adding $27 to the map line from the top field
+            adc #$27
+            bcc :+              ; we didn't cross a page boundary, we are not in the void
+            dec TouchedVoid     ; if we were in the void before, we're not now.  Else we are.
+            beq :+              ; if we're not in the void skip to drawing the line
+            jsr drawvoid
+            jmp upddone
+:           jsr drawline        ; draw line (map pointer is still in A, raster pointer is in X)
+upddone:    lda BankSave        ; put the bank back
             sta R_BANK
+            lda PNudge          ; update the system NudgePos value for the interrupt handler
+            plp
+            bcs :+              ; if we were decrementing, came in with carry set, this is it.
+            adc #$01            ; otherwise, if we were incrementing, we need to add one.
+:           and #$07            ; mod 8
+            sta NudgePos
             rts
 
 ; copylines uses self-modifying code to quickly copy the three graphics lines
@@ -787,10 +815,10 @@ copylines:  tax
 lmnext:     txa
             bcs :+              ; if carry is set we are subtracting
             adc #$08            ; if carry is clear we are adding
-            clc
+            clc                 ; keep carry clear so we know for next line
             bcc lmprep
 :           sbc #$08
-            sec            
+            sec                 ; keep carry set so we know for next line
 lmprep:     tax
             lda YHiresL, x
             sta lmsrca + 1      ; source A low
@@ -821,18 +849,17 @@ lmtrgb:     sta $4000, y
 :           rts
 
 ; seven magenta pixels for the left and right two bytes in the map region
+; and for the void lines
 BorderBits: .byte %00010001
             .byte %00100010
             .byte %01000100
             .byte %00001000
-            ; 00010001 00100010 01000100 00001000
 
-; enter with X holding the target line on the graphics page
-; and A holding the map line we will be drawing there
-; drawlineb is a second entry point if the map pointer is already set
-; this assumes that 1A00 is the normal ZP we start in, and bank 0 (hgr) is switched in
-drawline:   jsr setmapptr       ; load mapptr for map line to draw
-drawlineb:  lda YHiresHA, x     ; get 2000-based address of current line on screen
+; do the hires page lookup and ZP setup, common to drawvoid and drawline
+; enter with X holding the target line on the graphics page, assumes we are in 1A00 ZP
+; returns with X holding the low byte of the starting/leftmost byte on the line
+; also updates ZLineStart in 1A00 ZP and sets up ZOtherZP in all ZPs.
+prepdraw:   lda YHiresHA, x     ; get 2000-based address of current line on screen
             ; engineer it so that ZOtherZP in hgr pages always points to the other ZP to flip quickly.
             sta ZOtherZP        ; store HGR1 page in 1A00 ZP.
             sta R_ZP            ; switch to HGR page 1 ZP
@@ -849,48 +876,96 @@ drawlineb:  lda YHiresHA, x     ; get 2000-based address of current line on scre
             lda YHiresL, x
             sta ZLineStart
             tax
+            rts
+            
+; enter with X holding the target line on the graphics page, assumes we are in 1A00 ZP
+drawvoid:   jsr prepdraw
+            lda ZOtherZP        ; HGR1
+            sta R_ZP
+            lda BorderBits      ; write first byte to even bytes on HGR1
+            ldy #$1F            ; fill $20 of them
+:           sta Zero, x
+            inx
+            inx
+            dey
+            bpl :-
+            inx                 ; skip 1 to get to odd bytes
+            ldy #$1F            ; fill $20 of them
+            lda BorderBits + 2  ; write third byte to odd bytes on HGR1
+:           sta Zero, x
+            dex
+            dex
+            dey
+            bpl :-
+            lda ZOtherZP        ; HGR2
+            sta R_ZP
+            lda BorderBits + 3  ; write fourth byte to odd bytes on HGR2
+            ldy #$1F            ; fill $20 of them
+:           sta Zero, x
+            inx
+            inx
+            dey
+            bpl :-
+            dex                 ; skip back 1 to get to even bytes
+            ldy #$1F            ; fill $20 of them
+            lda BorderBits + 1  ; write second byte to odd bytes on HGR2
+:           sta Zero, x
+            dex
+            dex
+            dey
+            bpl :-
+            lda #$1A            ; go back to $1A00 ZP
+            sta R_ZP
+            rts
+
+; enter with X holding the target line on the graphics page
+; and A holding the map line we will be drawing there
+; drawlineb is a second entry point if the map pointer is already set
+; this assumes that 1A00 is the normal ZP we start in, and bank 0 (hgr) is switched in
+drawline:   jsr setmapptr       ; load mapptr for map line to draw
+drawlineb:  jsr prepdraw
             ; draw border bits
             lda ZOtherZP        ; HGR1
             sta R_ZP
             lda BorderBits + 2
             tay
             lda BorderBits
-            pha
+            pha                 ; store first byte on HGR1 line byte 0
             sta Zero, x
             inx
-            tya
+            tya                 ; store third byte on HGR1 line byte 1
             sta Zero, x
-            txa
+            txa                 ; skip X ahead to the other side of the line
             clc
             adc #$26
             tax
             tya
-            sta Zero, x
+            sta Zero, x         ; store third byte on HGR1 line byte $27
             dex
             pla
-            sta Zero, x
+            sta Zero, x         ; store first byte on HGR1 line byte $26
             lda ZOtherZP        ; HGR2
             sta R_ZP
             lda BorderBits + 3
             tay
             lda BorderBits + 1
             pha
-            sta Zero, x
+            sta Zero, x         ; store second byte on HGR2 line byte $26
             inx
-            tya
-            sta Zero, x
-            txa
+            tya         
+            sta Zero, x         ; store fourth byte on HGR2 line byte $27
+            txa                 ; skip X back to the left of the line
             sec
             sbc #$26
             tax
             tya
-            sta Zero, x
+            sta Zero, x         ; store fourth byte on HGR2 line byte 1
             dex
             pla
-            sta Zero, x
-            lda #$1A
+            sta Zero, x         ; store second byte on HGT2 line byte 0
+            lda #$1A            ; go back to 1A00 ZP.
             sta R_ZP
-            ; push left edge right 14 pixels to center it
+            ; push left edge to the right 7 pixels to center the map fields
             inc ZLineStart
             inc ZLineStart
             ; point ZScrHole at the left side of present line in the map data.
@@ -1130,22 +1205,51 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
 
 ; draw the (text based) playfield in the middle
 
-drawplay:
+BorderR:    .byte 0
+BorderV:    .byte 0
+BorderRYet: .byte 0
+
+BorderChar  = $00       ; C_SPACE
+BorderCol   = $AF       ; grey2 background
+
+drawplay:   
             ; the middle lores field starts at map $42 and draws to $46 (plus NudgePos)
-            ; TODO - should be some boundary check on movement to handle overflow potential here
-            ; TODO - once you can move left and right should draw frame sides as well.
-            ; plan: reserve 4 bytes for frame, so display is only covering 36 bytes of the map
-            ; frame will be 1...3 for x between 0 and 19
-            ; frame will be 2...2 for x between 20 and 41
-            ; frame will be 3...1 for x between 43 and 63
-            ; or something like that.  Gives an indication of how far over you are.
-            ; might also subdivide frame using the last font characters for more granular effect
-            ; might also want to indicate somewhere else on the hires as well, like a scroll bar
+            ; in order to keep hero in the middle, five columns are used by a frame
+            ; based on hero position, 5 total, high nibble of HeroX of those are on the right
+            ; (i.e. if HeroX is 32, there are 3 on the right, 2 on the left)
             lda #$08
             sta CurScrLine
-            ; start with top and bottom borders, just colors, chars will already be there
+            ; compute border columns (0-based count of columns on the right is high nibble of HeroX)
+            lda HeroX
+            lsr
+            lsr
+            lsr
+            lsr
+            sta BorderR
+            ; compute the voids (areas in the display but off the edges of the map)
+            lda #$11
+            sec
+            sbc HeroX
+            bpl :+              ; there is a left void
+            lda #$00
+:           sta VoidL
+            lda HeroX
+            sec
+            sbc #$2E
+            bpl :+              ; there is a right void
+            lda #$00
+:           sta VoidR
+            lda HeroY           ; check for top void, only care if HeroY is in the top half of map
+            bmi novoidu         ; branch if HeroY is in the bottom half of the map
+            lda #$03
+            sec
+            sbc HeroY
+            bpl :+              ; there is a top void
+novoidu:    lda #$00
+:           sta VoidU
+dppostvoid: ; start with top and bottom borders, just colors, chars will already be there
             ; for now just mark horizontal with a color change, but maybe later make it a scrollbar
-            tay
+            ldy CurScrLine
 borderh:    lda YLoresL, y
             clc
             adc #$27
@@ -1165,20 +1269,77 @@ borderh:    lda YLoresL, y
 :           lda CurScrLine
             cmp #$09            ; if we have done both top and bottom
             beq innerplay       ; move on to the middle
-            inc CurScrLine      ; set exit condition for next time
-            ldy #$10            ; do the bottom line
+            inc CurScrLine      ; set exit condition for next time (borderh does not use the value)
+            ldy #$10            ; do the bottom line (Y holds the current screen line for borderh)
             bne borderh         ; branch always
-innerplay:
-            lda #$1A
-            sta R_ZP            ; back to 1A00 ZP
-            lda CurrMap
+innerplay:  lda HeroY           ; find map pointer for top non-void line
             clc
-            adc #$20
-            adc NudgePos
-            sta $0403
+            adc VoidU           ; factor out upper void
+            sec
+            sbc #$03
             jsr setmapptr
-loresline:
-            lda MapPtrL
+burnvoidu:  dec VoidU           ; burn through upper void lines first if there are any
+            bmi pfmapstart
+            jsr playvoid
+            inc CurScrLine
+            bne burnvoidu       ; branch always
+pfmapstart: lda #$1A
+            sta R_ZP            ; back to 1A00 ZP
+pfline:     jsr loresline            
+            lda MapPtrL         ; advance map pointer
+            clc
+            adc #$40
+            sta MapPtrL
+            bcc :+
+            inc MapPtrH
+            lda MapPtrH
+            cmp #$50
+            beq burnvoidd       ; just ticked into a lower void
+            ; advance screen line
+:           inc CurScrLine
+            lda CurScrLine
+            cmp #$10
+            bne pfline          ; more lines to draw, go draw them
+pfdone:     rts
+burnvoidd:  inc CurScrLine
+            lda CurScrLine
+            cmp #$10
+            beq pfdone
+            jsr playvoid
+            jmp burnvoidd
+
+; draw a void line in the playfield
+; TODO - this doesn't reflect borders right, may want to unfactor this out
+playvoid:   ldy CurScrLine
+            lda YLoresL, y
+            clc
+            adc #$27            ; compute index of right edge of line
+            pha                 ; save for second pass as well
+            tax
+            lda YLoresHB, y     ; $800 base (color space)
+            pha                 ; stash color space page
+            lda YLoresHA, y     ; $400 base (char space)
+            sta R_ZP            ; go to character memory
+            lda #C_SPACE
+            ldy #$27
+:           sta Zero, x
+            dex
+            dey
+            bpl :-
+            pla                 ; recall color space page
+            sta R_ZP            ; go to color memory
+            pla                 ; recall index of right edge of line
+            tax
+            lda #$10            ; magenta background, black foreground
+            ldy #$27
+:           sta Zero, x
+            dex
+            dey
+            bpl :-
+            rts
+
+; draw a lores line in the playfield, assumes ZP is 1A00 and MapPtr is set.
+loresline:  lda MapPtrL
             sta ZScrHole
             lda MapPtrH
             sta ZScrHole + 1
@@ -1186,13 +1347,35 @@ loresline:
             sta ZScrHole + XByte
             ; (ZScrHole), 0 is now the left side of the map data line
             ; buffer all diplayed map bytes into the stack, from right to left
-            lda #$27
-            sta ZPxScratch
-            lda HeroX
+            lda #$04            ; draw five border columns total
+            sta BorderV
+            lda BorderR         ; save a local copy of this that we can decrement
+            sta BorderRYet
+            ldx #$27
+            ; draw the right border
+            lda #BorderChar
+            ldy #BorderCol
+:           pha                 ; push the border character
+            pha                 ; push it again because we want to recall it later
+            tya
+            sta Zero, x         ; store color
+            pla                 ; recall character for next push
+            dex                 ; decrement drawn x coordinate
+            dec BorderV         ; we've drawn one border element
+            dec BorderRYet      ; we've drawn one of the right side border elements
+            bpl :-              ; we have not yet drawn ALL of the right side border elements
+            stx ZPxScratch      ; save where the border ended
+            lda HeroX           ; find the per-line offset into the map data from the left side of the map
             clc
-            adc #$27
+            adc #$11
             tay
-loreschar:  lda (ZScrHole), y   ; load map data
+loreschar:  cpy #$40            ; check to see if we're off the right edge of the map
+            bcc :+              ; not in a right edge void
+            lda #C_SPACE        ; right edge void, push a magenta blank
+            pha
+            lda #$10            ; magenta
+            bne gotcolorb       ; skip over the map part to go to next column
+:           lda (ZScrHole), y   ; load map data
             pha                 ; store displayed character on stack
             and #%00110000      ; test to see if this is 0-F (separate color info)
             beq :+              ; branch if this is an element with an indexed color
@@ -1213,11 +1396,34 @@ loreschar:  lda (ZScrHole), y   ; load map data
             pha                 ; and re-push
             lda PlayColors, x   ; load the indexed color
 gotcolor:   and #$0F            ; keep only the foreground color (background = black/0)
-            ldx ZPxScratch
+gotcolorb:  ldx ZPxScratch
             sta Zero, x         ; store color in ZP (1A00)
             dey
+            bmi leftvoid        ; oops, we are about to plummet into the left void
             dec ZPxScratch
-            bpl loreschar
+            dex
+            cpx BorderV
+            beq leftborder
+            bne loreschar
+leftvoid:   dex                 ; we touched the void, any left to draw?
+            cpx BorderV
+            beq leftborder      ; nope, we have now drawn them all
+            lda #C_SPACE        ; left edge void, push a magenta blank - DEBUG
+            pha
+            lda #$10            ; magenta
+            sta Zero, x
+            bne leftvoid
+            ; draw the left border
+leftborder: lda #BorderChar
+            ldy #BorderCol
+:           pha                 ; push the character
+            pha                 ; push it again because we want to recall it later
+            tya
+            sta Zero, x         ; store color
+            pla                 ; recall character for next push
+            dex                 ; decrement drawn x coordinate
+            dec BorderV         ; we've drawn one border element
+            bpl :-              ; we have not yet drawn ALL of the left side border elements
             ; send to screen
             ldx CurScrLine
             lda YLoresL, x
@@ -1252,74 +1458,78 @@ gotcolor:   and #$0F            ; keep only the foreground color (background = b
             inx
             dey
             bpl :-
-            ; line now drawn, move to next one
             lda #$1A
             sta R_ZP            ; go back to 1A00 ZP
-            ; advance map pointer
-            lda MapPtrL
-            clc
-            adc #$40
-            sta MapPtrL
-            bcc :+
-            inc MapPtrH
-            ; advance screen line
-:           inc CurScrLine
-            lda CurScrLine
-            cmp #$10
-            beq :+
-            jmp loresline       ; more lines to draw, go draw them
-:           rts
+            rts
 
-; paint the whole screen
+; paint the whole screen - needs to be done once at the beginning so we can
+; then use the smooth scroll to move the hires fields around.
 scrpaint:
-            ; update parts of the screen that need updating.
-            ; redrawPlay is set if the playfield in the middle needs updating
-            ; redrawMap is set if the map above and below playfield needs updating too
-            ; The map can be moved by NudgePos without redrawing, while the playfield cannot.
-            ; CurrMap is the top map line of the top map we are looking at.
-            ; 
-            ; update playfield (lines 9-14)
-            ; CurrMap represents the line in the map data at top of playfield
-            ; playfield representation starts at 2000 in bank 2, each line is $40 long
-            ; so lines at 2000, 2040, 2080, 20C0, 2100, 2140, etc.
-            ; anything interacting with the map should activate $1A00 ZP
-            ; we will temporarily switch to graphics-based ZP when necessary
             lda R_ZP
             sta ZPSave          ; save current ZP
             lda R_BANK
             sta BankSave        ; save current bank
             lda #$00            ; swap in bank zero,
             sta R_BANK          ; where (hires) graphics memory lives
-            lda RedrawMap
-            beq redrawplay      ; if we only need to redraw playfield, jump there
             lda #$20            ; top field starts at display line $20
             sta CurScrLine      ; CurScrLine is the current actual line on the screen
-            lda HeroY           ; compute how many lines of void (non-map) there are
+            lda HeroY           ; HeroY is the $23rd abstract line down
             sec
-            lda CurrMap
-            sta $0401           ; DEBUG
-            jsr setmapptr       ; load mapptr for CurrMap
+            sbc #$23            ; go find where the map data pointer for the top of the top field is
+            bcs :+              ; we did not run off the edge, there is no upper void
+            eor #$FF            ; invert the negative number to find the size of the upper void
+            adc #$01
+            tax                 ; put the vertical extent of the upper void in X
+            lda #$00            ; start the map at zero when we get past the void
+            beq :++
+:           ldx #$00            ; no upper void, extent of the upper void is 0
+:           stx VoidU           ; number of void lines above the map data
+            jsr setmapptr       ; load mapptr for the first map data line we will be drawing
+            cpx #$00            ; is there a void?
+            beq hiresline       ; no, there is no void, just go start drawing
+:           ldx CurScrLine      ; yes, there is a void, load the raster line into X
+            jsr drawvoid        ; draw the void line
+            inc CurScrLine      ; move down to the next raster line
+            dec VoidU           ; if there are still void lines left, keep drawning them
+            bpl :-
 hiresline:  ldx CurScrLine      ; target line on graphics screen
-            jsr drawlineb
+            jsr drawlineb       ; we already set MapPtr earlier, use internal entry point
             lda MapPtrL         ; advance the map pointer to the next line
             clc
             adc #$40
             sta MapPtrL
-            bcc :+
+            bcc novoid
             inc MapPtrH
-:           inc CurScrLine      ; advance the graphics raster line
+            lda MapPtrH
+            cmp #$50            ; did we just fall off the map into the bottom void?
+            bne novoid          ; no, so continue on
+:           inc CurScrLine      ; we are in the bottom void, advance the graphics raster line
+            ldx CurScrLine      ; note that if we are in the lower void, we must be in bottom field
+            cpx #$A9            ; last line of bottom field complete? ($88-$A8)
+            beq redrawplay
+            jsr drawvoid
+            jmp :-
+novoid:     inc CurScrLine      ; advance the graphics raster line
+            ldx CurScrLine
+            cpx #$A9            ; last line of bottom field complete? ($88-$A8)
+            beq redrawplay      ; if so, move to the next screen region
+            cpx #$40            ; last line of top field complete? ($20-$3F)
+            bne hiresline       ; nope, keep going
+            ; we just finished the top field
+            lda #$88            ; set the raster line for the start of the lower field
+            sta CurScrLine
+            lda HeroY           ; set up starting point for lower field
+            clc
+            adc #$04
+            bcs :+              ; are we already in a lower void? If so, the whole field is in the void.
+            jsr setmapptr       ; not in the void, set up MapPtr for the data
+            jmp hiresline
+:           ldx CurScrLine
+            jsr drawvoid
+            inc CurScrLine
             lda CurScrLine
             cmp #$A9            ; last line of bottom field complete? ($88-$A8)
-            beq redrawplay       ; if so, move to the next screen region
-            cmp #$40            ; last line of top field complete? ($20-$3F)
-            bne hiresline       ; nope, keep going
-            lda CurrMap         ; set up starting point for lower field
-            clc
-            adc #$27
-            jsr setmapptr
-            lda #$88            ; draw lower hires field from line $88
-            sta CurScrLine
-            jmp hiresline
+            bne :-              ; nope, keep drawing void lines
 redrawplay: jsr drawplay
 
             ; draw the last field on the screen, the mode 1 lower status region
