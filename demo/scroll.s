@@ -297,7 +297,7 @@ eventloop:  lda ExitFlag
             lda VBLTick
             bpl :+
             jsr domove
-            lda MoveDelay
+            lda #MoveDelay
             sta VBLTick
 :           jmp eventloop
 
@@ -1310,7 +1310,11 @@ burnvoidd:  inc CurScrLine
 
 ; draw a void line in the playfield
 ; TODO - this doesn't reflect borders right, may want to unfactor this out
-playvoid:   ldy CurScrLine
+playvoid:   lda #$04            ; draw five border columns total
+            sta BorderV
+            lda BorderR         ; save a local copy of this that we can decrement
+            sta BorderRYet
+            ldy CurScrLine
             lda YLoresL, y
             clc
             adc #$27            ; compute index of right edge of line
@@ -1320,18 +1324,48 @@ playvoid:   ldy CurScrLine
             pha                 ; stash color space page
             lda YLoresHA, y     ; $400 base (char space)
             sta R_ZP            ; go to character memory
-            lda #C_SPACE
             ldy #$27
+            lda #BorderChar
+:           sta Zero, x
+            dex
+            dey
+            dec BorderV
+            dec BorderRYet
+            bpl :-
+            lda #C_SPACE
+:           sta Zero, x
+            dex
+            dey
+            cpy BorderV
+            bne :-
+            lda #BorderChar
 :           sta Zero, x
             dex
             dey
             bpl :-
+            lda #$04
+            sta BorderV
+            lda BorderR
+            sta BorderRYet
             pla                 ; recall color space page
             sta R_ZP            ; go to color memory
             pla                 ; recall index of right edge of line
             tax
-            lda #$10            ; magenta background, black foreground
             ldy #$27
+            lda #BorderCol
+:           sta Zero, x
+            dex
+            dey
+            dec BorderV
+            dec BorderRYet
+            bpl :-
+            lda #$10            ; magenta background, black foreground
+:           sta Zero, x
+            dex
+            dey
+            cpy BorderV
+            bne :-
+            lda #BorderCol
 :           sta Zero, x
             dex
             dey
