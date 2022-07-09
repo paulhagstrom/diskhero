@@ -603,8 +603,8 @@ FontData:
 
             .byte   %00000000   ; truck left A 1
             .byte   %00000011
-            .byte   %00111111
-            .byte   %01111111
+            .byte   %00111011
+            .byte   %01111011
             .byte   %01111111
             .byte   %01011011
             .byte   %00111100
@@ -630,8 +630,8 @@ FontData:
 
             .byte   %00000000   ; truck right B 1
             .byte   %01100000
-            .byte   %01111110
-            .byte   %01111111
+            .byte   %01101110
+            .byte   %01101111
             .byte   %01111111
             .byte   %01101101
             .byte   %00011110
