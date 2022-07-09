@@ -70,10 +70,18 @@ TERMINATE   = $65
 XByte       = $1601     ; Interp extended address offset
 ZPtrA       = $20
 ZPtrB       = $22
-ZPtrC       = $24
-ZPtrD       = $26
 
-; we have from A000 to B800 before SOS arrives
+ZDiskType   = $24
+ZDiskX      = $26
+ZDiskY      = $28
+ZHoardX     = $2A
+ZHoardY     = $2C
+ZHoardXV    = $2E
+ZHoardYV    = $30
+
+; we have from A000 to B800 before SOS arrives (6144 bytes)
+; I can fudge this a little if needed, by starting with JMP and putting data early,
+; since the main concern is trying to run code in a bank switched area.
 
             .org     $A000 - 14
             
@@ -104,6 +112,9 @@ VoidD:      .byte   0
 
 GameLevel:  .byte   0
 GameScore:  .byte   0, 0, 0
+DisksGot:   .byte   0, 0, 0, 0
+DisksLeft:  .byte   0, 0, 0, 0
+
 ScrRegion:  .byte   0
 FieldH:     .byte   $04, $05, $05, $06, $06, $07
 FieldL:     .byte   $A8, $25, $A8, $28, $A8, $28
@@ -131,7 +142,7 @@ HeroDir:    .byte   0
 VelocityX:  .byte   0
 VelocityY:  .byte   0
 VBLTick:    .byte   0
-MoveDelay   = 2            ; VBL tick delay between moves
+MoveDelay   = 1            ; VBL tick delay between moves
 
 ; I played with ScRegLen by trial and error a little.
 ; Not sure why I needed to go two down for region zero.
@@ -263,6 +274,37 @@ init:       sei                 ; no interrupts while we are setting up
             bpl :-
             jsr drawback        ; draw static background
             jsr buildmap        ; set up map
+            ; point memory at location tracking in bank 2 (with map)
+            ; DiskX = 300, DiskY = 340, DiskType = 380
+            ; HoardX = 400, HoardY = 440, HoardXV = 480, HoardYV = 4C0
+            lda #$00
+            sta ZDiskX
+            sta ZHoardX
+            lda #$40
+            sta ZDiskY
+            sta ZHoardY
+            lda #$80
+            sta ZDiskType
+            sta ZHoardXV
+            lda #$C0
+            sta ZHoardYV
+            lda #$03
+            sta ZDiskX + 1
+            sta ZDiskY + 1
+            sta ZDiskType + 1
+            lda #$04
+            sta ZHoardX + 1
+            sta ZHoardY + 1
+            sta ZHoardXV + 1
+            sta ZHoardYV + 1
+            lda #$82
+            sta ZDiskX + XByte
+            sta ZDiskY + XByte
+            sta ZDiskType + XByte
+            sta ZHoardX + XByte
+            sta ZHoardY + XByte
+            sta ZHoardXV + XByte
+            sta ZHoardYV + XByte
             jsr setupenv        ; arm interrupts
             lda #$00
             sta ScrRegion
@@ -724,9 +766,9 @@ drawscore:
             dey
             bpl :-
             lda NudgePos        ; DEBUG
-            sta $401
+            sta $481
             lda HeroY
-            sta $402
+            sta $482
             rts
 
 ; compute map pointer, based on A.  Map data is in bank 2, $1000-4FFF.
@@ -783,11 +825,11 @@ parmdec:    .byte   $38         ; first copy target raster line in lower field (
             .byte   $A0         ; first copy target raster line in lower field (copies toward higher coords)
             .byte   $88         ; raster offset for drawing new lower field line ($88 + 0)
             .byte   $23         ; map offset back from HeroY for newly drawn line in top field.
-PTopRastA   = $30
-PTopRastD   = $31
-PBotRastA   = $32
-PBotRastD   = $33
-PTopMapOff  = $34
+PTopRastA   = $50
+PTopRastD   = $51
+PBotRastA   = $52
+PBotRastD   = $53
+PTopMapOff  = $54
 
 PNudge      = $40
 TouchedVoid = $41
@@ -1901,21 +1943,47 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             lda #$30            ; disks to scatter around
             sta MFPlaced
 :           jsr mfrndspot
-            ; TODO - remember where they were and distribute according to value
+            sty ZPxScratch      ; stash the x-coordinate
+            txa
+            pha                 ; stash the y-coordinate
             ldx Seed
             lda Random, x
             inx
             stx Seed
-            and #$C0            ; pick a random color
-            ora #C_DISK
-            sta (ZPtrA), y
+            and #$03            ; pick a random type
+            tax                 ; stash type in X
+            tya                 ; store the x-coordinate
+            ldy MFPlaced
+            sta (ZDiskX), y
+            pla                 ; store the y-coordinate
+            sta (ZDiskY), y
+            txa                 ; store the type
+            sta (ZDiskType), y
+            tax
+            inc DisksLeft, x    ; record another one in the map inventory
+            lsr
+            ror
+            ror                 ; convert type to color bits
+            ora #C_DISK         ; use disk shape
+            ldy ZPxScratch      ; recall the x-coordinate
+            sta (ZPtrA), y      ; place a disk
             dec MFPlaced
             bpl :-
             
             lda #$10            ; hoarders to scatter around
             sta MFPlaced
 :           jsr mfrndspot
-            ; TODO - remember where they were
+            sty ZPxScratch      ; stash the x-coordinate
+            txa
+            ldy MFPlaced
+            sta (ZHoardY), y
+            lda ZPxScratch
+            sta (ZHoardX), y
+            lda #$01
+            sta (ZHoardXV), y
+            lda #$00
+            sta (ZHoardYV), y
+            ldy ZPxScratch      ; place the hoarder
             lda #C_HHEADA
             sta (ZPtrA), y
             iny
@@ -1929,9 +1997,12 @@ mfdone:     lda ZPSave
             rts
 
 ; find a random spot that is open in the map
+; returns with y holding the map x coordinate, x holding the map y coordinate,
+; and ZPtrA pointing to the map row start
 mfrndspot:  ldx Seed
             lda Random, x
             inx
+            pha                     ; stash the y coordinate
             jsr setmapptr
             lda Random, x
             inx
@@ -1944,6 +2015,8 @@ mfrndspot:  ldx Seed
             sta ZPtrA + 1
             lda #$82
             sta ZPtrA + XByte
+            pla                     ; unstash the y coordinate in case we're done
+            tax
             lda (ZPtrA), y
             bne mfrndspot           ; if spot wasn't empty keep looking maybe forever
             iny                     ; spot needs to have space to its right as well
@@ -1956,20 +2029,48 @@ mfrndspot:  ldx Seed
 
 StatTextA:  .byte "Level:    "
             .byte "Score:    "
-            .byte "         S"
-            .byte "CROLLDEMO "
-            .byte $0
+            .byte "          "
+            .byte " DISKHERO "
 
 StatColA:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $C0, $F0, $F0
             .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
-            .byte $D0, $E0, $90, $F0, $F0, $F0, $F0, $F0, $0E, $0E
+            .byte $D0, $E0, $90, $F0, $F0, $F0, $B0, $E0, $C0, $D0
+            .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
+
+StatTextB:  .byte "        ", C_TRUCKLB, C_TRUCKLA
+            .byte "          "
+            .byte "       ", C_TRUCKRB, C_TRUCKRA, " "
+            .byte " -------- "
+            
+StatColB:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $C0, $F0, $F0
+            .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
+            .byte $D0, $E0, $90, $F0, $F0, $F0, $B0, $0E, $0E, $D0
+            .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
+
+ProgTextA:  .byte "00 ", C_DISK, " 00 1 "
+            .byte "00 ", C_DISK, " 00 2 "
+            .byte "          "
+            .byte "          "
+
+ProgColA:   .byte $0F, $0F, $0F, $08, $0F, $0E, $0E, $0F, $E1, $0F
+            .byte $0F, $0F, $0F, $06, $0F, $0E, $0E, $0F, $E1, $0F
+            .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
+            .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
+
+ProgTextB:  .byte "00 ", C_DISK, " 00 3 "
+            .byte "00 ", C_DISK, " 00 4 "
+            .byte "          "
+            .byte "          "
+
+ProgColB:   .byte $0F, $0F, $0F, $03, $0F, $0E, $0E, $0F, $E1, $0F
+            .byte $0F, $0F, $0F, $04, $0F, $0E, $0E, $0F, $E1, $0F
+            .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
             .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
 
 FrameText:  .byte "          "
             .byte "          "
             .byte "          "
             .byte "          "
-            .byte $0
 
 FrameCol:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $C0, $F0, $F0
             .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
@@ -1980,7 +2081,6 @@ InnerText:  .byte "XX        "
             .byte "          "
             .byte "          "
             .byte "        XX"
-            .byte $0
 
 InnerCol:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $C0, $F0, $F0
             .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
@@ -2010,29 +2110,27 @@ drawback:   lda #$01            ; Apple III color text
             bit D_SCROLLOFF
             lda #$00
             jsr setnudge
-            jsr cleartext
-            jsr clearhgr
             ; text lines 00-01: score status
             ldy #$27
 :           lda StatTextA, y
             sta $400, y
             lda StatColA, y
             sta $800, y
-            lda StatTextA, y
+            lda StatTextB, y
             sta $480, y
-            lda StatColA, y
+            lda StatColB, y
             sta $880, y
             dey
             bpl :-
             ; text lines 15-17: progress status
             ldy #$27
-:           lda StatTextA, y
+:           lda ProgTextA, y
             sta $6D0, y
-            lda StatColA, y
+            lda ProgColA, y
             sta $AD0, y
-            lda StatTextA, y
+            lda ProgTextB, y
             sta $750, y
-            lda StatColA, y
+            lda ProgColB, y
             sta $B50, y
             lda FontDemo, y
             sta $7D0, y
@@ -2108,86 +2206,10 @@ mapsolid:   lda #$7F
             bpl mapline
             
             ; mode 7 A3 Hires
-            ; lines 20-47(+8) and then lines 80-A7(+8)
-            ; there really isn't anything static here, so
-            ; just clear it.
-            ldx #$20
-clrhgr:     lda YHiresL, x
-            sta ZPtrA
-            sta ZPtrB
-            lda YHiresHA, x
-            sta ZPtrA + 1
-            lda YHiresHB, x
-            sta ZPtrB + 1
-            lda #$00
-            ldy #$27
-:           sta (ZPtrA), y
-            sta (ZPtrB), y
-            dey
-            bpl :-
-            lda YHiresHC, x
-            sta ZPtrA + 1
-            lda YHiresHD, x
-            sta ZPtrB + 1
-            lda #$00
-            ldy #$27
-:           sta (ZPtrA), y
-            sta (ZPtrB), y
-            dey
-            bpl :-
-            inx
-            cpx #$AF            ; one past bottom field + 8
-            beq clrhgrdone
-            cpx #$50            ; one past top field + 8
-            bne clrhgr
-            ldx #$80            ; skip to start of bottom field
-            bne clrhgr
-clrhgrdone: 
+            ; if it really needs clearing, we can just zero out 2000-9FFF
+            ; but I don't think it will need it, so I will skip it.
             rts
 
-; clear graphics pages (just fill with nonsense for now)
-
-clearhgr:   lda #$00
-            sta ZPtrA
-            lda #$20
-            sta ZPtrA + 1
-            lda #$8F
-            sta ZPtrA + XByte
-            ldx #$80
-            lda #$40
-            ldy #$00
-:           sta (ZPtrA), y
-            iny
-            bne :-
-            inc ZPtrA + 1
-            dex
-            bne :-
-            rts
-            
-; clear text page (blank page one, F0 colors on page two)
-
-cleartext:  lda #$00
-            sta ZPtrA
-            lda #$04
-            sta ZPtrA + 1
-            lda #$8F
-            sta ZPtrA + XByte
-            ldx #$04
-            lda #$A0
-            ldy #$00
-:           sta (ZPtrA), y
-            iny
-            bne :-
-            inc ZPtrA + 1
-            dex
-            bne :-
-            cmp #$F0
-            beq :+
-            lda #$F0
-            ldx #$04
-            bne :-
-:           rts
-            
 ; Set smooth scroll offset to the number (0-7) in A
 
 setnudge:   ror
