@@ -230,7 +230,7 @@ FontCol:
             .byte   %11111111         ; wall left right up
             .byte   %11111111         ; wall left right down
             .byte   %11111111         ; disk
-            .byte   %11101110         ; hero
+            .byte   %11111111         ; hero
             .byte   %11001100         ; hoarder head 1
             .byte   %11001100         ; hoarder head 2
             .byte   %11001100         ; hoarder hands up 1

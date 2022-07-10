@@ -121,6 +121,7 @@ FieldL:     .byte   $A8, $25, $A8, $28, $A8, $28
 FieldHC:    .byte   $08, $09, $09, $0A, $0A, $0B
 MapColors:  .byte   $88, $66, $33, $44
 PlayColors: .byte   $08, $06, $03, $04
+DiskColors: .byte   $0E, $0D, $0C, $0B
 ; Screen layout:
 ; mode 1 (text)     lines 00-0F (10) 00-01  score
 ; mode 6 (bw hires) lines 10-1F (10)        b/w map display
@@ -157,6 +158,7 @@ MoveDelay   = 1            ; VBL tick delay between moves
 ZFontDots   = $80   ; ZP cache for FontDots to speed up drawing
 ZFontCol    = $B0   ; ZP cache for FontCol to speed up drawing
 ZBufCount   = $7F   ; count for buffering map data
+ZNumPtr     = $7D   ; pointer for screen target for drawnumber
 
 ; these are in screen holes because we're using screen memory for ZP
 ZScrHole    = $78
@@ -334,7 +336,7 @@ eventloop:  lda ExitFlag
             beq :+
             jsr handlekey
 :            
-            inc GameScore + 2   ; DEBUG - constantly move score up
+            inc $480            ; DEBUG - constantly churn screen memory to detect hang
             jsr drawscore
             lda VBLTick
             bpl :+
@@ -437,7 +439,7 @@ ychecked:   stx NewHeroY
             sta VelocityX
             sta VelocityY
             jmp movenope
-horizdisk:  ; account for and remove disk at NewHeroX, HeroY
+horizdisk:  jsr gotdisk
 horizok:    lda #$00            ; stop vertical movement
             sta VelocityY
             lda HeroY           ; new hero Y is unchanged
@@ -447,13 +449,13 @@ horizok:    lda #$00            ; stop vertical movement
             lda ZPtrB + 1
             sta ZPtrA + 1
             jmp movedone
-vertdisk:   ; account for and remove disk at HeroX, NewHeroY
+vertdisk:   jsr gotdisk
 vertok:     lda #$00            ; stop horizontal movement
             sta VelocityX
             lda HeroX           ; new hero X is unchanged
             sta NewHeroX
             jmp movedone
-diagdisk:   ; account for and remove disk at NewHeroX, NewHeroY
+diagdisk:   jsr gotdisk
 movedone:   lda #$00            ; remove old hero from map
             ldy HeroX
             sta (ZPtrB), y
@@ -472,6 +474,17 @@ scrolldown: sec
 scrolldo:   jsr updatemap
 scrollno:   jsr drawplay
 movenope:   rts
+
+gotdisk:    lda (ZPtrA), y
+            and #$C0            ; disk type
+            asl
+            rol
+            rol
+            tax
+            inc DisksGot, x     ; got one of this type
+            dec DisksLeft, x    ; fewer out there of this type
+            ; removing the disk is unnecessary because the hero will replace it
+            rts
 
 ; process keypress
 
@@ -728,44 +741,96 @@ setupenv:   ; save IRQ vector and then install ours
             sta RE_T2CH     ;go
             rts
 
+; put a 2-digit number on screen.
+; presumed decimal use of a byte (first nibble 10s, second nibble 1s)
+; A holds the number, ZNumPtr holds the screen address of the number.
+; Will trigger extended addressing, so set ZNumPtr + XByte to 8F.
+; A and Y do not survive.
+
+drawnumber: pha
+            lsr
+            lsr
+            lsr
+            lsr
+            ora #$30
+            ldy #$00
+            sta (ZNumPtr), y
+            pla
+            and #$0F
+            ora #$30
+            iny
+            sta (ZNumPtr), y
+            rts
+
 ; draw the level and score
 ; this is fast enough we can just do it whenever
 
 drawscore:
-            ; update level
+            ; update level ($407-408)
+            lda #$07
+            sta ZNumPtr
+            lda #$04
+            sta ZNumPtr + 1
+            lda #$8F
+            sta ZNumPtr + XByte
             lda GameLevel
-            pha
-            and #$F0
-            lsr
-            lsr
-            lsr
-            lsr
-            ora #$30
-            sta $407
-            pla
-            and #$0F
-            ora #$30
-            sta $408
-            ; update score
-            ldy #$03
-            ldx #$18
-:           lda GameScore, y
-            pha
-            and #$0F
-            ora #$30
-            sta $480, x
-            pla
-            lsr
-            lsr
-            lsr
-            lsr
-            ora #$30
+            jsr drawnumber
+            ; update score ($411-418)
+            lda #$17
+            sta ZNumPtr
+            ldx #$03
+:           lda GameScore, x
+            jsr drawnumber
+            dec ZNumPtr
+            dec ZNumPtr
             dex
-            sta $480, x
-            dex
-            dey
             bpl :-
-            lda NudgePos        ; DEBUG
+            ; update disk types gotten and left
+            lda #$D0
+            sta ZNumPtr
+            lda #$06
+            sta ZNumPtr + 1
+            ldx #$00
+            lda DisksGot, x
+            jsr drawnumber
+            lda #$D5
+            sta ZNumPtr
+            lda DisksLeft, x
+            jsr drawnumber
+            inx
+            lda #$DA
+            sta ZNumPtr
+            ldx #$00
+            lda DisksGot, x
+            jsr drawnumber
+            lda #$DF
+            sta ZNumPtr
+            lda DisksLeft, x
+            jsr drawnumber
+            inx
+            lda #$4F
+            sta ZNumPtr
+            lda #$07
+            sta ZNumPtr + 1
+            ldx #$00
+            lda DisksGot, x
+            jsr drawnumber
+            lda #$55
+            sta ZNumPtr
+            lda DisksLeft, x
+            jsr drawnumber
+            inx
+            lda #$5A
+            sta ZNumPtr
+            ldx #$00
+            lda DisksGot, x
+            jsr drawnumber
+            lda #$5F
+            sta ZNumPtr
+            lda DisksLeft, x
+            jsr drawnumber
+            ; stick a couple of debug indicators on screen
+            lda NudgePos
             sta $481
             lda HeroY
             sta $482
@@ -1595,7 +1660,11 @@ loreschar:  cpy #$40            ; check to see if we're off the right edge of th
             pla                 ; recall character
             and #$3F            ; strip the color bits
             pha                 ; and re-push
-            lda PlayColors, x   ; load the indexed color
+            cmp #C_DISK         ; if it is a disk, use the disk colors
+            bne useplaycol
+            lda DiskColors, x
+            beq gotcolor        ; branch always
+useplaycol: lda PlayColors, x   ; load the indexed color
 gotcolor:   and #$0F            ; keep only the foreground color (background = black/0)
 gotcolorb:  ldx ZPxScratch
             sta Zero, x         ; store color in ZP (1A00)
@@ -2052,8 +2121,8 @@ ProgTextA:  .byte "00 ", C_DISK, " 00 1 "
             .byte "          "
             .byte "          "
 
-ProgColA:   .byte $0F, $0F, $0F, $08, $0F, $0E, $0E, $0F, $E1, $0F
-            .byte $0F, $0F, $0F, $06, $0F, $0E, $0E, $0F, $E1, $0F
+ProgColA:   .byte $0F, $0F, $0F, $0E, $0F, $0E, $0E, $0F, $E1, $0F
+            .byte $0F, $0F, $0F, $0D, $0F, $0E, $0E, $0F, $E1, $0F
             .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
             .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
 
@@ -2062,8 +2131,8 @@ ProgTextB:  .byte "00 ", C_DISK, " 00 3 "
             .byte "          "
             .byte "          "
 
-ProgColB:   .byte $0F, $0F, $0F, $03, $0F, $0E, $0E, $0F, $E1, $0F
-            .byte $0F, $0F, $0F, $04, $0F, $0E, $0E, $0F, $E1, $0F
+ProgColB:   .byte $0F, $0F, $0F, $0C, $0F, $0E, $0E, $0F, $E1, $0F
+            .byte $0F, $0F, $0F, $0B, $0F, $0E, $0E, $0F, $E1, $0F
             .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
             .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
 
