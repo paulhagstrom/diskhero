@@ -155,7 +155,7 @@ MoveDelay   = 1            ; VBL tick delay between moves
 ; to wait until it is closer to operational to tweak that.
 
 ZFontDots   = $80   ; ZP cache for FontDots to speed up drawing
-ZFontCol    = $B0   ; ZP cache for FontCol to speed up drawing
+ZFontCol    = $40   ; ZP cache for FontCol to speed up drawing
 ZBufCount   = $7F   ; count for buffering map data
 ZNumPtr     = $7D   ; pointer for screen target for drawnumber
 
@@ -934,15 +934,15 @@ parmdec:    .byte   $38         ; first copy target raster line in lower field (
             .byte   $A0         ; first copy target raster line in lower field (copies toward higher coords)
             .byte   $88         ; raster offset for drawing new lower field line ($88 + 0)
             .byte   $23         ; map offset back from HeroY for newly drawn line in top field.
-PTopRastA   = $50
-PTopRastD   = $51
-PBotRastA   = $52
-PBotRastD   = $53
-PTopMapOff  = $54
+PTopRastA   = $6B
+PTopRastD   = $6C
+PBotRastA   = $6D
+PBotRastD   = $6E
+PTopMapOff  = $6F
 
-PNudge      = $40
-TouchedVoid = $41
-MapOffset   = $42
+PNudge      = $70
+TouchedVoid = $71
+MapOffset   = $72
 
 ; enter with carry clear to increase nudge (with old NudgePos),
 ; or carry set to decrease nudge (with new already-decreased NudgePos).
