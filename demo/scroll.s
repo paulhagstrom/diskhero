@@ -950,11 +950,11 @@ MapOffset   = $42
 ; in other words, nudge should be the lowest of new and old
 ; HeroY just got incremented (carry clear) or decremented (carry set) prior to calling this
 updatemap:  php                 ; stash carry flag
-            bcs :+
+            bcs umdec
             ldy #$04            ; end of parminc parameter block
-            bne :++
-:           ldy #$09            ; end of parmdec parameter block
-:           ldx #$04
+            bne umparms
+umdec:      ldy #$09            ; end of parmdec parameter block
+umparms:    ldx #$04
 :           lda parminc, y
             sta PTopRastA, x    ; copy into ZP parm block
             dey
@@ -1708,7 +1708,7 @@ loreschar:  cpy #$40            ; check to see if we're off the right edge of th
             cmp #C_DISK         ; if it is a disk, use the disk colors
             bne useplaycol
             lda DiskColors, x
-            beq gotcolor        ; branch always
+            bne gotcolor        ; branch always
 useplaycol: lda PlayColors, x   ; load the indexed color
 gotcolor:   and #$0F            ; keep only the foreground color (background = black/0)
 gotcolorb:  ldx ZPxScratch
