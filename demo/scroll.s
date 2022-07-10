@@ -120,8 +120,7 @@ FieldH:     .byte   $04, $05, $05, $06, $06, $07
 FieldL:     .byte   $A8, $25, $A8, $28, $A8, $28
 FieldHC:    .byte   $08, $09, $09, $0A, $0A, $0B
 MapColors:  .byte   $88, $66, $33, $44
-PlayColors: .byte   $08, $06, $03, $04
-DiskColors: .byte   $0E, $0D, $0C, $0B
+DiskColors: .byte   $EE, $DD, $CC, $BB
 ; Screen layout:
 ; mode 1 (text)     lines 00-0F (10) 00-01  score
 ; mode 6 (bw hires) lines 10-1F (10)        b/w map display
@@ -1231,13 +1230,20 @@ bufmap:     lda (ZScrHole), y
             lda ZPxScratch      ; these are the final pixels
             jmp bufmappix
 :           pla                 ; recall the map byte to grab the color
+            pha                 ; re-stash so we can check for disk
             asl
             rol
             rol                 ; move color bits into lower two bits to serve as color index
             and #$03
             tax
-            lda MapColors, x    ; load the indexed color
-            and ZPxScratch      ; apply to the pixels
+            pla                 ; recall the map byte one last time
+            and #$3F            ; filter out color bits
+            cmp #C_DISK         ; if it is a disk, use the disk colors
+            bne usemapcol
+            lda DiskColors, x
+            bne applycolor
+usemapcol:  lda MapColors, x    ; load the indexed color
+applycolor: and ZPxScratch      ; apply to the pixels
 bufmappix:  pha                 ; push buffered pixels onto the stack (safe from ZP switch)
             dey
             dec ZBufCount
@@ -1709,7 +1715,7 @@ loreschar:  cpy #$40            ; check to see if we're off the right edge of th
             bne useplaycol
             lda DiskColors, x
             bne gotcolor        ; branch always
-useplaycol: lda PlayColors, x   ; load the indexed color
+useplaycol: lda MapColors, x    ; load the indexed color
 gotcolor:   and #$0F            ; keep only the foreground color (background = black/0)
 gotcolorb:  ldx ZPxScratch
             sta Zero, x         ; store color in ZP (1A00)
