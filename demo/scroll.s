@@ -319,6 +319,8 @@ init:       sei                 ; no interrupts while we are setting up
             sta NudgeNeg
             sta GameLevel
             sta GameScore
+            sta GameScore + 1
+            sta GameScore + 2
             sta VelocityX
             sta VelocityY
             sta HeroDir
@@ -477,12 +479,25 @@ movenope:   rts
 
 gotdisk:    lda (ZPtrA), y
             and #$C0            ; disk type
+            pha
+            ora #$20
+            lsr
+            jsr addscore        ; add type multiplier to the score
+            pla
             asl
             rol
             rol
             tax
-            inc DisksGot, x     ; got one of this type
-            dec DisksLeft, x    ; fewer out there of this type
+            sed
+            lda DisksGot, x
+            clc
+            adc #$01
+            sta DisksGot, x     ; got one of this type
+            lda DisksLeft, x
+            sec
+            sbc #$01
+            sta DisksLeft, x    ; fewer out there of this type
+            cld
             ; removing the disk is unnecessary because the hero will replace it
             rts
 
@@ -741,6 +756,24 @@ setupenv:   ; save IRQ vector and then install ours
             sta RE_T2CH     ;go
             rts
 
+; add to score, add the number in A to the score
+
+addscore:   ldx #$02
+            sed
+            clc
+            adc GameScore, x
+            sta GameScore, x
+            dex
+            lda GameScore, x
+            adc #$00
+            sta GameScore, x
+            dex
+            lda GameScore, x
+            adc #$00
+            sta GameScore, x
+            cld
+            rts
+
 ; put a 2-digit number on screen.
 ; presumed decimal use of a byte (first nibble 10s, second nibble 1s)
 ; A holds the number, ZNumPtr holds the screen address of the number.
@@ -766,7 +799,7 @@ drawnumber: pha
 ; this is fast enough we can just do it whenever
 
 drawscore:
-            ; update level ($407-408)
+            ; update level
             lda #$07
             sta ZNumPtr
             lda #$04
@@ -775,10 +808,10 @@ drawscore:
             sta ZNumPtr + XByte
             lda GameLevel
             jsr drawnumber
-            ; update score ($411-418)
-            lda #$17
+            ; update score
+            lda #$16
             sta ZNumPtr
-            ldx #$03
+            ldx #$02
 :           lda GameScore, x
             jsr drawnumber
             dec ZNumPtr
@@ -800,7 +833,6 @@ drawscore:
             inx
             lda #$DA
             sta ZNumPtr
-            ldx #$00
             lda DisksGot, x
             jsr drawnumber
             lda #$DF
@@ -808,11 +840,10 @@ drawscore:
             lda DisksLeft, x
             jsr drawnumber
             inx
-            lda #$4F
+            lda #$50
             sta ZNumPtr
             lda #$07
             sta ZNumPtr + 1
-            ldx #$00
             lda DisksGot, x
             jsr drawnumber
             lda #$55
@@ -822,7 +853,6 @@ drawscore:
             inx
             lda #$5A
             sta ZNumPtr
-            ldx #$00
             lda DisksGot, x
             jsr drawnumber
             lda #$5F
@@ -2029,7 +2059,12 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             txa                 ; store the type
             sta (ZDiskType), y
             tax
-            inc DisksLeft, x    ; record another one in the map inventory
+            sed
+            lda DisksLeft, x    ; record another one in the map inventory
+            clc
+            adc #$01
+            sta DisksLeft, x
+            cld
             lsr
             ror
             ror                 ; convert type to color bits
@@ -2096,14 +2131,14 @@ mfrndspot:  ldx Seed
 
 ; paint the static parts of the page
 
-StatTextA:  .byte "Level:    "
-            .byte "Score:    "
+StatTextA:  .byte " Level    "
+            .byte " Score:   "
             .byte "          "
             .byte " DISKHERO "
 
-StatColA:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $C0, $F0, $F0
-            .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
-            .byte $D0, $E0, $90, $F0, $F0, $F0, $B0, $E0, $C0, $D0
+StatColA:   .byte $2D, $2D, $2D, $2D, $2D, $2D, $2E, $2E, $2E, $2E
+            .byte $0C, $0C, $0C, $0C, $0C, $0C, $0C, $0C, $0D, $0D
+            .byte $0D, $0D, $0D, $0D, $0D, $F0, $B0, $E0, $C0, $D0
             .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
 
 StatTextB:  .byte "        ", C_TRUCKLB, C_TRUCKLA
@@ -2111,9 +2146,9 @@ StatTextB:  .byte "        ", C_TRUCKLB, C_TRUCKLA
             .byte "       ", C_TRUCKRB, C_TRUCKRA, " "
             .byte " -------- "
             
-StatColB:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $C0, $F0, $F0
+StatColB:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $F0, $F0, $F0
             .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
-            .byte $D0, $E0, $90, $F0, $F0, $F0, $B0, $0E, $0E, $D0
+            .byte $D0, $E0, $90, $F0, $F0, $F0, $0E, $0D, $0C, $0E
             .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
 
 ProgTextA:  .byte "00 ", C_DISK, " 00 1 "
