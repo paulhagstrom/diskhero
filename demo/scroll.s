@@ -411,7 +411,22 @@ yup:        dex
             stx VelocityY
 ychecked:   stx NewHeroY
             txa
-            jsr setmapptr   ; locate new hero's y-coordinate on map
+            ; DEBUG - sort of.  Tried to work around a bug where if I get down to
+            ; map line FD it halts and I can't move.  If I went straight down, I
+            ; seem to be able to escape NW, but it leaves the hero back where I
+            ; left it.  So I think I am colliding with the myself somehow and cannot
+            ; move away.  Consistently happens when the hero hits FD, which is when
+            ; one line of bottom void is showing in the playfield.
+            cmp HeroY       ; if we somehow got here but did not move, bail out
+            bne xycont
+            lda NewHeroX
+            cmp HeroX
+            bne xycontb
+            jmp movenope
+xycontb:    lda NewHeroY
+            ; below was here before I tried the workaround above.  If that is removed,
+            ; it can be removed up to here.
+xycont:     jsr setmapptr   ; locate new hero's y-coordinate on map
             lda MapPtrL
             sta ZPtrA
             lda MapPtrH
@@ -1496,7 +1511,7 @@ borderh:    lda YLoresL, y
             lda YLoresHB, y     ; $800 base (color space)
             sta R_ZP            ; go to color memory
             ldy #$27            ; draw $28 colors
-            lda #$50            ; grey1 background
+            lda #$57            ; grey1 background
 borderhb:   sta Zero, x
             dex
             dey
@@ -1509,14 +1524,14 @@ borderhb:   sta Zero, x
             pla
             bne borderhb        ; branch always
 borderfix:  pla                 ; throw away the color
-            lda #$50            ; brighter gray
+            lda #$57            ; brighter gray
             bne borderhb
 borderhtog: lda ThumbNext       ; arm new left side toggle
             sta ThumbTogg
             lda #$00            ; disable left side toggle
             sta ThumbNext
             pla                 ; and swap colors
-            eor #$A0
+            eor #$A7
             bne borderhb        ; branch always
 borderhz:   lda CurScrLine
             cmp #$09            ; if we have done both top and bottom
@@ -2171,20 +2186,24 @@ ProgColB:   .byte $0F, $0F, $0F, $0C, $0F, $0E, $0E, $0F, $E1, $0F
             .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
             .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
 
-FrameText:  .byte "          "
-            .byte "          "
-            .byte "          "
-            .byte "          "
+FrameText:  .byte C_WALL_RUD, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H
+            .byte C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H
+            .byte C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H
+            .byte C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H
+            .byte C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H
+            .byte C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H
+            .byte C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H
+            .byte C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_LUD
 
 FrameCol:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $C0, $F0, $F0
             .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
             .byte $D0, $E0, $90, $F0, $F0, $F0, $F0, $F0, $F0, $F0
             .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
 
-InnerText:  .byte "XX        "
+InnerText:  .byte C_WALL_V, "         "
             .byte "          "
             .byte "          "
-            .byte "        XX"
+            .byte "         ", C_WALL_V
 
 InnerCol:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $C0, $F0, $F0
             .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
