@@ -1,60 +1,78 @@
-; definitions
+; DISKHERO definitions
+;
+; Memory map:
+; 
+;
 
-; i/o
-KBD         = $C000     ; keyboard
-KBDFLAG     = $C008     ; keyboard flag
-KBDCLEAR    = $C010     ; keyboard strobe
-SPEAKER     = $C030     ; click
-BEEP        = $C040     ; beep
-CLOCK       = $C070     ; real time clock
-; display modes
-GRAPHICS    = $C050     ; "clear text mode"
-TEXT        = $C051     ; set text mode
-NOMIX       = $C052     ; "clear mix mode"
-MIX         = $C053     ; "set mix mode"
-PAGEONE     = $C054     ; "clear PG2 mode"
-PAGETWO     = $C055     ; PG2 mode
-LORES       = $C056     ; "clear hires mode"
-HIRES       = $C057     ; set hires mode
-; smooth scrolling
-SCROLLON    = $C0D9     ; enable smooth scroll (vertical shift)
-SCROLLOFF   = $C0D8     ; disable smooth scroll
-LC000       = $C000     ; used as base for smooth scroll offset
-LC002       = $C002
-LC004       = $C004
-; graphics buffers
-TEXTBUFA    = $0400     ; line 0
-TEXTBUFB    = $0480     ; line 1
-TEXTBUFC    = $0500     ; line 2
-TEXTBUFD    = $0580     ; line 3
-TEXTBUFE    = $0600     ; line 4
-TEXTBUFF    = $0680     ; line 5
-GRBUFA      = $2000     ; start of page 1
-; VIAs and interrupts
-IRQVect     = $FFCD     ; Monitor IRQ points here
-RegZP       = $FFD0     ; zero page register
-RegEnv      = $FFDF     ; Environment register
-RegAuxCtrlD = $FFDB     ; ffdx auxiliary control register
-RegPerCtrlD = $FFDC     ; ffdx peripheral control register
-RegIntFlagD = $FFDD     ; ffdx interrupt flag register
-RegIntEnabD = $FFDE     ; ffdx interrupt enable register
-RegToneHBL  = $FFE0     ; ffex port B. 0-5 tone, 6 I/O count, 7 i/o nmi
-RegAuxCtrlE = $FFEB     ; ffex auxiliary control register
-RegPerCtrlE = $FFEC     ; ffex peripheral control register
-RegIntFlagE = $FFED     ; ffex interrupt flag register
-RegIntEnabE = $FFEE     ; ffex interrupt enable register
-RegBank     = $FFEF     ; Bank register
+; I/O softswitches
 
-;SOS Calls
-;REQUEST_SEG    = $40
-;RELEASE_SEG    = $45
+IO_KEY      = $C000     ; keyboard
+IO_KEYFLAG  = $C008     ; keyboard flag
+IO_KEYCLEAR = $C010     ; keyboard strobe
+
+; graphics mode switches
+
+D_GRAPHICS  = $C050     ; "clear text mode"
+D_TEXT      = $C051     ; set text mode
+D_NOMIX     = $C052     ; "clear mix mode"
+D_MIX       = $C053     ; "set mix mode"
+D_PAGEONE   = $C054     ; "clear PG2 mode"
+D_PAGETWO   = $C055     ; PG2 mode
+D_LORES     = $C056     ; "clear hires mode"
+D_HIRES     = $C057     ; set hires mode
+IO_CLOCK    = $C070     ; real time clock
+SS_XXN      = $C0E0     ; smooth scroll bit 0 off
+SS_XXY      = $C0E1     ; smooth scroll bit 0 on
+SS_XNX      = $C0E2     ; smooth scroll bit 1 off
+SS_XYX      = $C0E3     ; smooth scroll bit 1 on
+SS_NXX      = $C0E4     ; smooth scroll bit 2 off
+SS_YXX      = $C0E5     ; smooth scroll bit 2 on
+
+D_SCROLLON  = $C0D9     ; enable smooth scroll (vertical shift)
+D_SCROLLOFF = $C0D8     ; disable smooth scroll
+
+; VIA registers
+
+R_TONEHBL   = $FFE0     ; tone (bits 0-5), I/O count (6), slot nmi (7)    
+RE_T2CL     = $FFE8     ; ffdx timer2 count low byte
+RE_T2CH     = $FFE9     ; ffdx timer2 count high byte
+RD_AUXCTL   = $FFDB     ; ffdx auxiliary control register
+RE_AUXCTL   = $FFEB     ; ffex auxiliary control register
+RD_PERCTL   = $FFDC     ; ffdx peripheral control register
+RE_PERCTL   = $FFEC     ; ffex peripheral control register
+RD_INTFLAG  = $FFDD     ; ffdx interrupt flag register
+RE_INTFLAG  = $FFED     ; ffex interrupt flag register
+    ; bit 0=kbd, 1=CA1, 2=shift, 3=CB2 (vblx8), 4=CB1 (vblx1), 5=timer 2, 6=timer 1, 7=IRQ
+RD_INTENAB  = $FFDE     ; ffdx interrupt enable register
+RE_INTENAB  = $FFEE     ; ffex interrupt enable register
+; In III's Company Programming Q&A it was said
+; that writing 01 here will disable the keyboard interrupt, 81 re-enables.
+; that looks like the reverse of what I wrote above for E_IFR.  Is bit 0 the MSB?
+
+R_ENVIRON   = $FFDF     ; Environment register
+R_BANK      = $FFEF     ; Bank register
+R_ZP        = $FFD0     ; zero page register
+IRQVECT     = $FFCD     ; Monitor IRQ points here
+
+; SOS Calls
+
 TERMINATE   = $65
+;REQUEST_SEG = $40
+;RELEASE_SEG = $45
 ;OPEN        = $C8
 ;READ        = $CA
-;CLOSE        = $CC
+;CLOSE       = $CC
 
 ; indirect addressing
-Ptr1        = $20
-Ptr2        = $22
-CExtPG      = $1601          ; Interp extended address offset
-Numbor      = $24
+
+XByte       = $1601     ; Interp extended address offset
+ZPtrA       = $20
+ZPtrB       = $22
+
+ZDiskType   = $24
+ZDiskX      = $26
+ZDiskY      = $28
+ZHoardX     = $2A
+ZHoardY     = $2C
+ZHoardXV    = $2E
+ZHoardYV    = $30
