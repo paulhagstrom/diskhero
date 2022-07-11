@@ -274,6 +274,10 @@ init:       sei                 ; no interrupts while we are setting up
             dex
             bpl :-
             jsr drawback        ; draw static background
+            lda #$10            ; start playfield kind of in the middle
+            sta HeroX
+            lda #$C3            ; Start down near the bottom but at a nudge 0 spot
+            sta HeroY
             jsr buildmap        ; set up map
             ; point memory at location tracking in bank 2 (with map)
             ; DiskX = 300, DiskY = 340, DiskType = 380
@@ -309,10 +313,6 @@ init:       sei                 ; no interrupts while we are setting up
             jsr setupenv        ; arm interrupts
             lda #$00
             sta ScrRegion
-            lda #$10            ; start playfield kind of in the middle
-            sta HeroX
-            lda #$C3            ; Start down near the bottom but at a nudge 0 spot
-            sta HeroY
             lda #$00            ; start at nudge 0
             sta NudgePos
             sta NudgeNeg
@@ -343,8 +343,8 @@ eventloop:  lda ExitFlag
             bpl :+
             jsr domove
             lda #$00            ; DEBUG - move only once
-            sta VelocityX
-            sta VelocityY
+            ;sta VelocityX
+            ;sta VelocityY
             lda #MoveDelay
             sta VBLTick
 :           jmp eventloop
@@ -378,7 +378,7 @@ domove:     ldx HeroX
             beq xchecked
             bmi xleft
             inx
-            cpx #$40
+            cpx #$3F
             bne xchecked
             dex             ; ran off the right edge, stop horizontal motion
             lda #$00
@@ -389,8 +389,8 @@ xleft:      dex
             inx             ; ran off the left edge, stop horizontal motion
             stx VelocityX
 xchecked:   stx NewHeroX
-            ldx HeroY
-            txa
+            lda HeroY
+            tax
             jsr setmapptr   ; locate old hero's y-coordinate on map
             lda MapPtrL
             sta ZPtrB
@@ -403,9 +403,9 @@ xchecked:   stx NewHeroX
             bmi yup
             inx
             bne ychecked
-            dex             ; ran off the bottom, stop vertical motion
-            stx VelocityY
-            beq ychecked
+            stx VelocityY    ; ran off the bottom, stop vertical motion
+            dex
+            bne ychecked
 yup:        dex
             cpx #$FF
             bne ychecked
@@ -413,22 +413,7 @@ yup:        dex
             stx VelocityY
 ychecked:   stx NewHeroY
             txa
-            ; DEBUG - sort of.  Tried to work around a bug where if I get down to
-            ; map line FD it halts and I can't move.  If I went straight down, I
-            ; seem to be able to escape NW, but it leaves the hero back where I
-            ; left it.  So I think I am colliding with the myself somehow and cannot
-            ; move away.  Consistently happens when the hero hits FD, which is when
-            ; one line of bottom void is showing in the playfield.
-            cmp HeroY       ; if we somehow got here but did not move, bail out
-            bne xycont
-            lda NewHeroX
-            cmp HeroX
-            bne xycontb
-            jmp movenope
-xycontb:    lda NewHeroY
-            ; below was here before I tried the workaround above.  If that is removed,
-            ; it can be removed up to here.
-xycont:     jsr setmapptr   ; locate new hero's y-coordinate on map
+            jsr setmapptr   ; locate new hero's y-coordinate on map
             lda MapPtrL
             sta ZPtrA
             lda MapPtrH
@@ -436,25 +421,29 @@ xycont:     jsr setmapptr   ; locate new hero's y-coordinate on map
             lda #$82
             sta ZPtrA + XByte
             ldy NewHeroX
-            lda (ZPtrA), y
+            lda (ZPtrA), y  ; look at NewHeroX, NewHeroY
             and #$3F        ; color bits don't block movement
-            beq movedone
+            beq moveclear
             cmp #C_DISK     ; disk is the only non-obstacle
             beq diagdisk
             ; we have hit something moving in the intended direction
-            lda (ZPtrB), y  ; check old Y with new X
+            lda VelocityX   ; if we were attempting to move horizontally,
+            beq :+
+            lda (ZPtrB), y  ; check NewHeroX, HeroY
             and #$3F        ; color bits don't block movement
             beq horizok
             cmp #C_DISK
             beq horizdisk
-            ldy HeroX       ; no go, check new Y with old X
+:           lda VelocityY   ; if we were attempting to move vertically,
+            beq :+
+            ldy HeroX       ; check HeroX, NewHeroY
             lda (ZPtrA), y
             and #$3F        ; color bits don't block movement
             beq vertok
             cmp #C_DISK
             beq vertdisk
             ; we have been stopped, move cannot be accomplished
-            lda #$00
+:           lda #$00
             sta VelocityX
             sta VelocityY
             jmp movenope
@@ -467,15 +456,15 @@ horizok:    lda #$00            ; stop vertical movement
             sta ZPtrA
             lda ZPtrB + 1
             sta ZPtrA + 1
-            jmp movedone
+            jmp moveclear
 vertdisk:   jsr gotdisk
 vertok:     lda #$00            ; stop horizontal movement
             sta VelocityX
             lda HeroX           ; new hero X is unchanged
             sta NewHeroX
-            jmp movedone
+            jmp moveclear
 diagdisk:   jsr gotdisk
-movedone:   lda #$00            ; remove old hero from map
+moveclear:  lda #$00            ; remove old hero from map
             ldy HeroX
             sta (ZPtrB), y
             lda #C_HERO         ; put new hero on map
@@ -883,7 +872,7 @@ drawscore:
             sta $482
             rts
 
-; compute map pointer, based on A.  Map data is in bank 2, $1000-4FFF.
+; compute map pointer, based on A.  Map data is in bank 2, $2000-5FFF.
 ; If current map pointer is something like 00000101 (5), shift bits to translate to:
 ; MapPtrL: 01000000 (40) MapPtrH: 00010001 (11) ($1140 and $40 bytes there)
 
@@ -896,7 +885,7 @@ setmapptr:  pha
             lsr                 ; (multiplying by $40, the length of a map line)
             ror MapPtrL
             clc
-            adc #$10            ; map data starts at $1000.
+            adc #$20            ; map data starts at $2000.
             sta MapPtrH
             rts
 
@@ -1127,6 +1116,7 @@ BorderBits: .byte %00010001
 ; enter with X holding the target line on the graphics page, assumes we are in 1A00 ZP
 ; returns with X holding the low byte of the starting/leftmost byte on the line
 ; also updates ZLineStart in 1A00 ZP and sets up ZOtherZP in all ZPs.
+; exits in HGR1 ZP since all callers want to go there immediately.
 prepdraw:   lda YHiresHA, x     ; get 2000-based address of current line on screen
             ; engineer it so that ZOtherZP in hgr pages always points to the other ZP to flip quickly.
             sta ZOtherZP        ; store HGR1 page in 1A00 ZP.
@@ -1617,7 +1607,7 @@ pfline:     jsr loresline
             bcc :+
             inc MapPtrH
             lda MapPtrH
-            cmp #$50
+            cmp #$60
             beq burnvoidd       ; just ticked into a lower void
             ; advance screen line
 :           inc CurScrLine
@@ -1633,7 +1623,7 @@ burnvoidd:  inc CurScrLine
             jmp burnvoidd
 
 ; draw a void line in the playfield
-; TODO - this doesn't reflect borders right, may want to unfactor this out
+; TODO - maybe can refactor so I do not have border logic in both loresline and playvoid
 playvoid:   lda #$04            ; draw five border columns total
             sta BorderV
             lda BorderR         ; save a local copy of this that we can decrement
@@ -1732,7 +1722,7 @@ loresline:  lda MapPtrL
             clc
             adc #$11
             tay
-loreschar:  cpy #$40            ; check to see if we're off the right edge of the map
+loreschar:  cpy #$3F            ; check to see if we're off the right edge of the map
             bcc :+              ; not in a right edge void
             lda #C_SPACE        ; right edge void, push a magenta blank
             pha
@@ -1872,7 +1862,7 @@ hiresline:  ldx CurScrLine      ; target line on graphics screen
             bcc novoid
             inc MapPtrH
             lda MapPtrH
-            cmp #$50            ; did we just fall off the map into the bottom void?
+            cmp #$60            ; did we just fall off the map into the bottom void?
             bne novoid          ; no, so continue on
 :           inc CurScrLine      ; we are in the bottom void, advance the graphics raster line
             ldx CurScrLine      ; note that if we are in the lower void, we must be in bottom field
@@ -1928,7 +1918,7 @@ seedRandom:
             rts
 
 ; build the map.
-; the map is $40 units wide and $100 units tall.  Lives in bank 2, $1000-4FFF.
+; the map is $40 units wide and $100 units tall.  Lives in bank 2, $2000-5FFF.
 ; map bytes have shape info in lower 6 bits, color/variant info in higher 2
 
 ; 5x5 box patterns for adding to the map.  Each pattern is $19 bytes long.
@@ -2000,7 +1990,7 @@ buildmap:   lda R_ZP
             sta R_ZP
             lda #$00
             sta ZPtrA
-            lda #$10
+            lda #$20
             sta ZPtrA + 1
             lda #$82
             sta ZPtrA + XByte
@@ -2038,10 +2028,10 @@ mfbox:      ldx Seed
             lda #$00
             sta ZPtrA
             ; rotate low bits of MFY into high bits of ZPtrA(L)
-            ; then add $1000 and store in ZPtrA(H)
+            ; then add $2000 and store in ZPtrA(H)
             ; so: if map coordinate MFY were $21, shift it so we have
-            ; MFY: 0010 0001 -> Zptr: 0100 0000 0001 1000 (40 18 -> $1840)
-            ; which is effectively multiplying Y by $40 and adding $1000
+            ; MFY: 0010 0001 -> Zptr: 0100 0000 0001 1000 (40 18 -> $2840)
+            ; which is effectively multiplying Y by $40 and adding $2000
             ; then add MFX to get the horizontal offset
             ; ZPtrA will then point to the upper left corner of box target
             lda MFY
@@ -2050,7 +2040,7 @@ mfbox:      ldx Seed
             lsr
             ror ZPtrA
             clc
-            adc #$10
+            adc #$20
             sta ZPtrA + 1
             lda ZPtrA
             clc
@@ -2105,7 +2095,17 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             adc #$08
             sta MFY
             jmp mfbox
-:            
+:           
+            lda HeroY           ; drop the hero in before we scatter things
+            jsr setmapptr
+            lda MapPtrL
+            sta ZPtrA
+            lda MapPtrH
+            sta ZPtrA + 1
+            ldy HeroX
+            lda #C_HERO
+            sta (ZPtrA), y
+
             lda #$30            ; disks to scatter around
             sta MFPlaced
 :           jsr mfrndspot
@@ -2175,10 +2175,12 @@ mfrndspot:  ldx Seed
             inx
             pha                     ; stash the y coordinate
             jsr setmapptr
-            lda Random, x
+rndx:       lda Random, x
             inx
             stx Seed
             and #$3F
+            cmp #$3D                ; furthest right it can be is 3D since it needs two
+            bcs rndx                ; if it was too far right, go try again.
             tay
             lda MapPtrL
             sta ZPtrA
