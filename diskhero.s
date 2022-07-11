@@ -83,21 +83,6 @@ MoveDelay   = 1            ; VBL tick delay between moves
 ; Since I suspect it is somewhat dependent on workload (some HBLs are missed?) may want
 ; to wait until it is closer to operational to tweak that.
 
-ZFontDots   = $80   ; ZP cache for FontDots to speed up drawing
-ZFontCol    = $40   ; ZP cache for FontCol to speed up drawing
-ZBufCount   = $7F   ; count for buffering map data
-ZNumPtr     = $7D   ; pointer for screen target for drawnumber
-
-; these are in screen holes because we're using screen memory for ZP
-ZScrHole    = $78
-ZOtherZP    = $7A
-ZCurrDrawX  = $7B
-ZLineStart  = $7C
-ZCurrMapX   = $7E
-ZMapBuffer  = $F8
-ZPxScratch  = $FF
-Zero        = $00
-Zero1A      = $1A00
 CurScrLine: .byte   0
 CurMapLine: .byte   0
 MapPtrL:    .byte   0
@@ -623,16 +608,6 @@ setmapptr:  pha
 ; HeroY decreased to 23, nudge goes to 0, raster line $0 + nudge + $20 ($20) gets map line HeroY - $23 (0).
 ; lower field raster line $0 + nudge + $88 ($88) gets map line HeroY + 4 ($27)
 
-PTopRastA   = $6B
-PTopRastD   = $6C
-PBotRastA   = $6D
-PBotRastD   = $6E
-PTopMapOff  = $6F
-
-PNudge      = $70
-TouchedVoid = $71
-MapOffset   = $72
-PInc        = $73
 
 ; enter with carry clear to increase nudge (with old NudgePos),
 ; or carry set to decrease nudge (with new already-decreased NudgePos).

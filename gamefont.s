@@ -1,12 +1,5 @@
 ; Upload special font characters for the diskhero game
 
-F_XFERON    = $C0DB
-F_XFEROFF   = $C0DA
-ZDataHole   = $A0
-ZAsciiHole  = $A2
-ZFontPtr    = $A4
-ZCtlTemp    = $A6
-
 BlockCount: .byte $0    ; countdown of 8-character blocks to send
 CurrChar:   .byte $0    ; index to table with current ASCII value
 FDataPtr:   .byte $0    ; offset into font data of the last line of character

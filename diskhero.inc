@@ -1,8 +1,57 @@
 ; DISKHERO definitions
 ;
-; Memory map:
-; 
-;
+
+
+; indirect addressing
+
+XByte       = $1601     ; Interp extended address offset
+ZPtrA       = $20
+ZPtrB       = $22
+
+ZDiskType   = $24
+ZDiskX      = $26
+ZDiskY      = $28
+ZHoardX     = $2A
+ZHoardY     = $2C
+ZHoardXV    = $2E
+ZHoardYV    = $30
+
+ZFontDots   = $80   ; ZP cache for FontDots to speed up drawing
+ZFontCol    = $40   ; ZP cache for FontCol to speed up drawing
+ZBufCount   = $7F   ; count for buffering map data
+ZNumPtr     = $7D   ; pointer for screen target for drawnumber
+
+; these are in screen holes because we're using screen memory for ZP
+ZScrHole    = $78
+ZOtherZP    = $7A
+ZCurrDrawX  = $7B
+ZLineStart  = $7C
+ZCurrMapX   = $7E
+ZMapBuffer  = $F8
+ZPxScratch  = $FF
+Zero        = $00
+Zero1A      = $1A00
+
+PTopRastA   = $6B
+PTopRastD   = $6C
+PBotRastA   = $6D
+PBotRastD   = $6E
+PTopMapOff  = $6F
+
+PNudge      = $70
+TouchedVoid = $71
+MapOffset   = $72
+PInc        = $73
+
+; from gamefont
+
+F_XFERON    = $C0DB
+F_XFEROFF   = $C0DA
+ZDataHole   = $A0
+ZAsciiHole  = $A2
+ZFontPtr    = $A4
+ZCtlTemp    = $A6
+
 
 ; I/O softswitches
 
@@ -62,17 +111,3 @@ TERMINATE   = $65
 ;OPEN        = $C8
 ;READ        = $CA
 ;CLOSE       = $CC
-
-; indirect addressing
-
-XByte       = $1601     ; Interp extended address offset
-ZPtrA       = $20
-ZPtrB       = $22
-
-ZDiskType   = $24
-ZDiskX      = $26
-ZDiskY      = $28
-ZHoardX     = $2A
-ZHoardY     = $2C
-ZHoardXV    = $2E
-ZHoardYV    = $30
