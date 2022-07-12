@@ -468,41 +468,41 @@ FontData:
             .byte   %00111110
             .byte   %00011100
 
-            .byte   %01010000   ; hoarder hands up 1
+            .byte   %00000000   ; hoarder hands up 1
+            .byte   %00000000
+            .byte   %01010000
             .byte   %01110000
             .byte   %00110000
             .byte   %00110101
             .byte   %00110111
             .byte   %00110110
-            .byte   %00110110
-            .byte   %00110110
 
-            .byte   %00000101   ; hoarder hands up 2
+            .byte   %00000000   ; hoarder hands up 2
+            .byte   %00000000
+            .byte   %00000101
             .byte   %00000111
             .byte   %01010110
             .byte   %01110110
             .byte   %00110110
             .byte   %00110110
-            .byte   %00110110
-            .byte   %00110110
 
             .byte   %00110110   ; hoarder hands down 1
-            .byte   %00110110
-            .byte   %00110110
             .byte   %00110111
             .byte   %00110101
             .byte   %00110000
             .byte   %01110000
             .byte   %01010000
+            .byte   %00000000
+            .byte   %00000000
             
             .byte   %00110110   ; hoarder hands down 2
-            .byte   %00110110
-            .byte   %00110110
             .byte   %01110110
             .byte   %01010110
             .byte   %00000110
             .byte   %00000111
             .byte   %00000101
+            .byte   %00000000
+            .byte   %00000000
 
             .byte   %00000000   ; hoarder hands right 1
             .byte   %01100000
