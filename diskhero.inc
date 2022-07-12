@@ -3,6 +3,9 @@
 
 
 ; indirect addressing
+; trying to collect my ZP use in here so that I avoid collisions.
+; by convention also trying to prefix ZP addresses with Z so that
+; I know when they might not survive a shift in ZP.
 
 XByte       = $1601     ; Interp extended address offset
 ZPtrA       = $20
@@ -45,8 +48,6 @@ PInc        = $73
 
 ; from gamefont
 
-F_XFERON    = $C0DB
-F_XFEROFF   = $C0DA
 ZDataHole   = $A0
 ZAsciiHole  = $A2
 ZFontPtr    = $A4
@@ -59,7 +60,7 @@ IO_KEY      = $C000     ; keyboard
 IO_KEYFLAG  = $C008     ; keyboard flag
 IO_KEYCLEAR = $C010     ; keyboard strobe
 
-; graphics mode switches
+; graphics switches
 
 D_GRAPHICS  = $C050     ; "clear text mode"
 D_TEXT      = $C051     ; set text mode
@@ -77,8 +78,11 @@ SS_XYX      = $C0E3     ; smooth scroll bit 1 on
 SS_NXX      = $C0E4     ; smooth scroll bit 2 off
 SS_YXX      = $C0E5     ; smooth scroll bit 2 on
 
-D_SCROLLON  = $C0D9     ; enable smooth scroll (vertical shift)
 D_SCROLLOFF = $C0D8     ; disable smooth scroll
+D_SCROLLON  = $C0D9     ; enable smooth scroll (vertical shift)
+
+F_XFERON    = $C0DB     ; turn on font transfer
+F_XFEROFF   = $C0DA     ; turn off font transfer
 
 ; VIA registers
 

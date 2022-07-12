@@ -24,6 +24,12 @@ CodeStart:  jmp init
             .include "gamefont.s"
             .include "interrupts.s"
             .include "buildmap.s"
+            .include "status-text40.s"
+            .include "reg-superhires.s"
+            .include "play-text40.s"
+            .include "map-hires3.s"
+            .include "reg-medres.s"
+            .include "status-text80.s"
 
 IRQSave:    .byte   0, 0 , 0        ; saved state
 ZPSave:     .byte   0
@@ -51,18 +57,19 @@ FieldHC:    .byte   $08, $09, $09, $0A, $0A, $0B
 MapColors:  .byte   $88, $66, $33, $44
 DiskColors: .byte   $EE, $DD, $CC, $BB
 ; Screen layout:
-; mode 1 (text)     lines 00-0F (10) 00-01  score
-; mode 6 (bw hires) lines 10-1F (10)        b/w map display
-; mode 7 (a3 hires) lines 20-3F (20)        hires map upper field  map: 00-1F
-; mode 1 (text)     lines 40-87 (48) 08-10  text play field        map: 20-26
-; mode 7 (a3 hires) lines 88-A7 (20)        hires map lower field  map: 27-46
-; mode 1 (text)     lines A8-BF (18) 15-17  text status display
+; mode 1 (text)      lines 00-0F (10) 00-01  score/status
+; mode 6 (bw hires)  lines 10-1F (10)        b/w map display
+; mode 7 (a3 hires)  lines 20-3F (20)        hires map upper field  map: 00-1F
+; mode 1 (text)      lines 40-87 (48) 08-10  text play field        map: 20-26
+; mode 7 (a3 hires)  lines 88-A7 (20)        hires map lower field  map: 27-46
+; mode 3 (80 text)   linwa A8-AF (08) 15     b/w 80 column text
+; mode 5 (a3 medres) lines B0-BF (18) 15-17  medium res something
 ;
 ; Define the screen region; mode is a display mode, length is number of HBLs.
 ; nudge is 0 if no nudge, else pos or neg depending on which nudge count to use
-ScrRegLen:  .byte   $0E, $0E, $1E, $47, $1E, $16, $00
-ScrRegMode: .byte   $01, $06, $07, $01, $07, $01, $00
-ScrNudge:   .byte   $00, $80, $01, $00, $01, $00, $00
+ScrRegLen:  .byte   $0E, $0F, $1E, $47, $1E, $07, $0F, $00
+ScrRegMode: .byte   $01, $06, $07, $01, $07, $03, $05, $00
+ScrNudge:   .byte   $00, $00, $01, $00, $01, $00, $80, $00
 NudgePos:   .byte   0
 NudgeNeg:   .byte   0
 HeroX:      .byte   0
@@ -174,17 +181,18 @@ eventloop:  lda ExitFlag
             beq :+
             jsr handlekey
 :            
-            inc $480            ; DEBUG - constantly churn screen memory to detect hang
-            jsr drawscore
+            inc $427            ; DEBUG - constantly churn screen memory to detect hang
+            jsr drawstatus
             lda VBLTick
-            bpl :+
+            bpl posttick
             jsr domove
-            lda #$00            ; DEBUG - move only once
-            ;sta VelocityX
-            ;sta VelocityY
-            lda #MoveDelay
+            dec NudgeNeg
+            bpl :+
+            lda #$07
+            sta NudgeNeg
+:           lda #MoveDelay
             sta VBLTick
-:           jmp eventloop
+posttick:   jmp eventloop
 
 alldone:    lda #$7F            ;disable all interrupts
             sta RD_INTENAB
@@ -430,98 +438,6 @@ addscore:   ldx #$02
             adc #$00
             sta GameScore, x
             cld
-            rts
-
-; put a 2-digit number on screen.
-; presumed decimal use of a byte (first nibble 10s, second nibble 1s)
-; A holds the number, ZNumPtr holds the screen address of the number.
-; Will trigger extended addressing, so set ZNumPtr + XByte to 8F.
-; A and Y do not survive.
-
-drawnumber: pha
-            lsr
-            lsr
-            lsr
-            lsr
-            ora #$30
-            ldy #$00
-            sta (ZNumPtr), y
-            pla
-            and #$0F
-            ora #$30
-            iny
-            sta (ZNumPtr), y
-            rts
-
-; draw the level and score
-; this is fast enough we can just do it whenever
-
-drawscore:
-            ; update level
-            lda #$07
-            sta ZNumPtr
-            lda #$04
-            sta ZNumPtr + 1
-            lda #$8F
-            sta ZNumPtr + XByte
-            lda GameLevel
-            jsr drawnumber
-            ; update score
-            lda #$16
-            sta ZNumPtr
-            ldx #$02
-:           lda GameScore, x
-            jsr drawnumber
-            dec ZNumPtr
-            dec ZNumPtr
-            dex
-            bpl :-
-            ; update disk types gotten and left
-            lda #$D0
-            sta ZNumPtr
-            lda #$06
-            sta ZNumPtr + 1
-            ldx #$00
-            lda DisksGot, x
-            jsr drawnumber
-            lda #$D5
-            sta ZNumPtr
-            lda DisksLeft, x
-            jsr drawnumber
-            inx
-            lda #$DA
-            sta ZNumPtr
-            lda DisksGot, x
-            jsr drawnumber
-            lda #$DF
-            sta ZNumPtr
-            lda DisksLeft, x
-            jsr drawnumber
-            inx
-            lda #$50
-            sta ZNumPtr
-            lda #$07
-            sta ZNumPtr + 1
-            lda DisksGot, x
-            jsr drawnumber
-            lda #$55
-            sta ZNumPtr
-            lda DisksLeft, x
-            jsr drawnumber
-            inx
-            lda #$5A
-            sta ZNumPtr
-            lda DisksGot, x
-            jsr drawnumber
-            lda #$5F
-            sta ZNumPtr
-            lda DisksLeft, x
-            jsr drawnumber
-            ; stick a couple of debug indicators on screen
-            lda NudgePos
-            sta $481
-            lda HeroY
-            sta $482
             rts
 
 ; compute map pointer, based on A.  Map data is in bank 2, $2000-5FFF.
@@ -1561,45 +1477,6 @@ seedRandom:
 
 ; paint the static parts of the page
 
-StatTextA:  .byte " Level    "
-            .byte " Score:   "
-            .byte "          "
-            .byte " DISKHERO "
-
-StatColA:   .byte $2D, $2D, $2D, $2D, $2D, $2D, $2E, $2E, $2E, $2E
-            .byte $0C, $0C, $0C, $0C, $0C, $0C, $0C, $0C, $0D, $0D
-            .byte $0D, $0D, $0D, $0D, $0D, $F0, $B0, $E0, $C0, $D0
-            .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
-
-StatTextB:  .byte "        ", C_TRUCKLB, C_TRUCKLA
-            .byte "          "
-            .byte "       ", C_TRUCKRB, C_TRUCKRA, " "
-            .byte " -------- "
-            
-StatColB:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $F0, $F0, $F0
-            .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
-            .byte $D0, $E0, $90, $F0, $F0, $F0, $0E, $0D, $0C, $0E
-            .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
-
-ProgTextA:  .byte "00 ", C_DISK, " 00 1 "
-            .byte "00 ", C_DISK, " 00 2 "
-            .byte "          "
-            .byte "          "
-
-ProgColA:   .byte $0F, $0F, $0F, $0E, $0F, $0E, $0E, $0F, $E1, $0F
-            .byte $0F, $0F, $0F, $0D, $0F, $0E, $0E, $0F, $E1, $0F
-            .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
-            .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
-
-ProgTextB:  .byte "00 ", C_DISK, " 00 3 "
-            .byte "00 ", C_DISK, " 00 4 "
-            .byte "          "
-            .byte "          "
-
-ProgColB:   .byte $0F, $0F, $0F, $0C, $0F, $0E, $0E, $0F, $E1, $0F
-            .byte $0F, $0F, $0F, $0B, $0F, $0E, $0E, $0F, $E1, $0F
-            .byte $F0, $F0, $F0, $F0, $F0, $F0, $F0, $A0, $B0, $C0
-            .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
 
 FrameText:  .byte C_WALL_RUD, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H
             .byte C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H
@@ -1625,22 +1502,6 @@ InnerCol:   .byte $D0, $F0, $F0, $F0, $F0, $F0, $F0, $C0, $F0, $F0
             .byte $D0, $E0, $90, $F0, $F0, $F0, $F0, $F0, $F0, $F0
             .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
 
-FontDemo:   .byte C_SPACE, C_WALL_R, C_WALL_RD, C_WALL_RU
-            .byte C_WALL_RUD, C_WALL_H, C_WALL_L, C_WALL_LD
-            .byte C_WALL_LU, C_WALL_LUD, C_WALL_V, C_WALL_U
-            .byte C_WALL_D, C_WALL_LRU, C_WALL_LRD, C_DISK
-            .byte C_HERO, C_HHEADA, C_HHEADB, C_HHANDUA
-            .byte C_HHANDUB, C_HHANDDA, C_HHANDDB, C_HHANDRA
-            .byte C_HHANDRB, C_HHANDLA, C_HHANDLB, C_DRIVEL
-            .byte C_DRIVER, C_DRIVEU, C_DRIVED, C_FLUXA
-            .byte C_FLUXB, C_TRUCKLA, C_TRUCKLB, C_TRUCKRA
-            .byte C_TRUCKRB, C_UNUA, C_UNUB, C_UNUC
-
-FontDemoC:  .byte $D0, $F0, $E0, $F0, $E0, $F0, $F0, $C0, $F0, $F0
-            .byte $C0, $F0, $E0, $F0, $E0, $F0, $F0, $A0, $B0, $C0
-            .byte $D0, $E0, $90, $F0, $F0, $F0, $F0, $F0, $F0, $F0
-            .byte $C0, $F0, $E0, $F0, $E0, $F0, $F0, $A0, $B0, $C0
-
 ; initialize graphics and draw static background
 drawback:   lda #$01            ; Apple III color text
             jsr setdisplay
@@ -1648,34 +1509,10 @@ drawback:   lda #$01            ; Apple III color text
             bit D_SCROLLOFF
             lda #$00
             jsr setnudge
-            ; text lines 00-01: score status
-            ldy #$27
-:           lda StatTextA, y
-            sta $400, y
-            lda StatColA, y
-            sta $800, y
-            lda StatTextB, y
-            sta $480, y
-            lda StatColB, y
-            sta $880, y
-            dey
-            bpl :-
-            ; text lines 15-17: progress status
-            ldy #$27
-:           lda ProgTextA, y
-            sta $6D0, y
-            lda ProgColA, y
-            sta $AD0, y
-            lda ProgTextB, y
-            sta $750, y
-            lda ProgColB, y
-            sta $B50, y
-            lda FontDemo, y
-            sta $7D0, y
-            lda FontDemoC, y
-            sta $BD0, y
-            dey
-            bpl :-
+            ; text lines 00-01: score/status
+            jsr initstatus
+            ; text line 21: message
+            jsr initmsg
             ; text lines 08-11: playfield (frame)
             ldy #$27
 :           lda FrameText, y
@@ -1705,47 +1542,9 @@ drawback:   lda #$01            ; Apple III color text
             ; mode 6 super hires
             ; 16 lines, from 10-1F.
             ; draw frame for now
-            lda #$8F
-            sta ZPtrA + XByte
-            sta ZPtrB + XByte
-            ldx #$1F
- mapline:   lda YHiresL, x
-            sta ZPtrA
-            sta ZPtrB
-            lda YHiresHA, x
-            sta ZPtrA + 1
-            lda YHiresHB, x
-            sta ZPtrB + 1
-            ldy #$27
-            cpx #$10
-            beq mapsolid
-            cpx #$1F
-            beq mapsolid
-            lda #$5A
-            ldy #$27
-            sta (ZPtrA), y
-            sta (ZPtrB), y
-            dey
-            lda #$00
-:           sta (ZPtrA), y
-            sta (ZPtrB), y
-            dey
-            bne :-
-            lda #$5A
-            sta (ZPtrA), y
-            sta (ZPtrB), y
-            bne :++
-mapsolid:   lda #$7F
-:           sta (ZPtrA), y
-            sta (ZPtrB), y
-            dey
-            bpl :-
-:           dex
-            bpl mapline
-            
-            ; mode 7 A3 Hires
-            ; if it really needs clearing, we can just zero out 2000-9FFF
-            ; but I don't think it will need it, so I will skip it.
+            jsr initshgr
+            ; med res lines B0-BF
+            jsr initmedres
             rts
 
 ; Set smooth scroll offset to the number (0-7) in A
