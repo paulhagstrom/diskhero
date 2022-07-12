@@ -23,6 +23,10 @@ ZHoardXV    = $34   ; hoarder X velocity
 ZHoardYV    = $36   ; hoarder Y velocity
 ZHoardSp    = $38   ; hoarder speed (delay ticks between moves)
 ZHoardTick  = $3A   ; hoarder current number of ticks left until movement
+ZHoardAnim  = $3C   ; hoarder current animation frame
+ZFrame      = $3E   ; temporary storage for current animation frame
+ZXXTemp     = $3F   ; temporary storage for second segment x-coordinate
+
 
 ZFontDots   = $80   ; ZP cache for FontDots to speed up drawing
 ZFontCol    = $40   ; ZP cache for FontCol to speed up drawing

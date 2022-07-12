@@ -18,7 +18,8 @@ domove:     lda #$82            ; we will use ZPtrA, ZPtrB, ZPtrC
             sta ZPtrA + XByte   ; so set up the XByte for all three up here
             sta ZPtrB + XByte   ; so we do not wind up setting them repeatedly
             sta ZPtrC + XByte   ; inside a loop
-            lda HeroX           ; start with the hero
+            ; move hero
+            lda HeroX
             sta OldX
             lda HeroY
             sta OldY
@@ -61,7 +62,7 @@ movehoard:  ldy CurrHoard
 ticksdone:  lda (ZHoardSp), y   ; reset ticks for next move
             sta (ZHoardTick), y
             lda (ZHoardXX), y   ; stash second segment X-coordinate
-            sta ZPtrC           ; in ZPtrC for easy retrieval later
+            sta ZXXTemp         ; in ZXXTemp for easy retrieval later
             lda (ZHoardXV), y
             sta VelX
             lda (ZHoardYV), y
@@ -96,10 +97,14 @@ hmoving:    lda (ZHoardY), y
             sta (ZHoardXV), y
             sta (ZHoardYV), y
             bne nexthoard
-hmoved:     ldy CurrHoard       ; remove old hoarder from the map
+hmoved:     ldy CurrHoard
+            lda (ZHoardAnim), y ; toggle animation frames
+            eor #$01
+            sta (ZHoardAnim), y
+            sta ZFrame          ; stash in ZFrame for use in adding in later
             lda (ZHoardYY), y   ; replace second segment (head) with zero
-            jsr setmapptr       ; locate original y-coordinate on map
-            ldy ZPtrC           ; we stashed second segment X coordinate in here earlier
+            jsr setmapptr       ; locate original second segment y-coordinate on map
+            ldy ZXXTemp         ; we stashed second segment X coordinate in here earlier
             lda MapPtrL
             sta ZPtrC
             lda MapPtrH
@@ -107,6 +112,8 @@ hmoved:     ldy CurrHoard       ; remove old hoarder from the map
             lda #$00            ; remove second segment from the map
             sta (ZPtrC), y
             lda #C_HHEADA       ; put head in old first segment (hands) position
+            clc
+            adc ZFrame          ; select animation frame
             ldy OldX
             sta (ZPtrB), y
             ldy CurrHoard
@@ -136,6 +143,8 @@ handsright: lda #C_HHANDRA
             bne handoff
 handsdown:  lda #C_HHANDDA
 handoff:    ldy NewX
+            clc
+            adc ZFrame          ; select animation frame
             sta (ZPtrA), y      ; update the map
 nexthoard:  dec CurrHoard
             bmi donehoard

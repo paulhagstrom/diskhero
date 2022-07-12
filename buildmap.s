@@ -234,7 +234,7 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             sty ZPxScratch      ; stash the x-coordinate
             txa
             ldy MFPlaced
-            ; for now all hoarders will face rightward
+            ; for now all hoarders will face rightward initially
             sta (ZHoardYY), y
             sta (ZHoardY), y
             lda ZPxScratch
@@ -242,10 +242,12 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             clc
             adc #$01
             sta (ZHoardX), y    ; first segment (hands) to the right
-            lda #$01
+            lda #$00
+            sta (ZHoardAnim), y ; set animation frame to zero
+            lda #$00
             sta (ZHoardXV), y
             lda #$00
-            sta (ZHoardYV), y
+            sta (ZHoardYV), y   ; velocity is zero so will go random direction next cycle
             ldx Seed            ; set speed (delay)
             lda Random, x       ; to a random number
             and #$0F            ; from 1 to 4 (ticks count LSRs until zero)

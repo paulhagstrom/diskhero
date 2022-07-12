@@ -125,11 +125,14 @@ init:       sei                 ; no interrupts while we are setting up
             sta HeroY
             ; point memory at location tracking in bank 2 (with map)
             ; DiskX = 300, DiskY = 340, DiskType = 380
-            ; HoardX = 400, HoardY = 440, HoardXV = 480, HoardYV = 4C0, HoardSp = 500, HoardXX = 540, HoardYY = 580, HoardTick = 5C0
+            ; HoardX = 400, HoardY = 440, HoardXV = 480, HoardYV = 4C0,
+            ; HoardSp = 500, HoardXX = 540, HoardYY = 580, HoardTick = 5C0,
+            ; HoardAnim = 600
             lda #$00
             sta ZDiskX
             sta ZHoardX
             sta ZHoardSp
+            sta ZHoardAnim
             lda #$40
             sta ZDiskY
             sta ZHoardY
@@ -155,6 +158,8 @@ init:       sei                 ; no interrupts while we are setting up
             sta ZHoardXX + 1
             sta ZHoardYY + 1
             sta ZHoardTick + 1
+            lda #$06
+            sta ZHoardAnim + 1
             lda #$82
             sta ZDiskX + XByte
             sta ZDiskY + XByte
@@ -167,6 +172,7 @@ init:       sei                 ; no interrupts while we are setting up
             sta ZHoardXX + XByte
             sta ZHoardYY + XByte
             sta ZHoardTick + XByte
+            sta ZHoardAnim + XByte
             jsr buildmap        ; set up map
             jsr setupenv        ; arm interrupts
             lda #$00
