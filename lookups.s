@@ -116,23 +116,3 @@ Random:
                   .byte 17,  46,  52, 231, 232,  76,  31, 221,  84,  37, 216, 165, 212, 106
                   .byte 197, 242,  98,  43,  39, 175, 254, 145, 190,  84, 118, 222, 187, 136
                   .byte 120, 163, 236, 249
-
-; mapping tables to convert X to binary VAI, VBI, VCI values
-; borrowed from Atomic Defense
-
-VAIMAP:     .byte    $e0,$e1,$e0,$e1,$e0,$e1,$e0,$e1
-VBIMAP:     .byte    $e0,$e1,$e1,$e0,$e0,$e1,$e1,$e0
-VCIMAP:     .byte    $e0,$e1,$e1,$e1,$e1,$e0,$e0,$e0
-
-; mapping table for display modes
-; 0 = 40 char Apple II b/w
-; 1 = 40 char Apple III color
-; 2 = 80 char b/w
-; 3 = 80 char b/w
-; 4 = Apple II hires (280x192 b/w)
-; 5 = Fg/bg hires (280x192, 16 colors)
-; 6 = super hires (560x192, b/w)
-; 7 = 140x192 A Hires (140x192, color)
-DMAMAP:     .byte    $56,$56,$56,$56,$57,$57,$57,$57
-DMBMAP:     .byte    $52,$52,$53,$53,$52,$52,$53,$53
-DMCMAP:     .byte    $50,$51,$50,$51,$50,$51,$50,$51
