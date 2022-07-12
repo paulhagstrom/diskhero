@@ -96,7 +96,7 @@ F_XFEROFF   = $C0DA     ; turn off font transfer
 
 ; VIA registers
 
-R_TONEHBL   = $FFE0     ; tone (bits 0-5), I/O count (6), slot nmi (7)    
+R_TONEHBL   = $FFE0     ; tone (bits 0-5), I/O count (6), slot nmi (7)
 RE_T2CL     = $FFE8     ; ffdx timer2 count low byte
 RE_T2CH     = $FFE9     ; ffdx timer2 count high byte
 RD_AUXCTL   = $FFDB     ; ffdx auxiliary control register

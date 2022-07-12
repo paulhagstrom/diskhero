@@ -136,7 +136,11 @@ borderh:    lda YLoresL, y
             tax
             lda YLoresHB, y     ; $800 base (color space)
             sta R_ZP            ; go to color memory
-            ldy #$27            ; draw $28 colors
+            ; DAC
+            lda DACTick
+            beq :+
+            sta R_TONEHBL       ; DAC buzz
+:           ldy #$27            ; draw $28 colors
             lda #$57            ; grey1 background
 borderhb:   sta Zero, x
             dex
@@ -170,7 +174,15 @@ borderhz:   lda CurScrLine
             inc CurScrLine      ; set exit condition for next time (borderh does not use the value)
             ldy #$10            ; do the bottom line (Y holds the current screen line for borderh)
             bne borderh         ; branch always
-innerplay:  lda HeroY           ; find map pointer for top non-void line
+innerplay:  
+            ; DAC
+            lda DACTick
+            beq :+
+            lda #$00
+            sta R_TONEHBL       ; DAC buzz
+            dec DACTick
+:
+            lda HeroY           ; find map pointer for top non-void line
             clc
             adc VoidU           ; factor out upper void
             sec
