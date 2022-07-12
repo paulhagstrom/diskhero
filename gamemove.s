@@ -61,7 +61,7 @@ movehoard:  ldy CurrHoard
             jmp nexthoard
 ticksdone:  lda (ZHoardSp), y   ; reset ticks for next move
             sta (ZHoardTick), y
-            lda (ZHoardXX), y   ; stash second segment X-coordinate
+            lda (ZHoardXX), y   ; stash second segment (head) X-coordinate
             sta ZXXTemp         ; in ZXXTemp for easy retrieval later
             lda (ZHoardXV), y
             sta VelX
@@ -72,9 +72,9 @@ ticksdone:  lda (ZHoardSp), y   ; reset ticks for next move
             bne hmoving
             ldx Seed            ; if hoarder was not moving
             lda Random, x       ; send it in a random direction
-            bpl sendhoriz       ; send it horizontally
+            bpl sendhoriz       ; horizontal/vertical choice yields: horizontal
             inx
-            lda Random, x
+            lda Random, x       ; send it vertically
             stx Seed
             sta VelY
             lda #$00
@@ -154,7 +154,7 @@ donehoard:
             ; scroll if we need to
             ; YOU ARE HERE - something is messed up with this.  If I hit something it gets messy. OR something.
             ; Something no longer works with updatemap.
-            ; Also: the hoarders seem to detect collisions one step too late.  They'll turn AFTER clobbering something.
+            ; Also: Hoarder collisions with Hero don't work quite right.  Sometimes pass through, sometimes stomp.
             lda ScrollUp
             beq :+
             clc
@@ -223,6 +223,7 @@ ychecked:   stx NewY
             sta ZPtrA + 1       ; X-Byte was set up top
             ldy NewX
             lda (ZPtrA), y      ; look at NewX, NewY (where we are trying to move)
+            sta ZMapTemp        ; save for later in case we ran into a disk
             and #$3F            ; color bits don't block movement
             beq moveclear       ; clear to move, nothing in the way
             cmp #C_DISK         ; disk is the only non-obstacle
@@ -230,7 +231,8 @@ ychecked:   stx NewY
             ; we have hit something trying to move in the intended direction
             lda VelX            ; see if we were attempting to move horizontally
             beq :+              ; if not, skip horizontal check
-            lda (ZPtrB), y      ; check NewX, OldY
+            lda (ZPtrB), y      ; check NewX, OldY (y still holds NewX)
+            sta ZMapTemp        ; save for later in case we ran into a disk
             and #$3F            ; color bits don't block movement
             beq horizok         ; block was only vertical, we can move in the horiz
             cmp #C_DISK         ; disk is the only non-obstacle
@@ -239,43 +241,48 @@ ychecked:   stx NewY
             beq :+              ; if not, skip vertical check
             ldy OldX            ; check OldX, NewY
             lda (ZPtrA), y
+            sta ZMapTemp        ; save for later in case we ran into a disk
             and #$3F            ; color bits don't block movement
             beq vertok          ; block was only horizontal, we can move in the vert
             cmp #C_DISK         ; disk is the only non-obstacle
             beq vertdisk        ; vertical move lands on a disk
             ; we have been stopped, move cannot be accomplished
-:           lda #$00
+:           sty NewX            ; y still holds OldX, cancel X movement
+            lda OldY
+            sta NewY            ; cancel Y movement
+            lda #$00            ; set velocity to zero
             sta VelX
             sta VelY
-            jmp movenope
-horizdisk:  lda (ZPtrB), y      ; reload disk because we tossed the type/color bits
-            jsr gotdisk
+            lda ZPtrB           ; map line pointer for new Y is same as old Y
+            sta ZPtrA
+            lda ZPtrB + 1
+            sta ZPtrA + 1
+            sec                 ; move failed, return with carry
+            rts
+horizdisk:  jsr gotdisk
 horizok:    lda #$00            ; stop vertical movement
             sta VelY
-            lda OldY            ; new hero Y is unchanged
+            lda OldY            ; new hero Y is unchanged from old hero Y
             sta NewY
             lda ZPtrB           ; map line pointer for new Y is same as old Y
             sta ZPtrA
             lda ZPtrB + 1
             sta ZPtrA + 1
             jmp moveclear
-vertdisk:   lda (ZPtrA), y      ; reload disk because we tossed the type/color bits
-            jsr gotdisk
+vertdisk:   jsr gotdisk
 vertok:     lda #$00            ; stop horizontal movement
             sta VelX
             lda OldX            ; new hero X is unchanged
             sta NewX
             jmp moveclear
-diagdisk:   lda (ZPtrA), y      ; reload disk because we tossed the type/color bits
-            jsr gotdisk
+diagdisk:   jsr gotdisk
 moveclear:  clc                 ; return with clear carry if move succeeds
-            rts
-movenope:   sec                 ; return with set carry if move fails
             rts
 
 ; called if moving player/antagonist lands on a disk
-; assumes that the map byte is in A on entry.
-gotdisk:    and #$C0            ; disk type
+; assumes that the map byte is in A on entry.  X does not survive.
+gotdisk:    lda ZMapTemp        ; map (disk) was stored here, includes type
+            and #$C0            ; disk type
             pha
             ora #$20
             lsr

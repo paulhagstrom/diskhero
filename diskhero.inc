@@ -26,6 +26,7 @@ ZHoardTick  = $3A   ; hoarder current number of ticks left until movement
 ZHoardAnim  = $3C   ; hoarder current animation frame
 ZFrame      = $3E   ; temporary storage for current animation frame
 ZXXTemp     = $3F   ; temporary storage for second segment x-coordinate
+ZMapTemp    = $1F   ; temporary storage for a map byte being tested for collision
 
 
 ZFontDots   = $80   ; ZP cache for FontDots to speed up drawing
