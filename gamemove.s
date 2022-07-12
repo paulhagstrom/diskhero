@@ -14,7 +14,11 @@ CurrHoard:  .byte   0
 ScrollUp:   .byte   0
 ScrollDown: .byte   0
 
-domove:     lda HeroX       ; start with the hero
+domove:     lda #$82            ; we will use ZPtrA, ZPtrB, ZPtrC
+            sta ZPtrA + XByte   ; so set up the XByte for all three up here
+            sta ZPtrB + XByte   ; so we do not wind up setting them repeatedly
+            sta ZPtrC + XByte   ; inside a loop
+            lda HeroX           ; start with the hero
             sta OldX
             lda HeroY
             sta OldY
@@ -23,7 +27,7 @@ domove:     lda HeroX       ; start with the hero
             lda VelocityY
             sta VelY
             jsr trymove
-            bcs herodone        ; the move failed
+            bcs herodone        ; the move failed, do not need to do a map update
             lda #$00            ; remove old hero from map
             sta ScrollUp        ; reset scroll up/down triggers
             sta ScrollDown
@@ -49,6 +53,15 @@ herodone:
             ldy NumHoards
             sty CurrHoard
 movehoard:  ldy CurrHoard
+            lda (ZHoardTick), y ; ready to move yet?
+            lsr
+            beq ticksdone
+            sta (ZHoardTick), y
+            jmp nexthoard
+ticksdone:  lda (ZHoardSp), y   ; reset ticks for next move
+            sta (ZHoardTick), y
+            lda (ZHoardXX), y   ; stash second segment X-coordinate
+            sta ZPtrC           ; in ZPtrC for easy retrieval later
             lda (ZHoardXV), y
             sta VelX
             lda (ZHoardYV), y
@@ -58,26 +71,44 @@ movehoard:  ldy CurrHoard
             bne hmoving
             ldx Seed            ; if hoarder was not moving
             lda Random, x       ; send it in a random direction
-            and #$07
-            ror
-            ror
-            sta VelX
+            bpl sendhoriz       ; send it horizontally
             inx
             lda Random, x
-            and #$07
-            ror
-            ror
-            sta VelY
-            inx
             stx Seed
+            sta VelY
+            lda #$00
+            sta VelX
+            beq hmoving
+sendhoriz:  inx
+            lda Random, x       ; send it horizontally
+            stx Seed
+            sta VelX
+            lda #$00
+            sta VelY
 hmoving:    lda (ZHoardY), y
             sta OldY
             lda (ZHoardX), y
             sta OldX
-            jsr trymove         ; ignore return code, we will handle stops next cycle
-            lda #$00            ; remove old hoarder from the map
+            jsr trymove
+            bcc hmoved          ; the move succeded
+            ldy CurrHoard       ; the move failed, zero out the velocity
+            lda #$00            ; (will be sent in another direction next cycle)
+            sta (ZHoardXV), y
+            sta (ZHoardYV), y
+            bne nexthoard
+hmoved:     ldy CurrHoard       ; remove old hoarder from the map
+            lda (ZHoardYY), y   ; replace second segment (head) with zero
+            jsr setmapptr       ; locate original y-coordinate on map
+            ldy ZPtrC           ; we stashed second segment X coordinate in here earlier
+            lda MapPtrL
+            sta ZPtrC
+            lda MapPtrH
+            sta ZPtrC + 1       ; X-Byte was set up top
+            lda #$00            ; remove second segment from the map
+            sta (ZPtrC), y
+            lda #C_HHEADA       ; put head in old first segment (hands) position
             ldy OldX
-            sta (ZPtrB), y      ; just removing the head?
+            sta (ZPtrB), y
             ldy CurrHoard
             lda NewX
             sta (ZHoardX), y
@@ -87,15 +118,34 @@ hmoving:    lda (ZHoardY), y
             sta (ZHoardXV), y
             lda VelY
             sta (ZHoardYV), y
-            lda #C_HHEADA       ; put new head on map
-            ldy NewX
+            lda OldX
+            sta (ZHoardXX), y
+            lda OldY
+            sta (ZHoardYY), y
+            cmp NewY
+            bcc handsdown       ; OldY (head) is less than NewY (hands), so point down
+            lda OldX
+            cmp NewX
+            bcc handsright      ; OldX (head) is less than NewX (hands), so point right
+            beq handsup         ; OldX and NewX are the same, and OldY is not less than NewY.
+            lda #C_HHANDLA      ; so point up
+            bne handoff
+handsup:    lda #C_HHANDUA
+            bne handoff
+handsright: lda #C_HHANDRA
+            bne handoff
+handsdown:  lda #C_HHANDDA
+handoff:    ldy NewX
             sta (ZPtrA), y      ; update the map
-            jmp nexthoard
 nexthoard:  dec CurrHoard
-            bpl movehoard
-            
+            bmi donehoard
+            jmp movehoard
+donehoard:
             jsr drawplay        ; redraw middle playfield
             ; scroll if we need to
+            ; YOU ARE HERE - something is messed up with this.  If I hit something it gets messy. OR something.
+            ; Something no longer works with updatemap.
+            ; Also: the hoarders seem to detect collisions one step too late.  They'll turn AFTER clobbering something.
             lda ScrollUp
             beq :+
             clc
@@ -141,9 +191,7 @@ xchecked:   stx NewX
             lda MapPtrL         ; and store in ZPtrB
             sta ZPtrB
             lda MapPtrH
-            sta ZPtrB + 1
-            lda #$82
-            sta ZPtrB + XByte
+            sta ZPtrB + 1       ; X-Byte was set up top
             lda VelY
             beq ychecked
             bmi yup
@@ -163,9 +211,7 @@ ychecked:   stx NewY
             lda MapPtrL         ; and store in ZPtrA
             sta ZPtrA
             lda MapPtrH
-            sta ZPtrA + 1
-            lda #$82
-            sta ZPtrA + XByte
+            sta ZPtrA + 1       ; X-Byte was set up top
             ldy NewX
             lda (ZPtrA), y      ; look at NewX, NewY (where we are trying to move)
             and #$3F            ; color bits don't block movement

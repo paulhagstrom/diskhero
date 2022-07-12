@@ -10,14 +10,19 @@
 XByte       = $1601     ; Interp extended address offset
 ZPtrA       = $20
 ZPtrB       = $22
+ZPtrC       = $24
 
-ZDiskType   = $24
 ZDiskX      = $26
 ZDiskY      = $28
-ZHoardX     = $2A
-ZHoardY     = $2C
-ZHoardXV    = $2E
-ZHoardYV    = $30
+ZDiskType   = $2A
+ZHoardX     = $2C   ; hoarder X coodinate
+ZHoardY     = $2E   ; hoarder Y coordinate
+ZHoardXX    = $30   ; hoarder X coordinate of second segment
+ZHoardYY    = $32   ; hoarder Y coordinate of second segment
+ZHoardXV    = $34   ; hoarder X velocity
+ZHoardYV    = $36   ; hoarder Y velocity
+ZHoardSp    = $38   ; hoarder speed (delay ticks between moves)
+ZHoardTick  = $3A   ; hoarder current number of ticks left until movement
 
 ZFontDots   = $80   ; ZP cache for FontDots to speed up drawing
 ZFontCol    = $40   ; ZP cache for FontCol to speed up drawing

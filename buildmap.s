@@ -234,19 +234,29 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             sty ZPxScratch      ; stash the x-coordinate
             txa
             ldy MFPlaced
+            ; for now all hoarders will face rightward
+            sta (ZHoardYY), y
             sta (ZHoardY), y
             lda ZPxScratch
-            sta (ZHoardX), y
+            sta (ZHoardXX), y   ; second segment (head) to the left
+            clc
+            adc #$01
+            sta (ZHoardX), y    ; first segment (hands) to the right
             lda #$01
             sta (ZHoardXV), y
             lda #$00
             sta (ZHoardYV), y
+            ldx Seed            ; set speed (delay)
+            lda Random, x       ; to a random number
+            and #$0F            ; from 1 to 4 (ticks count LSRs until zero)
+            inc Seed
+            sta (ZHoardSp), y
             ldy ZPxScratch      ; place the hoarder
             lda #C_HHEADA
             sta (ZPtrA), y
             iny
             lda #C_HHANDRA
-            ;sta (ZPtrA), y
+            sta (ZPtrA), y
             dec MFPlaced
             bpl :-
 
