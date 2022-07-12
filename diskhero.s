@@ -80,6 +80,7 @@ HeroDir:    .byte   0
 VelocityX:  .byte   0
 VelocityY:  .byte   0
 VBLTick:    .byte   0
+DACTick:    .byte   0
 MoveDelay   = 1            ; VBL tick delay between moves
 
 ; I played with ScRegLen by trial and error a little.

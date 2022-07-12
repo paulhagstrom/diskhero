@@ -79,7 +79,20 @@ intvbl:     lda ScrRegLen       ; reset the HBL counter to the length of top reg
             jsr setdisplay
             lda D_SCROLLOFF     ; smooth scrolling off is assumed for top region
             dec VBLTick
-            rts
+            ; this implements a buzz that is set off when a disk is captured
+            ; probably best not to burn cycles here, if there is something that takes
+            ; predictable time elsewhere like drawing lines (playfield?) I might be able
+            ; to hook into that for at least consistent pitches.
+            lda DACTick
+            beq vblrts
+            sta R_TONEHBL     ;DAC
+            ldx #$08
+:           dex
+            bne :-
+            lda #$00
+            sta R_TONEHBL     ;DAC
+            dec DACTick
+vblrts:     rts
 
 ; arm interrupts
 

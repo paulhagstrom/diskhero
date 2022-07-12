@@ -70,6 +70,16 @@ ticksdone:  lda (ZHoardSp), y   ; reset ticks for next move
             bne hmoving
             lda VelX            ; Y velocity was 0, is X velocity 0 also?
             bne hmoving
+            ; TODO - make the hoarders actually seek out higher-value disks.
+            ; May mean they need to stop before hitting something and turn.
+            ; Start with omniscience rather than line of sight.
+            ; 
+            ; For the mechanic of dropping a disk to distract hoarders, it
+            ; would need to be the case that hoarders go for close rather than
+            ; value.  Unless the mechanic is to drop a high value disk (that you had)
+            ; so you can go for a lower value disk while hoarders are distracted.
+            ; your goal and hoarders goals are different.  You want most disks,
+            ; hoarders want high value disks.
             ldx Seed            ; if hoarder was not moving
             lda Random, x       ; send it in a random direction
             bpl sendhoriz       ; horizontal/vertical choice yields: horizontal
@@ -146,6 +156,10 @@ handoff:    ldy NewX
             clc
             adc ZFrame          ; select animation frame
             sta (ZPtrA), y      ; update the map
+            ; TODO - if the current hoarder is moving to or from someplace in the visible map,
+            ; we need to update the map display too.  Locate the 14-pixel chunk it is in and redraw
+            ; it selectively.  This is the place where having more hoarders can possibly slow things
+            ; down.
 nexthoard:  dec CurrHoard
             bmi donehoard
             jmp movehoard
@@ -155,6 +169,8 @@ donehoard:
             ; YOU ARE HERE - something is messed up with this.  If I hit something it gets messy. OR something.
             ; Something no longer works with updatemap.
             ; Also: Hoarder collisions with Hero don't work quite right.  Sometimes pass through, sometimes stomp.
+            ; Collisions will wall also seem to wind up removing the head until can be redirected.
+            ; Somehow need to hold off on removing the second segment until a move succeeds.
             lda ScrollUp
             beq :+
             clc
@@ -303,4 +319,7 @@ gotdisk:    lda ZMapTemp        ; map (disk) was stored here, includes type
             sta DisksLeft, x    ; fewer out there of this type
             cld
             ; removing the disk is unnecessary because the hero/antagonist will replace it
+            ; make the DAC sing for a bit
+            lda #%00111111
+            sta DACTick
             rts
