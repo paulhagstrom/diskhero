@@ -49,16 +49,32 @@ herodone:
             ldy NumHoards
             sty CurrHoard
 movehoard:  ldy CurrHoard
-            lda (ZHoardY), y
-            sta OldY
-            lda (ZHoardX), y
-            sta OldX
             lda (ZHoardXV), y
             sta VelX
             lda (ZHoardYV), y
             sta VelY
-            jsr trymove
-            bcs nomove          ; the move failed
+            bne hmoving
+            lda VelX            ; Y velocity was 0, is X velocity 0 also?
+            bne hmoving
+            ldx Seed            ; if hoarder was not moving
+            lda Random, x       ; send it in a random direction
+            and #$07
+            ror
+            ror
+            sta VelX
+            inx
+            lda Random, x
+            and #$07
+            ror
+            ror
+            sta VelY
+            inx
+            stx Seed
+hmoving:    lda (ZHoardY), y
+            sta OldY
+            lda (ZHoardX), y
+            sta OldX
+            jsr trymove         ; ignore return code, we will handle stops next cycle
             lda #$00            ; remove old hoarder from the map
             ldy OldX
             sta (ZPtrB), y      ; just removing the head?
@@ -74,7 +90,8 @@ movehoard:  ldy CurrHoard
             lda #C_HHEADA       ; put new head on map
             ldy NewX
             sta (ZPtrA), y      ; update the map
-nomove:     dec CurrHoard
+            jmp nexthoard
+nexthoard:  dec CurrHoard
             bpl movehoard
             
             jsr drawplay        ; redraw middle playfield
