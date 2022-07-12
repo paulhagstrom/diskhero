@@ -227,8 +227,9 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             dec MFPlaced
             bpl :-
             
-            lda #$10            ; hoarders to scatter around
+            lda #$0F            ; hoarders to scatter around
             sta MFPlaced
+            sta NumHoards
 :           jsr mfrndspot
             sty ZPxScratch      ; stash the x-coordinate
             txa
@@ -245,7 +246,7 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             sta (ZPtrA), y
             iny
             lda #C_HHANDRA
-            sta (ZPtrA), y
+            ;sta (ZPtrA), y
             dec MFPlaced
             bpl :-
 

@@ -23,6 +23,7 @@ CodeStart:  jmp init
             .include "lookups.s"
             .include "gamefont.s"
             .include "interrupts.s"
+            .include "gamemove.s"
             .include "buildmap.s"
             .include "status-text40.s"
             .include "reg-superhires.s"
@@ -49,6 +50,7 @@ GameLevel:  .byte   0
 GameScore:  .byte   0, 0, 0
 DisksGot:   .byte   0, 0, 0, 0
 DisksLeft:  .byte   0, 0, 0, 0
+NumHoards:  .byte   0
 
 ScrRegion:  .byte   0
 FieldH:     .byte   $04, $05, $05, $06, $06, $07
@@ -121,7 +123,6 @@ init:       sei                 ; no interrupts while we are setting up
             sta HeroX
             lda #$C3            ; Start down near the bottom but at a nudge 0 spot
             sta HeroY
-            jsr buildmap        ; set up map
             ; point memory at location tracking in bank 2 (with map)
             ; DiskX = 300, DiskY = 340, DiskType = 380
             ; HoardX = 400, HoardY = 440, HoardXV = 480, HoardYV = 4C0
@@ -153,6 +154,7 @@ init:       sei                 ; no interrupts while we are setting up
             sta ZHoardY + XByte
             sta ZHoardXV + XByte
             sta ZHoardYV + XByte
+            jsr buildmap        ; set up map
             jsr setupenv        ; arm interrupts
             lda #$00
             sta ScrRegion
@@ -203,153 +205,6 @@ alldone:    lda #$7F            ;disable all interrupts
             brk                  ; SOS TERMINATE
             .byte   TERMINATE
             .word   *-2
-
-; do moving (called maximally once per MoveDelay VBLs)
-; (since otherwise it can be too fast, though this might be a way to make it harder)
-
-; determine where we would move
-; check for collision in x alone, y alone, x+y
-; if x+y collides with obstacle, but x does not, stop y move x
-; otherwise if y does not collide, stop x move y
-; otherwise stop (prefers horizontal momentum)
-; move if successful
-
-NewHeroX:   .byte   0
-NewHeroY:   .byte   0
-
-domove:     ldx HeroX
-            lda VelocityX
-            beq xchecked
-            bmi xleft
-            inx
-            cpx #$3F
-            bne xchecked
-            dex             ; ran off the right edge, stop horizontal motion
-            lda #$00
-            sta VelocityX
-            beq xchecked
-xleft:      dex
-            bpl xchecked
-            inx             ; ran off the left edge, stop horizontal motion
-            stx VelocityX
-xchecked:   stx NewHeroX
-            lda HeroY
-            tax
-            jsr setmapptr   ; locate old hero's y-coordinate on map
-            lda MapPtrL
-            sta ZPtrB
-            lda MapPtrH
-            sta ZPtrB + 1
-            lda #$82
-            sta ZPtrB + XByte
-            lda VelocityY
-            beq ychecked
-            bmi yup
-            inx
-            bne ychecked
-            stx VelocityY    ; ran off the bottom, stop vertical motion
-            dex
-            bne ychecked
-yup:        dex
-            cpx #$FF
-            bne ychecked
-            inx             ; ran off the top, stop vertical motion
-            stx VelocityY
-ychecked:   stx NewHeroY
-            txa
-            jsr setmapptr   ; locate new hero's y-coordinate on map
-            lda MapPtrL
-            sta ZPtrA
-            lda MapPtrH
-            sta ZPtrA + 1
-            lda #$82
-            sta ZPtrA + XByte
-            ldy NewHeroX
-            lda (ZPtrA), y  ; look at NewHeroX, NewHeroY
-            and #$3F        ; color bits don't block movement
-            beq moveclear
-            cmp #C_DISK     ; disk is the only non-obstacle
-            beq diagdisk
-            ; we have hit something moving in the intended direction
-            lda VelocityX   ; if we were attempting to move horizontally,
-            beq :+
-            lda (ZPtrB), y  ; check NewHeroX, HeroY
-            and #$3F        ; color bits don't block movement
-            beq horizok
-            cmp #C_DISK
-            beq horizdisk
-:           lda VelocityY   ; if we were attempting to move vertically,
-            beq :+
-            ldy HeroX       ; check HeroX, NewHeroY
-            lda (ZPtrA), y
-            and #$3F        ; color bits don't block movement
-            beq vertok
-            cmp #C_DISK
-            beq vertdisk
-            ; we have been stopped, move cannot be accomplished
-:           lda #$00
-            sta VelocityX
-            sta VelocityY
-            jmp movenope
-horizdisk:  jsr gotdisk
-horizok:    lda #$00            ; stop vertical movement
-            sta VelocityY
-            lda HeroY           ; new hero Y is unchanged
-            sta NewHeroY
-            lda ZPtrB           ; map line pointer for new Y is same as old Y
-            sta ZPtrA
-            lda ZPtrB + 1
-            sta ZPtrA + 1
-            jmp moveclear
-vertdisk:   jsr gotdisk
-vertok:     lda #$00            ; stop horizontal movement
-            sta VelocityX
-            lda HeroX           ; new hero X is unchanged
-            sta NewHeroX
-            jmp moveclear
-diagdisk:   jsr gotdisk
-moveclear:  lda #$00            ; remove old hero from map
-            ldy HeroX
-            sta (ZPtrB), y
-            lda #C_HERO         ; put new hero on map
-            ldy NewHeroX
-            sta (ZPtrA), y
-            sty HeroX
-            ldy NewHeroY
-            sty HeroY
-            lda VelocityY       ; scroll the map if we need to
-            beq scrollno
-            bmi scrolldown
-            clc
-            bcc scrolldo
-scrolldown: sec
-scrolldo:   jsr updatemap
-scrollno:   jsr drawplay
-movenope:   rts
-
-gotdisk:    lda (ZPtrA), y
-            and #$C0            ; disk type
-            pha
-            ora #$20
-            lsr
-            jsr addscore        ; add type multiplier to the score
-            pla
-            asl
-            rol
-            rol
-            tax
-            sed
-            lda DisksGot, x
-            clc
-            adc #$01
-            sta DisksGot, x     ; got one of this type
-            lda DisksLeft, x
-            sec
-            sbc #$01
-            sta DisksLeft, x    ; fewer out there of this type
-            cld
-            ; removing the disk is unnecessary because the hero will replace it
-            rts
 
 ; process keypress
 
