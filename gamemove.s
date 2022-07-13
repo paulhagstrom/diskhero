@@ -43,6 +43,7 @@ domove:     lda #$82            ; we will use ZPtrA, ZPtrB, ZPtrC
             sta (ZPtrA), y      ; update the map
             ldy NewY
             sty HeroY           ; record new Y location
+            ; would update on screen here except hero is never on the hires screen
 herostop:   lda VelX
             sta VelocityX       ; record new X velocity
             lda VelY
@@ -189,6 +190,7 @@ handoff:    ldy NewX
             clc
             adc ZFrame          ; select animation frame
             sta (ZPtrA), y      ; update the map
+            
             ; TODO - if the current hoarder is moving to or from someplace in the visible map,
             ; we need to update the map display too.  Locate the 14-pixel chunk it is in and redraw
             ; it selectively.  This is the place where having more hoarders can possibly slow things

@@ -37,3 +37,7 @@ SndHrdrGot = *
             .byte   $10, $28, $30, $40, $38, $20, $20, $10 
             .byte   $10, $28, $30, $40, $38, $20, $20, $10 
             ; $80 ($B6)
+            
+; Above are sound effects
+; Could perhaps try creating music
+; with a sine table for some frequencies, addition

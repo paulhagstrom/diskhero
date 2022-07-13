@@ -2,20 +2,25 @@
 ; Apple III Hires region
 ; map display upper and lower block
 
-; paint the whole map (updates afterwards are relative, leveraging smooth scroll)
+; paint the whole map
+; (updates afterwards are incremental, drawing single lines and using smooth scroll)
+; This is designed to be able to paint under any circumstance, but it turns out that
+; within the logic of the game it's only called once at the beginning.
+; So all the logic about void regions will never get called upon unless it is decided
+; later to randomize the hero's starting point.
 
-initmap:    lda #$20            ; top field starts at display line $20
-            sta CurScrLine      ; CurScrLine is the current actual line on the screen
+initmap:    lda #$20            ; top field starts at absolute raster line $20
+            sta CurScrLine      ; CurScrLine keeps track of the current absolute raster line
             lda HeroY           ; HeroY is the $23rd abstract line down
-            sec
-            sbc #$23            ; go find where the map data pointer for the top of the top field is
-            bcs :+              ; we did not run off the edge, there is no upper void
+            sec                 ; so the map data pointer for the top raster line in the top field
+            sbc #$23            ; is $23 above HeroY.
+            bcs novoidup        ; we did not run off the edge, there is no upper void
             eor #$FF            ; invert the negative number to find the size of the upper void
             adc #$01
             tax                 ; put the vertical extent of the upper void in X
             lda #$00            ; start the map at zero when we get past the void
-            beq :++
-:           ldx #$00            ; no upper void, extent of the upper void is 0
+            beq :+
+novoidup:   ldx #$00            ; no upper void, extent of the upper void is 0
 :           stx VoidU           ; number of void lines above the map data
             jsr setmapptr       ; load mapptr for the first map data line we will be drawing
             cpx #$00            ; is there a void?
@@ -23,41 +28,40 @@ initmap:    lda #$20            ; top field starts at display line $20
 :           ldx CurScrLine      ; yes, there is a void, load the raster line into X
             jsr drawvoid        ; draw the void line
             inc CurScrLine      ; move down to the next raster line
-            dec VoidU           ; if there are still void lines left, keep drawning them
+            dec VoidU           ; if there are still void lines left, keep drawing them
             bpl :-
-hiresline:  ldx CurScrLine      ; target line on graphics screen
+hiresline:  ldx CurScrLine      ; load the target raster line into X
             jsr drawlineb       ; we already set MapPtr earlier, use internal entry point
+            inc CurScrLine      ; advance the graphics raster line
             lda MapPtrL         ; advance the map pointer to the next line
             clc
             adc #$40
             sta MapPtrL
-            bcc novoid
+            bcc novoiddown
             inc MapPtrH
             lda MapPtrH
             cmp #$60            ; did we just fall off the map into the bottom void?
-            bne novoid          ; no, so continue on
-:           inc CurScrLine      ; we are in the bottom void, advance the graphics raster line
-            ldx CurScrLine      ; note that if we are in the lower void, we must be in bottom field
+            bne novoiddown      ; no, so continue on
+:           ldx CurScrLine      ; note that if we are in the lower void, we must be in bottom field
             cpx #$A9            ; last line of bottom field complete? ($88-$A8)
             beq imdone
-            jsr drawvoid
+            jsr drawvoid        ; draw the void line
+            inc CurScrLine      ; advance the graphics raster line
             jmp :-
-novoid:     inc CurScrLine      ; advance the graphics raster line
-            ldx CurScrLine
+novoiddown: ldx CurScrLine
             cpx #$A9            ; last line of bottom field complete? ($88-$A8)
-            beq imdone          ; if so, move to the next screen region
+            beq imdone          ; if so, we are finished drawing the hires map
             cpx #$40            ; last line of top field complete? ($20-$3F)
-            bne hiresline       ; nope, keep going
-            ; we just finished the top field
-            lda #$88            ; set the raster line for the start of the lower field
-            sta CurScrLine
-            lda HeroY           ; set up starting point for lower field
-            clc
+            bne hiresline       ; nope, keep going            
+            lda #$88            ; we just finished the top field, so skip ahead to the lower field
+            sta CurScrLine      ; set the raster line for the start of the lower field
+            lda HeroY           ; set up map starting point for the top of the lower field
+            clc                 ; which is 4 lines past HeroY.
             adc #$04
             bcs :+              ; are we already in a lower void? If so, the whole field is in the void.
             jsr setmapptr       ; not in the void, set up MapPtr for the data
-            jmp hiresline
-:           ldx CurScrLine
+            jmp hiresline       ; proceed to draw
+:           ldx CurScrLine      ; there is nothing left but void, so just void the bottom field
             jsr drawvoid
             inc CurScrLine
             lda CurScrLine
@@ -65,33 +69,24 @@ novoid:     inc CurScrLine      ; advance the graphics raster line
             bne :-              ; nope, keep drawing void lines
 imdone:     rts
             
-
-; mode 1 (text)     lines 00-0F (10) 00-01  score
-; mode 6 (bw hires) lines 10-1F (10)        b/w map display
-; mode 7 (a3 hires) lines 20-3F (20)        hires map upper field  map: 00-1F
-; mode 1 (text)     lines 40-87 (48) 08-10  text play field        map: 20-26
-; mode 7 (a3 hires) lines 88-A7 (20)        hires map lower field  map: 27-46
-; mode 1 (text)     lines A8-BF (18) 15-17  text status display
-
-; updatemap will effect a movement of the screen.
-; if you call it with carry clear, it will move the map up (hero downward)
-; if you call it with carry set, it will move the map down (hero upward)
+; updatemap will effect a vertical movement of the map regions of the screen.
+; if you call it with carry clear, it will move the map up (hero downward), increasing nudge
+; if you call it with carry set, it will move the map down (hero upward), decreasing nudge
 ; it is assumed that the HeroY coordinate has just been changed, triggering this call.
 ; it will finish by setting NudgePos correctly so that the interrupt handler will display it right.
 
-; in general, increasing nudge:
+; in general, increasing nudge from oldnudge to oldnudge + 1
 ; copy graphics line 08 + oldnudge to 00 + oldnudge
 ; copy graphics line 10 + oldnudge to 08 + oldnudge
 ; copy graphics line 18 + oldnudge to 10 + oldnudge
 ; draw map line for graphics line 20 + oldnudge on graphics line 18 + oldnudge
-; and then advance nudge and #$07.
-; to move back up (decreasing nudge)
-; copy graphics line 10 + newnudge to 18 + newnudge
-; copy graphics line 08 + newnudge to 10 + newnudge
-; copy graphics line 00 + newnudge to 08 + newnudge
-; draw map line for graphics line 00 + newnudge on graphics line 00 + newnudge
+; and then advance nudge to become oldnudge + 1
+; to move back up (decreasing nudge from nudge + 1 to nudge)
+; copy graphics line 10 + nudge to 18 + nudge
+; copy graphics line 08 + nudge to 10 + nudge
+; copy graphics line 00 + nudge to 08 + nudge
+; draw map line for graphics line 00 + nudge on graphics line 00 + nudge
 ; top field starts at $20, draws $20 lines of map (offsets 0-1F),
-; middle play field starts at 40, draws 7 lines of map (offsets 20-26),
 ; bottom field starts at $88, draws $20 lines of map (offsets 27-46).
 ; The zero point (no void, map offsets from 0-46 are rendered) has HeroY at 23.
 ; So, the top visible line is HeroY - 23,
@@ -99,45 +94,7 @@ imdone:     rts
 ; playfield goes from HeroY - 3 to HeroY + 3
 ; and bottom field goes from HeroY + 4 to HeroY + 23.
 ;
-; Suppose HeroY advances from 23 to 24.  The map scrolls up one.  Nudge was 0,
-; we will set nudge to 1, and it starts drawing line 1 (second line) first.
-; Which is great, because the top visible line should be HeroY - 23,
-; and the data is already there.  But we need line 0 (first line) to hold
-; the graphics for the line below 7.  Line 0 of the next group down has that data.
-; So we move line 8 up to line 0, line 10 to 8, line 18 to 10, but then we need
-; to provide a new line 18.  That's going to come from HeroY - 4.  Now: 20.
-; That matches what is written above, where "oldnudge" was zero.
-; For the lower field, we draw line HeroY + 23 (47) into graphics line A0 (88+18)
-;
-; Suppose HeroY decreases from 24 to 23. The map scrolls down one.
-; top visible line should be HeroY - 23, so map line 0.
-; Map line 0 wasn't there anymore, because it had line 8 in it.  We need to replace it.
-; So we move line 10 to line 18, line 8 to 10, line 0 to 8
-; and then draw line 0 into 0.  As written above, where "newnudge" is 0.
-; For the lower field, we draw line HeroY + 23 (46) into graphics line 88 (88+0).
-;
-; Suppose HeroY is 26.  That is 3 down from the zero point.
-; That means the map has scrolled up 3 steps, so nudge starts off at 3.
-; Each group of 8 lines are drawing in this sequence: 3 4 5 6 7 0 1 2.
-; The top visible line represents 
-; Assuming the screen is rendered properly ahead of time, now we are scrolling.
-; when we are increasing nudge from 3 to 4 (map is moving up, drawing starts lower),
-; we will want to replace line 3 with the line that should be rendered below 2.
-; 
-; When everything's done, nudge will be ( HeroY + 5 ) mod 8.  (+5 is the same as -3)
-; Inc/dec of HeroY determines which line needs to be drawn anew.  Nudge here refers to
-; what it ends up as.
-; HeroY increased to 24, nudge goes to 1, raster line $17 + nudge + $20 ($38) gets map HeroY - 4 ($20).
-; must copy line $7 + $20 + nudge ($28) to -1 + $20 + nudge ($20), up to $17 + nudge + $20 ($38) to $10.
-; lower field raster line $17 + nudge + $88 ($A0) gets map line HeroY + $23 ($47)
-; HeroY decreased to 23, nudge goes to 0, raster line $0 + nudge + $20 ($20) gets map line HeroY - $23 (0).
-; lower field raster line $0 + nudge + $88 ($88) gets map line HeroY + 4 ($27)
-
-; enter with carry clear to increase nudge (with old NudgePos),
-; or carry set to decrease nudge (with new already-decreased NudgePos).
-; in other words, nudge should be the lowest of new and old
-; HeroY just got incremented (carry clear) or decremented (carry set) prior to calling this
-updatemap:  bcs umdec
+updatemap:  bcs umdec           ; if we decrementing nudge, skip past the incrementing parm block
             lda #$20            ; first copy target raster line in top field (then up, copying toward zero)
             sta PTopRastA
             lda #$38            ; raster offset for drawing new upper field line ($20 + $18)
@@ -148,9 +105,9 @@ updatemap:  bcs umdec
             sta PBotRastD
             lda #$04            ; map offset back from HeroY for newly drawn line in top field.
             sta PTopMapOff
-            lda #$01            ; remember that we are incrementing (will later added to PNudge for NudgePos)
+            lda #$01            ; remember that we are incrementing (will later be added to PNudge for NudgePos)
             sta PInc
-            bne :+
+            bne umbegin         ; skip past the decrementing parm block
 umdec:      lda #$38            ; first copy target raster line in lower field (then down, copying away from zero)
             sta PTopRastA
             lda #$20            ; raster offset for drawing new upper field line ($20 + 0)
@@ -161,10 +118,10 @@ umdec:      lda #$38            ; first copy target raster line in lower field (
             sta PBotRastD
             lda #$23            ; map offset back from HeroY for newly drawn line in top field.
             sta PTopMapOff
-            lda #$00            ; remember that we are decrementing
+            lda #$00            ; remember that we are decrementing (will later be added to PNudge for NudgePos)
             sta PInc
-:           lda HeroY
-            adc #$04
+umbegin:    lda HeroY
+            adc #$04            ; intentionally not clearing carry before this, using the entry value of carry
             and #$07            ; mod 8
             sta NudgePos        ; either what NudgePos will be (carry set) or what NudgePos was (carry clear)
             lda R_BANK          ; save bank
@@ -176,17 +133,17 @@ umdec:      lda #$38            ; first copy target raster line in lower field (
             lda HeroY           ; find the new data line for the top field
             sec
             sbc PTopMapOff      ; counting back from HeroY to either top or bottom of top field
-            bcs notvoid
+            bcs umnotvoid
             inc TouchedVoid     ; we have touched the void in the top field
-notvoid:    sta MapOffset       ; store the map offset we will draw top field line from
-            lda PTopRastA       ; first raster line processed in copy (inc=top, dec=bottom)
+umnotvoid:  sta MapOffset       ; store the map offset we will draw top field line from
+            lda PTopRastA       ; first raster line (inc=top, dec=bottom) in copy operation in top field
             clc
             adc NudgePos        ; newnudge/oldnudge
             ldy PInc            ; carry should still be clear
             bne :+              ; set carry if we we decrementing
             sec
 :           jsr copylines       ; copy lines that can be copied
-            lda PTopRastD       ; raster line that is target for new draw
+            lda PTopRastD       ; raster line that is target for new draw in top field
             clc
             adc NudgePos        ; plus nudge
             tax                 ; move raster line to X for drawline
@@ -197,14 +154,14 @@ notvoid:    sta MapOffset       ; store the map offset we will draw top field li
 :           lda MapOffset
             jsr drawline        ; draw line (map pointer is still in A, raster pointer is in X)
             ; do the bottom field
-btmfield:   lda PBotRastA       ; first raster line processed in copy (inc=top, dec=bottom)
+btmfield:   lda PBotRastA       ; first raster line (inc=top, dec=bottom) in copy operation in bottom field
             clc
             adc NudgePos        ; newnudge/oldnudge
             ldy PInc            ; carry should still be clear
             bne :+              ; set carry if we are decrementing
             sec
 :           jsr copylines       ; copy lines that can be copied
-            lda PBotRastD       ; raster line that is target for new draw
+            lda PBotRastD       ; raster line that is target for new draw in bottom field
             clc
             adc NudgePos        ; plus nudge
             tax                 ; move raster line to X for drawline
@@ -224,52 +181,89 @@ upddone:    lda BankSave        ; put the bank back
             inc NudgePos        ; will not bother making it mod 8 because setnudge will not care.
 updend:     rts
 
-; copylines uses self-modifying code to quickly copy the three graphics lines
+; copylines uses self-modifying code and stack pushing to quickly copy the three graphics lines
 ; enter with graphics line (top line plus NudgePos), carry clear for increase nudge, set for decrease nudge
 ; exits with x still holding the line that would be the target of new draw (was last source)
-copylines:  tax
-            lda #$02            ; move three lines, count in ZPxScratch
-            sta ZPxScratch
-            lda YHiresL, x
-            sta lmtrga + 1      ; target A low
-            sta lmtrgb + 1      ; target B low
-            lda YHiresHA, x
-            sta lmtrga + 2      ; target A high
-            lda YHiresHB, x
-            sta lmtrgb + 2      ; target B high
-lmnext:     txa
+; trying to squeeze as many cycles as possible out of this, so using the stack for copy target
+; assumes we are already in bank 0 (video data), and sets ZP to $1A00 on exit 
+
+LinesLeft:  .byte   0
+SourceS:    .byte   0
+TargS:      .byte   0
+TargL:      .byte   0
+TargHA:     .byte   0
+TargHB:     .byte   0
+CLStack:    .byte   0
+CLEnv:      .byte   0
+
+copylines:  tay                 ; move start line into Y
+            tsx                 ; preserve stack state for recall when we are done
+            stx CLStack
+            lda R_ENVIRON
+            sta CLEnv
+            and #%11111011      ; set stack bit to zero to get alt stack
+            sta R_ENVIRON
+            lda #$02            ; move three lines, countdown in LinesLeft
+            sta LinesLeft
+            lda YHiresS, y
+            sta TargS           ; target stack (end of line)
+            lda YHiresHA, y
+            sta TargHA          ; target A high
+            lda YHiresHB, y
+            sta TargHB          ; target B high
+lmnext:     tya                 ; compute source line relative to target line
             bcs :+              ; if carry is set we are subtracting
             adc #$08            ; if carry is clear we are adding
-            bcc lmprep          ; no chance carry got set
-:           sbc #$08            ; no chance carry got cleared
-lmprep:     tax
-            lda YHiresL, x
-            sta lmsrca + 1      ; source A low
-            sta lmsrcb + 1      ; source B low
-            lda YHiresHA, x
+            bcc lmprep          ; carry survives from entry (no chance carry got set)
+:           sbc #$08            ; carry survives from entry (no chance carry got cleared)
+lmprep:     tay
+            lda YHiresL, y
+            sta lmsrca + 1      ; modify code in upcoming loop
+            sta lmsrcb + 1
+            lda YHiresHA, y
             sta lmsrca + 2      ; source A high
-            lda YHiresHB, x
+            lda YHiresHB, y
             sta lmsrcb + 2      ; source B high
-            ldy #$27
-lmsrca:     lda $2000, y
-lmtrga:     sta $4000, y
-lmsrcb:     lda $2000, y
-lmtrgb:     sta $4000, y
-            dey
+            lda YHiresS, y      ; stack pointer not used in source but passed on to be target after
+            sta SourceS
+            lda TargHA          ; point stack at target A page
+            eor #$01            ; this is where ZP has to be, in order for stack to be where we want
+            sta R_ZP            ; point ZP (thus stack)
+            ldx TargS           ; start stack at the end of the target line
+            txs
+            ldx #$27
+lmsrca:     lda $2000, x
+            pha
+            dex
             bpl lmsrca
-            dec ZPxScratch
-            bmi :+              ; done moving lines
-            ; prior source becomes new target
-            lda lmsrca + 1
-            sta lmtrga + 1
+            lda TargHB          ; point stack at target B page
+            eor #$01            ; this is where ZP has to be, in order for stack to be where we want
+            sta R_ZP            ; point ZP (thus stack)
+            ldx TargS           ; start stack at the end of the target line
+            txs
+            ldx #$27
+lmsrcb:     lda $4000, x
+            pha
+            dex
+            bpl lmsrcb
+            dec LinesLeft
+            bmi lmdone          ; done moving lines
+            lda lmsrca + 1      ; prior source becomes new target
+            sta TargL
+            lda SourceS
+            sta TargS
             lda lmsrca + 2
-            sta lmtrga + 2
-            lda lmsrcb + 1
-            sta lmtrgb + 1
+            sta TargHA
             lda lmsrcb + 2
-            sta lmtrgb + 2
-            jmp lmnext
-:           rts
+            sta TargHB
+            jmp lmnext          ; carry should still be surviving from entry
+lmdone:     lda CLEnv           ; restore environment, ZP, stack
+            sta R_ENVIRON
+            lda #$1A            ; restore ZP to $1A00
+            sta R_ZP
+            ldx CLStack
+            txs
+            rts
 
 ; seven magenta pixels for the left and right two bytes in the map region
 ; and for the void lines
@@ -634,3 +628,15 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             jmp toplineseg
 :           rts
 
+; table of map x-coordinates and the corresponding place to find them in a line, for use
+; when we selectively update the screen display.  Indexed by x-coordinate in map row.
+
+MapPix: .byte   $00, $00, $00, $00, $00, $00, $00
+        .byte   $01, $01, $01, $01, $01, $01, $01
+        .byte   $02, $02, $02, $02, $02, $02, $02
+        .byte   $03, $03, $03, $03, $03, $03, $03
+        .byte   $04, $04, $04, $04, $04, $04, $04
+        .byte   $05, $05, $05, $05, $05, $05, $05
+        .byte   $06, $06, $06, $06, $06, $06, $06
+        .byte   $07, $07, $07, $07, $07, $07, $07
+        .byte   $08, $08, $08, $08, $08, $08, $08

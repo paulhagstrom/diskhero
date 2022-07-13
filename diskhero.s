@@ -9,9 +9,10 @@
 ; we have from A000 to B800 before SOS arrives (6144 bytes)
 ; I can fudge this a little if needed, by starting with JMP and putting data early,
 ; since the main concern is trying to run code in a bank switched area.
-; 9E00 leaves 6656 bytes
+; 9F00 leaves 6400, 9E00 leaves 6656 bytes, 9D00 leaves 6912
+; but realistically I should start loading things from disk into other banks.
 
-            .org     $9E00 - 14
+            .org     $9D00 - 14
             
 ; SOS interpreter header
             .byte    "SOS NTRP"
@@ -21,18 +22,18 @@
 
 CodeStart:  jmp init
 
-            .include "buildmap.s"
-            .include "gamefont.s"
-            .include "lookups.s"
-            .include "interrupts.s"
-            .include "gamemove.s"
-            .include "status-text40.s"
+            .include "buildmap.s"           ; does not switch bank, called early and once
+            .include "gamefont.s"           ; does not switch bank, called early and once
+            .include "gamemove.s"           ; does not switch bank
+            .include "status-text40.s"      ; does not switch bank
+            .include "status-text80.s"      ; does not switch bank
             .include "reg-superhires.s"
             .include "play-text40.s"
-            .include "map-hires3.s"
             .include "reg-medres.s"
-            .include "status-text80.s"
-            .include "gamesound.s"
+            .include "map-hires3.s"         ; switches in bank 0 to use stack
+            .include "interrupts.s"         ; critical, should be always available
+            .include "gamesound.s"          ; lookups, should be always available
+            .include "lookups.s"            ; lookups, should be always available
 
 IRQSave:    .byte   0, 0 , 0        ; saved state
 ZPSave:     .byte   0
