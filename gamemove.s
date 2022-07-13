@@ -21,6 +21,9 @@ domove:     lda #$82            ; we will use ZPtrA, ZPtrB, ZPtrC
             sta ZPtrC + XByte   ; inside a loop
             ; move hero
             sta IsHero
+            lda #$00            ; reset scroll up/down triggers
+            sta ScrollUp
+            sta ScrollDown
             lda HeroX
             sta OldX
             lda HeroY
@@ -30,10 +33,8 @@ domove:     lda #$82            ; we will use ZPtrA, ZPtrB, ZPtrC
             lda VelocityY
             sta VelY
             jsr trymove
-            bcs herodone        ; the move failed, do not need to do a map update
+            bcs herostop        ; the move failed, do not need to do a map update
             lda #$00            ; remove old hero from map
-            sta ScrollUp        ; reset scroll up/down triggers
-            sta ScrollDown
             ldy OldX
             sta (ZPtrB), y
             lda #C_HERO         ; put new hero on map
@@ -42,7 +43,7 @@ domove:     lda #$82            ; we will use ZPtrA, ZPtrB, ZPtrC
             sta (ZPtrA), y      ; update the map
             ldy NewY
             sty HeroY           ; record new Y location
-            lda VelX
+herostop:   lda VelX
             sta VelocityX       ; record new X velocity
             lda VelY
             sta VelocityY       ; record new Y velocity
@@ -175,7 +176,7 @@ donehoard:
             ; Also: Hoarder collisions with Hero don't work quite right.  Sometimes pass through, sometimes stomp.
             ; Collisions will wall also seem to wind up removing the head until can be redirected.
             ; Somehow need to hold off on removing the second segment until a move succeeds.
-            ; Horizontal collisions with walls are currently eating up the walls again, too.
+            ; Hoarders' horizontal collisions with walls are currently eating up the walls again, too.
             lda ScrollUp
             beq :+
             clc
