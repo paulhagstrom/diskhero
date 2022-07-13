@@ -72,11 +72,12 @@ ticksdone:  lda (ZHoardSp), y   ; reset ticks for next move
             lda Random, x
             inx
             stx Seed
-            and #$07            ; one in 8 chance hoarder stops
+            and #$07            ; one in 8 chance hoarder stops (maybe changes directions)
             bne hoardcont
             lda #$00            ; horder stopped and may change direction.
             sta VelY
             sta VelX
+            beq hoardredir
 hoardcont:  lda (ZHoardXV), y
             sta VelX
             lda (ZHoardYV), y
@@ -98,15 +99,13 @@ hoardcont:  lda (ZHoardXV), y
             sta (ZHoardY), y
             pla
             sta (ZHoardYY), y
-            ; TODO - maybe I should test all four spots a horder could go, then
-            ; have it pick the one that takes it closer to its target?  Or pick
-            ; randomly.
-            ; If it is stopped, maybe swap head and hands and THEN do a random
-            ; choice.  So it at the very least can go back the way it came.
             ;
             ; TODO - make the hoarders actually seek out higher-value disks.
             ; May mean they need to stop before hitting something and turn.
             ; Start with omniscience rather than line of sight.
+            ; TODO - maybe I should test all four spots a horder could go, then
+            ; have it pick the one that takes it closer to its target?  Or pick
+            ; randomly.
             ; 
             ; For the mechanic of dropping a disk to distract hoarders, it
             ; would need to be the case that hoarders go for close rather than
@@ -114,7 +113,7 @@ hoardcont:  lda (ZHoardXV), y
             ; so you can go for a lower value disk while hoarders are distracted.
             ; your goal and hoarders goals are different.  You want most disks,
             ; hoarders want high value disks.
-            ldx Seed            ; if hoarder was not moving
+hoardredir: ldx Seed            ; if hoarder was not moving
             lda Random, x       ; send it in a random direction
             bpl sendhoriz       ; horizontal/vertical choice yields: horizontal
             inx
