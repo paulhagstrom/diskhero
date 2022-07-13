@@ -9,8 +9,9 @@
 ; we have from A000 to B800 before SOS arrives (6144 bytes)
 ; I can fudge this a little if needed, by starting with JMP and putting data early,
 ; since the main concern is trying to run code in a bank switched area.
+; 9E00 leaves 6656 bytes
 
-            .org     $9F00 - 14
+            .org     $9E00 - 14
             
 ; SOS interpreter header
             .byte    "SOS NTRP"
@@ -20,11 +21,11 @@
 
 CodeStart:  jmp init
 
+            .include "buildmap.s"
             .include "gamefont.s"
             .include "lookups.s"
             .include "interrupts.s"
             .include "gamemove.s"
-            .include "buildmap.s"
             .include "status-text40.s"
             .include "reg-superhires.s"
             .include "play-text40.s"

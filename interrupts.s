@@ -78,7 +78,7 @@ justdac:    stx RE_T2CL
             ldy SampleInd       ; get sample index
             beq intreturn       ; nothing to do on DAC, we are done
             lda Samples, y
-            bmi stopdac         ; if a sample is zero, stop playing
+            bmi stopdac         ; if we hit end of sample marker (byte over $7F), stop playing
             sta R_TONEHBL
             dec SampleInd
             jmp intreturn

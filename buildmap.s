@@ -85,7 +85,7 @@ buildmap:   lda R_ZP
             ; zero out the map background
             ldx #$40        ; clearing $40 pages
             ldy #$00
-            lda C_SPACE
+            lda #C_SPACE
 mfzero:     sta (ZPtrA), y
             iny
             bne mfzero

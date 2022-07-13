@@ -68,13 +68,42 @@ ticksdone:  lda (ZHoardSp), y   ; reset ticks for next move
             sta (ZHoardTick), y
             lda (ZHoardXX), y   ; stash second segment (head) X-coordinate
             sta ZXXTemp         ; in ZXXTemp for easy retrieval later
-            lda (ZHoardXV), y
+            ldx Seed            ; random chance that a hoarder will stop spontaneously
+            lda Random, x
+            inx
+            stx Seed
+            and #$07            ; one in 8 chance hoarder stops
+            bne hoardcont
+            lda #$00            ; horder stopped and may change direction.
+            sta VelY
+            sta VelX
+hoardcont:  lda (ZHoardXV), y
             sta VelX
             lda (ZHoardYV), y
             sta VelY
             bne hmoving
             lda VelX            ; Y velocity was 0, is X velocity 0 also?
             bne hmoving
+            ; swap head and hands if hoarder was stopped, so it does not corner itself
+            lda ZXXTemp         ; old head X-coordinate
+            pha
+            lda (ZHoardX), y    ; old hands x-coordinate
+            sta (ZHoardXX), y   ; put in old head x-oordinate
+            sta ZXXTemp
+            pla
+            sta (ZHoardX), y    ; put it in old hands x-coordinate
+            lda (ZHoardY), y
+            pha
+            lda (ZHoardYY), y
+            sta (ZHoardY), y
+            pla
+            sta (ZHoardYY), y
+            ; TODO - maybe I should test all four spots a horder could go, then
+            ; have it pick the one that takes it closer to its target?  Or pick
+            ; randomly.
+            ; If it is stopped, maybe swap head and hands and THEN do a random
+            ; choice.  So it at the very least can go back the way it came.
+            ;
             ; TODO - make the hoarders actually seek out higher-value disks.
             ; May mean they need to stop before hitting something and turn.
             ; Start with omniscience rather than line of sight.
@@ -111,7 +140,7 @@ hmoving:    lda (ZHoardY), y
             lda #$00            ; (will be sent in another direction next cycle)
             sta (ZHoardXV), y
             sta (ZHoardYV), y
-            bne nexthoard
+            beq nexthoard
 hmoved:     ldy CurrHoard
             lda (ZHoardAnim), y ; toggle animation frames
             eor #$01
@@ -314,7 +343,7 @@ gotdisk:    lda ZMapTemp        ; map (disk) was stored here, includes type
             lda #$12
             sta SampleInd       ; play SndHeroGot sound ("hero got disk")
             jmp gotaccount
-gotnot:     lda #$36
+gotnot:     lda #$B6    ;36
             sta SampleInd       ; play SndHrdrGot sound ("hoarder got disk")
 gotaccount: pla
             asl
