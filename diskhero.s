@@ -10,7 +10,7 @@
 ; I can fudge this a little if needed, by starting with JMP and putting data early,
 ; since the main concern is trying to run code in a bank switched area.
 
-            .org     $A000 - 14
+            .org     $9F00 - 14
             
 ; SOS interpreter header
             .byte    "SOS NTRP"
@@ -20,8 +20,8 @@
 
 CodeStart:  jmp init
 
-            .include "lookups.s"
             .include "gamefont.s"
+            .include "lookups.s"
             .include "interrupts.s"
             .include "gamemove.s"
             .include "buildmap.s"
@@ -31,6 +31,7 @@ CodeStart:  jmp init
             .include "map-hires3.s"
             .include "reg-medres.s"
             .include "status-text80.s"
+            .include "gamesound.s"
 
 IRQSave:    .byte   0, 0 , 0        ; saved state
 ZPSave:     .byte   0
@@ -52,7 +53,6 @@ DisksGot:   .byte   0, 0, 0, 0
 DisksLeft:  .byte   0, 0, 0, 0
 NumHoards:  .byte   0
 
-ScrRegion:  .byte   0
 FieldH:     .byte   $04, $05, $05, $06, $06, $07
 FieldL:     .byte   $A8, $25, $A8, $28, $A8, $28
 FieldHC:    .byte   $08, $09, $09, $0A, $0A, $0B
@@ -69,18 +69,11 @@ DiskColors: .byte   $EE, $DD, $CC, $BB
 ;
 ; Define the screen region; mode is a display mode, length is number of HBLs.
 ; nudge is 0 if no nudge, else pos or neg depending on which nudge count to use
-ScrRegLen:  .byte   $0E, $0F, $1E, $47, $1E, $07, $0F, $00
-ScrRegMode: .byte   $01, $06, $07, $01, $07, $03, $05, $00
-ScrNudge:   .byte   $00, $00, $01, $00, $01, $00, $80, $00
-NudgePos:   .byte   0
-NudgeNeg:   .byte   0
 HeroX:      .byte   0
 HeroY:      .byte   0
 HeroDir:    .byte   0
 VelocityX:  .byte   0
 VelocityY:  .byte   0
-VBLTick:    .byte   0
-DACTick:    .byte   0
 MoveDelay   = 1            ; VBL tick delay between moves
 
 ; I played with ScRegLen by trial and error a little.
@@ -374,6 +367,7 @@ initscreen:
             rts
 
 ; Set smooth scroll offset to the number (0-7) in A
+; implicitly performs a mod 8 (higher bits don't matter)
 
 setnudge:   ror
             bcs snxxy

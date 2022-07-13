@@ -4,9 +4,16 @@
 ; setupenv - set and arm the interrupts
 ; interrupt handlers for VBL, HVL, keyboard
 
-; we need to prioritize interrupts a bit because they can pile up.
-; if HBL has priority we can wind up in an situation where nothing
-; else gets a chance to fire.  So keyboard first, then VBL, then HBL/timer.
+PlayingSnd: .byte   0, 0        ; store address of sample here
+SampleInd:  .byte   0           ; if nonzero, a sample is played until it becomes zero
+NudgePos:   .byte   0
+NudgeNeg:   .byte   0
+ScrRegion:  .byte   0
+ScrRegBand: .byte   0
+ScrRegMode: .byte   $01, $06, $07, $01, $07, $03, $05, $00
+ScrNudge:   .byte   $00, $00, $01, $00, $01, $00, $80, $00
+ScrRegDur:  .byte   $02, $02, $04, $09, $04, $01, $02, $00      ; groups of 8
+VBLTick:    .byte   0
 
 inthandle:  pha                 ; save registers
             tya
@@ -14,22 +21,22 @@ inthandle:  pha                 ; save registers
             txa
             pha
             cld
-            lda RE_INTFLAG      ; identify interrupt
-            and #$10            ; VBL?
-            beq :+              ; nope
-            jsr intvbl          ; handle the VBL interrupt
-            lda #$10            ; clear CB1 VBL
+            lda RE_INTFLAG      ; identify the interrupt we got
+            and #$10            ; was it VBL?
+            beq :+              ; nope, check the next one
+            jsr intvbl          ; yep, handle the VBL interrupt
+            lda #$10            ; clear the VBL (CB1) interrupt
             sta RE_INTFLAG
-            bne intreturn
+            bne intreturn       ; branch always
 :           lda RE_INTFLAG
-            and #$01            ; keyboard?
-            beq :+              ; nope
-            jsr intkey          ; handle the keyboard interrupt
-            lda #$01            ; clear CA2 keyboard
+            and #$01            ; was it the keyboard?
+            beq :+              ; nope, check the next one
+            jsr intkey          ; yep, handle the keyboard interrupt
+            lda #$01            ; clear the keyboard (CA2) interrupt
             sta RE_INTFLAG
-            bne intreturn
+            bne intreturn       ; branch always
 :           lda RE_INTFLAG
-            and #$20            ; timer/HBL?
+            and #$20            ; was it the timer/HBL?
             bne inttimer        ; yep, go handle the timer/HBL
 intreturn:  pla                 ; restore registers
             tax
@@ -37,61 +44,69 @@ intreturn:  pla                 ; restore registers
             tay
             pla
             rti
+
 ; timer2 (HBL) interrupt handler
 ; goes off only at display mode switch points (not every HBL)
 ; sets the display mode and smooth scroll offset, then timer for next mode switch point
 ; allows for two different smooth scroll offsets, named "NudgePos" and "NudgeNeg"
-inttimer:   inc ScrRegion       ; advance region
-            ldx ScrRegion
+; update: trying to fire it every 8 so I can control the DAC from here too.
+inttimer:   ldx #$07            ; HBLs we expect before next 8th line
+            dec ScrRegBand      ; bump countdown of bands in this region
+            bne justdac         ; if the region is still being drawn, skip ahead to sound
+            ldx ScrRegion       ; put upcoming region (that has now arrived) into X
             lda ScrRegMode, x   ; move display to correct mode
             jsr setdisplay
-            lda D_SCROLLOFF     ; nudge off
             lda ScrNudge, x     ; nudge if this region needs nudging
-            beq postnudge       ; do no nudging
+            beq nonudge         ; do no nudging
             bmi negnudge        ; using negative (alt) nudge?
             lda NudgePos        ; nope, use the positive (regular) nudge value
             jmp gonudge
+nonudge:    and D_SCROLLOFF     ; turn smooth scroll off
+            beq postnudge       ; branch always
 negnudge:   lda NudgeNeg        ; yep, use the negative (alternate) nudge value
 gonudge:    jsr setnudge        ; twiddle the nudge bits
-            lda D_SCROLLON      ; turn on nudging
-postnudge:  lda ScrRegLen, x    ; reset the HBL counter to length of next mode
-            sta RE_T2CL
-            lda #$00            ; clear the timer2 flag
+            lda D_SCROLLON      ; turn smooth scroll on (nudge)
+postnudge:  lda ScrRegDur, x    ; reset the HBL counter to length of next region
+            sta ScrRegBand
+            inc ScrRegion       ; point ScRegion to the upcoming one
+            ldx #$06            ; wait 8 lines for next interrupt (missed one already)
+justdac:    stx RE_T2CL
+            lda #0              ; clear the timer2 flag
             sta RE_T2CH
             lda #$20
             sta RE_INTFLAG
-            bne intreturn
+            ldy SampleInd       ; get sample index
+            beq intreturn       ; nothing to do on DAC, we are done
+            lda Samples, y
+            bmi stopdac         ; if a sample is zero, stop playing
+            sta R_TONEHBL
+            dec SampleInd
+            jmp intreturn
+stopdac:    lda #$00
+            sta SampleInd
+            beq intreturn
+
 ; keyboard interrupt handler
 intkey:     lda IO_KEY          ; load keyboard register
-            sta IO_KEYCLEAR     ; clear keyboard register
             bpl keyreturn       ; no key pressed, return (could that even happen? modifier only?)
             sta $0400           ; put it in the corner so I can see it
             sta KeyCaught       ; tell event loop to process this
-keyreturn:  rts
+keyreturn:  bit IO_KEYCLEAR     ; clear keyboard register
+            rts
 
 ; VBL interrupt handler
-intvbl:     lda ScrRegLen       ; reset the HBL counter to the length of top region
+intvbl:     lda #$06            ; reset the HBL counter for top region
             sta RE_T2CL
             lda #0
             sta RE_T2CH
-            sta ScrRegion       ; reset region number
             lda ScrRegMode      ; move display to correct mode
             jsr setdisplay
             lda D_SCROLLOFF     ; smooth scrolling off is assumed for top region
-            dec VBLTick
-            ; this implements a buzz that is set off when a disk is captured
-            ; probably best not to burn cycles here, if there is something that takes
-            ; predictable time elsewhere like drawing lines (playfield?) I might be able
-            ; to hook into that for at least consistent pitches.
-            lda DACTick
-            beq vblrts
-            sta R_TONEHBL     ;DAC
-            ldx #$08
-:           dex
-            bne :-
-            lda #$00
-            sta R_TONEHBL     ;DAC
-            dec DACTick
+            lda #$01
+            sta ScrRegion       ; reset next region number to 1
+            lda ScrRegDur
+            sta ScrRegBand
+            dec VBLTick         ; bump VBL countdown
 vblrts:     rts
 
 ; arm interrupts

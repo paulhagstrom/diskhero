@@ -1,7 +1,9 @@
 ; DISKHERO
 ; Apple III 40-column text region
 ; middle primary play field display
-; occupies scan lines 00-0F, text lines 0-1.
+; occupies scan lines 40-87, text lines 08-10.
+; display map lines 20-26 (where the top of the upper playfield is 0)
+;           (or, in other words, up 3 and down 3 from the center)
 
 BorderR:    .byte 0
 BorderV:    .byte 0
@@ -136,11 +138,7 @@ borderh:    lda YLoresL, y
             tax
             lda YLoresHB, y     ; $800 base (color space)
             sta R_ZP            ; go to color memory
-            ; DAC
-            lda DACTick
-            beq :+
-            sta R_TONEHBL       ; DAC buzz
-:           ldy #$27            ; draw $28 colors
+            ldy #$27            ; draw $28 colors
             lda #$57            ; grey1 background
 borderhb:   sta Zero, x
             dex
@@ -174,15 +172,7 @@ borderhz:   lda CurScrLine
             inc CurScrLine      ; set exit condition for next time (borderh does not use the value)
             ldy #$10            ; do the bottom line (Y holds the current screen line for borderh)
             bne borderh         ; branch always
-innerplay:  
-            ; DAC
-            lda DACTick
-            beq :+
-            lda #$00
-            sta R_TONEHBL       ; DAC buzz
-            dec DACTick
-:
-            lda HeroY           ; find map pointer for top non-void line
+innerplay:  lda HeroY           ; find map pointer for top non-void line
             clc
             adc VoidU           ; factor out upper void
             sec

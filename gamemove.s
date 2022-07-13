@@ -10,6 +10,7 @@ OldX:       .byte   0
 OldY:       .byte   0
 NewX:       .byte   0
 NewY:       .byte   0
+IsHero:     .byte   0
 CurrHoard:  .byte   0
 ScrollUp:   .byte   0
 ScrollDown: .byte   0
@@ -19,6 +20,7 @@ domove:     lda #$82            ; we will use ZPtrA, ZPtrB, ZPtrC
             sta ZPtrB + XByte   ; so we do not wind up setting them repeatedly
             sta ZPtrC + XByte   ; inside a loop
             ; move hero
+            sta IsHero
             lda HeroX
             sta OldX
             lda HeroY
@@ -51,6 +53,8 @@ domove:     lda #$82            ; we will use ZPtrA, ZPtrB, ZPtrC
 scrolldown: inc ScrollDown
 herodone:            
             ; move hoarders
+            lda #$00
+            sta IsHero
             ldy NumHoards
             sty CurrHoard
 movehoard:  ldy CurrHoard
@@ -171,6 +175,7 @@ donehoard:
             ; Also: Hoarder collisions with Hero don't work quite right.  Sometimes pass through, sometimes stomp.
             ; Collisions will wall also seem to wind up removing the head until can be redirected.
             ; Somehow need to hold off on removing the second segment until a move succeeds.
+            ; Horizontal collisions with walls are currently eating up the walls again, too.
             lda ScrollUp
             beq :+
             clc
@@ -300,10 +305,17 @@ moveclear:  clc                 ; return with clear carry if move succeeds
 gotdisk:    lda ZMapTemp        ; map (disk) was stored here, includes type
             and #$C0            ; disk type
             pha
-            ora #$20
+            ldx IsHero
+            beq gotnot
+            ora #$20            ; add to score if hero got the disk
             lsr
             jsr addscore        ; add type multiplier to the score
-            pla
+            lda #$12
+            sta SampleInd       ; play SndHeroGot sound ("hero got disk")
+            jmp gotaccount
+gotnot:     lda #$36
+            sta SampleInd       ; play SndHrdrGot sound ("hoarder got disk")
+gotaccount: pla
             asl
             rol
             rol
@@ -319,7 +331,4 @@ gotdisk:    lda ZMapTemp        ; map (disk) was stored here, includes type
             sta DisksLeft, x    ; fewer out there of this type
             cld
             ; removing the disk is unnecessary because the hero/antagonist will replace it
-            ; make the DAC sing for a bit
-            lda #%00111111
-            sta DACTick
             rts
