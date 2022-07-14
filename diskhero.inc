@@ -50,8 +50,8 @@ ZFontCol    = $A8   ; ZP cache for FontCol to speed up drawing (A8-D0)
 ; interrupt handler
 ZIntBank    = $D0   ; place to stash the bank register value
 
-ZSoundPtr   = $DA   ; current sample in background music
-ZFXPtr      = $DB   ; current sample in sound effect
+ZSoundPtr   = $D8   ; current sample in background music
+ZFXPtr      = $DA   ; current sample in sound effect
 ZFXPlay     = $DC   ; nonzero if a sound effect is playing
 ZScrRegion  = $DD   ; upcoming region (the one after the one we are in)
 ZScrRegBand = $DE   ; countdown (from ScrRegDur) of 8-pixel hig bands left in the current region.

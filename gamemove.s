@@ -342,12 +342,12 @@ gotdisk:    lda ZMapTemp        ; map (disk) was stored here, includes type
             lsr
             jsr addscore        ; add type multiplier to the score
             sta ZFXPtr
-            lda #$3F            ; play SndHeroGot sound ("hero got disk")
+            lda #$1F            ; play SndHeroGot sound ("hero got disk")
             sta ZFXPtr + 1
             sta ZFXPlay
             jmp gotaccount
 gotnot:     sta ZFXPtr
-            lda #$3E            ; play SndHrdrGot sound ("hoarder got disk")
+            lda #$1E            ; play SndHrdrGot sound ("hoarder got disk")
             sta ZFXPtr + 1
             sta ZFXPlay
 gotaccount: pla

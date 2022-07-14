@@ -20,6 +20,64 @@ fxcopyloop: lda $4000, y
 :           rts
 
 BarCount:   .byte   0
+HarmAdvA:   .byte   0
+HarmAdvB:   .byte   0
+
+Note1C  = $20
+Note1D  = $24
+Note1E  = $29   ; 28.5
+Note1F  = $2B   ; 2A.667
+Note1G  = $30
+Note2A  = $36
+Note2B  = $3D   ; 3C.75
+Note2C  = $40
+Note2D  = $48
+Note2E  = $51
+Note2F  = $55   ; 55.333
+Note2G  = $60
+Note3A  = $6C
+Note3B  = $7A   ; 79.5
+Note3C  = $80
+
+; create a superposition of two sin waves
+; store it at ZPtrA, assumes it is at a page boundary
+; one harmonic is in X, one is in Y
+; harmonic numbers make sense only up to $40 really.
+; the numbers refer to how far along the sin table each note skips
+; so the frequency of 2 is twice 1, 10 is twice 8, 40 is twice 20.
+; if we start with 20, we should get a major scale with
+; 20 - 24 - 28.5 - 2A.667 - 30 - 36 - 3C.75 - 40
+; could try this but I think it wont work.
+; 40 - 48 - 51 - 55.333 - 60 - 6C - 79.5 - 80
+; 40 - 48 - 51 - 55 - 60 - 6C - 7A - 80 approx
+twosin:     sta BarCount
+            stx HarmAdvA
+            sty HarmAdvB
+            ldx #$00
+            ldy #$00
+twosinb:    lda SinTable, y
+            sta ZPxScratch
+            lda SinTable, x
+            adc ZPxScratch          ; should be max $3E
+            sty ZPxScratch
+            ldy #$00
+            sta (ZPtrA), y
+            ldy ZPxScratch
+            txa
+            clc
+            adc HarmAdvA
+            tax
+            tya
+            clc
+            adc HarmAdvB
+            tay
+            inc ZPtrA
+            bne twosinb
+            inc ZPtrA + 1
+            dec BarCount
+            bpl twosinb
+            rts
+
 
 soundinit:  lda #$81    ; bank 1
             sta ZPtrA + XByte
@@ -50,61 +108,81 @@ soundinit:  lda #$81    ; bank 1
             sta fxcopyloop + 2
             jsr fxcopy
             ; background segments
+            ; transpose the sin table
+            ldy #$00
+:           lda SinTable, y
+            lsr                     ; 7 bits (max $7F)
+            lsr                     ; 6 bits (max $3F)
+            lsr                     ; 5 bits (max $1F) suitable for adding
+            sta SinTable, y
+            iny
+            bne :-
             ; segment 1 (2000-3FFF)
             lda #$20
             sta ZPtrA + 1
-            lda #$04
-            sta BarCount
-            ldy #$00
-            ldx #$00
-backa:      lda SinTable, y
-            lsr
-            lsr
-            lsr
-            sta ZPxScratch
-            lda SinTable, x
-            lsr
-            lsr
-            lsr
-            adc ZPxScratch
-            sta (ZPtrA), y
-            inx
-            inx
-            iny
-            bne backa
-            inc ZPtrA + 1
-            dec BarCount
-            bpl backa
-            lda #$06
-            sta BarCount
-backab:     lda SinTable, y
-            lsr
-            lsr
-            lsr
-            sta ZPxScratch
-            lda SinTable, x
-            lsr
-            lsr
-            lsr
-            adc ZPxScratch
-            sta (ZPtrA), y
-            inx
-            inx
-            inx
-            iny
-            lda BarCount
-            and #$01
-            beq :+
-            inc ZPtrA + 1
-:           dec BarCount
-            bpl backab
+            lda #$02    ;
+            ldy #Note1C
+            ldx #Note2C
+            jsr twosin
             lda #$02
-            sta BarCount
-            lda #$00
-backac:     sta (ZPtrA), y
-            iny
-            bne backac
+            ldy #Note1C
+            ldx #Note2E
+            jsr twosin
+            lda #$02
+            ldy #Note1C
+            ldx #Note2G
+            jsr twosin
+            lda #$04    ;.
+            ldy #Note1C
+            ldx #Note2E
+            jsr twosin
+            lda #$02
+            ldy #Note1C
+            ldx #Note2C
+            jsr twosin
+            lda #$02
+            ldy #Note1C
+            ldx #Note2G
+            jsr twosin
+            lda #$04    ;.
+            ldy #Note1C
+            ldx #Note2E
+            jsr twosin
+            lda #$02
+            ldy #Note1C
+            ldx #Note2C
+            jsr twosin
+            lda #$02
+            ldy #Note1E
+            ldx #Note2G
+            jsr twosin
+            lda #$02    
+            ldy #Note1E
+            ldx #Note2E
+            jsr twosin
+            lda #$02    ;
+            ldy #Note1G
+            ldx #Note2G
+            jsr twosin
+            lda #$02
+            ldy #Note1G
+            ldx #Note2E
+            jsr twosin
+            lda #$01
+            ldy #Note1G
+            ldx #Note2C
+            jsr twosin
+            lda #$01
+            ldy #Note1G
+            ldx #Note2E
+            jsr twosin
+            lda #$01
+            ldy #Note1G
+            ldx #Note2G
+            jsr twosin
+            ; done
             lda #$80
+            ldy #$00
             sta (ZPtrA), y       ; done with segment 1
             ; segment 2 (4000-5FFF)
             ; segment 3 (6000-7FFF)
@@ -184,4 +262,3 @@ SinTable:
             .byte   $39, $3C, $3F, $41, $44, $47, $4A, $4D
             .byte   $4F, $52, $55, $58, $5B, $5E, $61, $64
             .byte   $67, $6A, $6D, $70, $74, $77, $7A, $7D
-
