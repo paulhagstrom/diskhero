@@ -341,11 +341,15 @@ gotdisk:    lda ZMapTemp        ; map (disk) was stored here, includes type
             ora #$20            ; add to score if hero got the disk
             lsr
             jsr addscore        ; add type multiplier to the score
-            lda #$12
-            sta SampleInd       ; play SndHeroGot sound ("hero got disk")
+            sta ZFXPtr
+            lda #$3F            ; play SndHeroGot sound ("hero got disk")
+            sta ZFXPtr + 1
+            sta ZFXPlay
             jmp gotaccount
-gotnot:     lda #$B6    ;36
-            sta SampleInd       ; play SndHrdrGot sound ("hoarder got disk")
+gotnot:     sta ZFXPtr
+            lda #$3E            ; play SndHrdrGot sound ("hoarder got disk")
+            sta ZFXPtr + 1
+            sta ZFXPlay
 gotaccount: pla
             asl
             rol

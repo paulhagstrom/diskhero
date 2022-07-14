@@ -1,4 +1,8 @@
+; DISKHERO
 ; Upload special font characters for the diskhero game
+;
+; called once at the beginning to move the data, not again
+; so it can be in lower memory that gets switched out
 
 BlockCount: .byte $0    ; countdown of 8-character blocks to send
 CurrChar:   .byte $0    ; index to table with current ASCII value
@@ -17,7 +21,13 @@ HiholesH:   .byte   $08, $08, $09, $09, $0A, $0A, $0B, $0B
 ; 8 characters are transmitted at a time, 8 bytes/lines per character, so $40 bytes per block.
 ; assume we are in $1A00 ZP (allowing for extended addressing, though we 8F-disable it)
 
-herofont: 
+herofont:   ldx #$27            ; pull the FontDots and FontCol info into ZP for fast/durable access
+:           lda FontDots, x
+            sta ZFontDots, x
+            lda FontCol, x
+            sta ZFontCol, x
+            dex
+            bpl :-
             lda #$8F                ; stay in s-bank
             sta ZDataHole + XByte
             sta ZAsciiHole + XByte

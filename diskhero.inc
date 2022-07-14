@@ -1,49 +1,36 @@
 ; DISKHERO definitions
-;
 
+; ZP use.  Convention: prefix addresses in ZP with Z so I can identify them
+; in the code for cycle counting and addressing mode options.
 
-; indirect addressing
-; trying to collect my ZP use in here so that I avoid collisions.
-; by convention also trying to prefix ZP addresses with Z so that
-; I know when they might not survive a shift in ZP.
+XByte       = $1601     ; Interp extended address offset (for ZP 1A)
+Zero1A      = $1A00     ; for those times you want to write to ZP without using ZP
 
-XByte       = $1601     ; Interp extended address offset
-ZPtrA       = $20
-ZPtrB       = $22
-ZPtrC       = $24
+; Used in interpreter (1A00) ZP.
 
-ZDiskX      = $26
-ZDiskY      = $28
-ZDiskType   = $2A
-ZHoardX     = $2C   ; hoarder X coodinate
-ZHoardY     = $2E   ; hoarder Y coordinate
-ZHoardXX    = $30   ; hoarder X coordinate of second segment
-ZHoardYY    = $32   ; hoarder Y coordinate of second segment
-ZHoardXV    = $34   ; hoarder X velocity
-ZHoardYV    = $36   ; hoarder Y velocity
-ZHoardSp    = $38   ; hoarder speed (delay ticks between moves)
-ZHoardTick  = $3A   ; hoarder current number of ticks left until movement
-ZHoardAnim  = $3C   ; hoarder current animation frame
-ZFrame      = $3E   ; temporary storage for current animation frame
-ZXXTemp     = $3F   ; temporary storage for second segment x-coordinate
-ZMapTemp    = $1F   ; temporary storage for a map byte being tested for collision
+Zero        = $00   ; steer clear of 00-27, used for buffering display
 
+ZPtrA       = $28
+ZPtrB       = $2A
+ZPtrC       = $2C
 
-ZFontDots   = $80   ; ZP cache for FontDots to speed up drawing
-ZFontCol    = $40   ; ZP cache for FontCol to speed up drawing
-ZBufCount   = $7F   ; count for buffering map data
-ZNumPtr     = $7D   ; pointer for screen target for drawnumber
+; game state variables
+ZDiskX      = $30   ; pointer to disk X coordinates data
+ZDiskY      = $32   ; pointer to disk Y coordinates data
+ZDiskType   = $34   ; pointer to disk type data
+ZHoardX     = $36   ; pointer to hoarder X coodinate
+ZHoardY     = $38   ; pointer to hoarder Y coordinate
+ZHoardXX    = $3A   ; pointer to hoarder X coordinate of second segment
+ZHoardYY    = $3C   ; pointer to hoarder Y coordinate of second segment
+ZHoardXV    = $3E   ; pointer to hoarder X velocity
+ZHoardYV    = $40   ; pointer to hoarder Y velocity
+ZHoardSp    = $42   ; pointer to hoarder speed (delay ticks between moves)
+ZHoardTick  = $44   ; pointer to hoarder current number of ticks left until movement
+ZHoardAnim  = $46   ; pointer to hoarder current animation frame
 
-; these are in screen holes because we're using screen memory for ZP
-ZScrHole    = $78
-ZOtherZP    = $7A
-ZCurrDrawX  = $7B
-ZLineStart  = $7C
-ZCurrMapX   = $7E
-ZMapBuffer  = $F8
-ZPxScratch  = $FF
-Zero        = $00
-Zero1A      = $1A00
+ZMapTemp    = $4D   ; temporary storage for a map byte being tested for collision
+ZXXTemp     = $4E   ; temporary storage for second segment x-coordinate
+ZFrame      = $4F   ; temporary storage for current animation frame
 
 PTopRastA   = $6B
 PTopRastD   = $6C
@@ -56,13 +43,43 @@ TouchedVoid = $71
 MapOffset   = $72
 PInc        = $73
 
-; from gamefont
+; lookup tables
+ZFontDots   = $80   ; ZP cache for FontDots to speed up drawing (80-A7)
+ZFontCol    = $A8   ; ZP cache for FontCol to speed up drawing (A8-D0)
 
-ZDataHole   = $A0
-ZAsciiHole  = $A2
-ZFontPtr    = $A4
-ZCtlTemp    = $A6
+; interrupt handler
+ZIntBank    = $D0   ; place to stash the bank register value
 
+ZSoundPtr   = $DA   ; current sample in background music
+ZFXPtr      = $DB   ; current sample in sound effect
+ZFXPlay     = $DC   ; nonzero if a sound effect is playing
+ZScrRegion  = $DD   ; upcoming region (the one after the one we are in)
+ZScrRegBand = $DE   ; countdown (from ScrRegDur) of 8-pixel hig bands left in the current region.
+ZBackNext   = $DF   ; page number of first sample of next background segment after this one
+ZScrRegMode = $E0   ; copy of ScrRegMode (screen region graphics modes) (D0-D7)
+ZScrRegDur  = $E8   ; copy of ScrRegDur (screen region height in units of 8) (D8-DF)
+ZScrNudge   = $F0   ; copy of ScrNudge (screen region smooth scroll flag) (E0-E7)
+
+; Used when ZP is pointed at a display buffer
+; these are not in conflict with addresses in the 1A00 ZP,
+; generally limited to screen holes: 78-7F, F8-FF
+
+ZScrHole    = $78
+ZOtherZP    = $7A
+ZCurrDrawX  = $7B
+ZLineStart  = $7C
+ZNumPtr     = $7D   ; pointer for screen target for drawnumber
+ZBufCount   = $7F   ; count for buffering map data
+ZCurrMapX   = $7E
+ZMapBuffer  = $F8
+ZPxScratch  = $FF
+
+; from gamefont (conflicts not super important)
+
+ZDataHole   = $F0
+ZAsciiHole  = $F2
+ZFontPtr    = $F4
+ZCtlTemp    = $F6
 
 ; I/O softswitches
 

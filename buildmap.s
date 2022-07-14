@@ -1,13 +1,15 @@
 ; DISKHERO
 ; map construction
+; this places the map data in bank 2, from $2000-5FFF.
+; called once at the beginning to move the data, not again
+; so it can be in lower memory that gets switched out
 
-; build the map.
-; the map is $40 units wide and $100 units tall.  Lives in bank 2, $2000-5FFF.
+; the map is $40 units wide and $100 units tall.
 ; map bytes have shape info in lower 6 bits, color/variant info in higher 2.
 ; the last byte of every map line is unused, the playable lines are only $3F wide.
 ; because it needs to be a multiple of 7.
 
-; 5x5 box patterns for adding to the map.  Each pattern is $19 bytes long.
+; 5x5 box patterns for randomly adding to the map.  Each pattern is $19 bytes long.
 BoxIndex:   .byte 0, 25, 50, 75, 100, 125, 150, 175
 BoxPatt:
             ; box open leftward
@@ -70,10 +72,60 @@ MFColor:    .byte 0
 MFBoxIndex: .byte 0
 MFPlaced:   .byte 0
     
-buildmap:   lda R_ZP
-            sta ZPSave
-            lda #$1A        ; go to 1A00 ZP (should already be there)
-            sta R_ZP
+buildmap:   
+            ; start by initializing memory pointers for location tracking in bank 2
+            ; DiskX = 300, DiskY = 340, DiskType = 380
+            ; HoardX = 400, HoardY = 440, HoardXV = 480,
+            ; HoardYV = 4C0, HoardSp = 500, HoardXX = 540, 
+            ; HoardYY = 580, HoardTick = 5C0,
+            ; HoardAnim = 600
+            lda #$00
+            sta ZDiskX
+            sta ZHoardX
+            sta ZHoardSp
+            sta ZHoardAnim
+            lda #$40
+            sta ZDiskY
+            sta ZHoardY
+            sta ZHoardXX
+            lda #$80
+            sta ZDiskType
+            sta ZHoardXV
+            sta ZHoardYY
+            lda #$C0
+            sta ZHoardYV
+            sta ZHoardTick
+            lda #$03
+            sta ZDiskX + 1
+            sta ZDiskY + 1
+            sta ZDiskType + 1
+            lda #$04
+            sta ZHoardX + 1
+            sta ZHoardY + 1
+            sta ZHoardXV + 1
+            sta ZHoardYV + 1
+            lda #$05
+            sta ZHoardSp + 1
+            sta ZHoardXX + 1
+            sta ZHoardYY + 1
+            sta ZHoardTick + 1
+            lda #$06
+            sta ZHoardAnim + 1
+            lda #$82
+            sta ZDiskX + XByte
+            sta ZDiskY + XByte
+            sta ZDiskType + XByte
+            sta ZHoardX + XByte
+            sta ZHoardY + XByte
+            sta ZHoardXV + XByte
+            sta ZHoardYV + XByte
+            sta ZHoardSp + XByte
+            sta ZHoardXX + XByte
+            sta ZHoardYY + XByte
+            sta ZHoardTick + XByte
+            sta ZHoardAnim + XByte
+            ; now start building the map.
+            ; Step 1: empty it.
             lda #$00
             sta ZPtrA
             lda #$20
@@ -262,9 +314,7 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             dec MFPlaced
             bpl :-
 
-mfdone:     lda ZPSave
-            sta R_ZP
-            rts
+mfdone:     rts
 
 ; find a random spot that is open in the map
 ; returns with y holding the map x coordinate, x holding the map y coordinate,

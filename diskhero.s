@@ -9,10 +9,11 @@
 ; we have from A000 to B800 before SOS arrives (6144 bytes)
 ; I can fudge this a little if needed, by starting with JMP and putting data early,
 ; since the main concern is trying to run code in a bank switched area.
-; 9F00 leaves 6400, 9E00 leaves 6656 bytes, 9D00 leaves 6912
+; 9F00 leaves 6400, 9E00 leaves 6656 bytes, 9D00 leaves 6912, 9C00 leaves 7167,
+; 9B00 leaves 7423, 9A00 leaves 7679
 ; but realistically I should start loading things from disk into other banks.
 
-            .org     $9D00 - 14
+            .org     $9A00 - 14
             
 ; SOS interpreter header
             .byte    "SOS NTRP"
@@ -23,8 +24,8 @@
 CodeStart:  jmp init
 
             .include "buildmap.s"           ; does not switch bank, called early and once
+            .include "gamesound.s"          ; does not switch bank, called early and once
             .include "gamefont.s"           ; does not switch bank, called early and once
-            .include "gamemove.s"           ; does not switch bank
             .include "status-text40.s"      ; does not switch bank
             .include "status-text80.s"      ; does not switch bank
             .include "reg-superhires.s"
@@ -32,7 +33,7 @@ CodeStart:  jmp init
             .include "reg-medres.s"
             .include "map-hires3.s"         ; switches in bank 0 to use stack
             .include "interrupts.s"         ; critical, should be always available
-            .include "gamesound.s"          ; lookups, should be always available
+            .include "gamemove.s"           ; does not switch bank
             .include "lookups.s"            ; lookups, should be always available
 
 IRQSave:    .byte   0, 0 , 0        ; saved state
@@ -41,8 +42,6 @@ BankSave:   .byte   0
 
 ExitFlag:   .byte   0               ; keyboard int makes this nonzero to trigger exit
 KeyCaught:  .byte   0               ; keyboard int pushes a caught key in here
-RedrawMap:  .byte   0               ; keyboard int makes this nonzero to trigger redraw
-RedrawPlay: .byte   0               ; keyboard int makes this nonzero to trigger redraw
 CurrMap:    .byte   0
 VoidL:      .byte   0
 VoidR:      .byte   0
@@ -105,74 +104,14 @@ init:       sei                 ; no interrupts while we are setting up
             ;     -------1 F000.FFFF RAM (1=ROM)
             lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
             sta R_ENVIRON
-            lda #$1A            ; ZP to $1A00 (standard for interpreters, should already be here)
-            sta R_ZP
-            jsr herofont        ; load game font into character RAM
-            ldx #$27            ; pull the FontDots and FontCol info into ZP for faster access
-:           lda FontDots, x
-            sta ZFontDots, x
-            lda FontCol, x
-            sta ZFontCol, x
-            dex
-            bpl :-
+            jsr soundinit       ; move and generate sounds in page 1
+            jsr herofont        ; load game font into character RAM and fill ZFontDats, ZFontCol
             lda #$10            ; start playfield kind of in the middle
             sta HeroX
             lda #$C3            ; Start down near the bottom but at a nudge 0 spot
             sta HeroY
-            ; point memory at location tracking in bank 2 (with map)
-            ; DiskX = 300, DiskY = 340, DiskType = 380
-            ; HoardX = 400, HoardY = 440, HoardXV = 480, HoardYV = 4C0,
-            ; HoardSp = 500, HoardXX = 540, HoardYY = 580, HoardTick = 5C0,
-            ; HoardAnim = 600
-            lda #$00
-            sta ZDiskX
-            sta ZHoardX
-            sta ZHoardSp
-            sta ZHoardAnim
-            lda #$40
-            sta ZDiskY
-            sta ZHoardY
-            sta ZHoardXX
-            lda #$80
-            sta ZDiskType
-            sta ZHoardXV
-            sta ZHoardYY
-            lda #$C0
-            sta ZHoardYV
-            sta ZHoardTick
-            lda #$03
-            sta ZDiskX + 1
-            sta ZDiskY + 1
-            sta ZDiskType + 1
-            lda #$04
-            sta ZHoardX + 1
-            sta ZHoardY + 1
-            sta ZHoardXV + 1
-            sta ZHoardYV + 1
-            lda #$05
-            sta ZHoardSp + 1
-            sta ZHoardXX + 1
-            sta ZHoardYY + 1
-            sta ZHoardTick + 1
-            lda #$06
-            sta ZHoardAnim + 1
-            lda #$82
-            sta ZDiskX + XByte
-            sta ZDiskY + XByte
-            sta ZDiskType + XByte
-            sta ZHoardX + XByte
-            sta ZHoardY + XByte
-            sta ZHoardXV + XByte
-            sta ZHoardYV + XByte
-            sta ZHoardSp + XByte
-            sta ZHoardXX + XByte
-            sta ZHoardYY + XByte
-            sta ZHoardTick + XByte
-            sta ZHoardAnim + XByte
-            jsr buildmap        ; set up map
+            jsr buildmap        ; set up map data (in bank 2) (includes dropping in the hero)
             jsr setupenv        ; arm interrupts
-            lda #$00
-            sta ScrRegion
             lda #$00            ; start at nudge 0
             sta NudgePos
             sta NudgeNeg
@@ -185,9 +124,6 @@ init:       sei                 ; no interrupts while we are setting up
             sta HeroDir
             lda #MoveDelay       ; set how many VBLs go by before movement advances
             sta VBLTick
-            lda #$01
-            sta RedrawMap       ; start by assuming we need to redraw whole thing
-            sta RedrawPlay      ; start by assuming we need to redraw whole thing
             bit IO_KEYCLEAR
             jsr initscreen      ; draw the initial screen
             cli                 ; all set up now, interrupt away
@@ -195,6 +131,7 @@ eventloop:  lda ExitFlag
             bne alldone
             lda KeyCaught
             beq :+
+            sta $0400           ; 4 DEBUG - put it in the corner so I can see it
             jsr handlekey
 :            
             inc $427            ; DEBUG - constantly churn screen memory to detect hang
@@ -340,8 +277,6 @@ seedRandom:
 
 ; initialize graphics regions and draw static background
 initscreen:
-            lda R_ZP
-            sta ZPSave          ; save current ZP
             lda R_BANK
             sta BankSave        ; save current bank
             lda #$00            ; swap in bank zero,
@@ -359,11 +294,6 @@ initscreen:
             jsr initmap         ; mode 7 a3 hires map regions
             jsr initplay        ; text lines 08-11: playfield (draw frame)
             jsr drawplay        ; draw actual playfield
-            lda #$00            ; reset the update flags
-            sta RedrawMap
-            sta RedrawPlay
-            lda ZPSave          ; restore ZP and bank
-            sta R_ZP
             lda BankSave
             sta R_BANK
             rts
@@ -400,23 +330,25 @@ snyxx:      bit SS_YXX
 ; 6 = super hires (560x192, b/w)            gr      mix     hires
 ; 7 = 140x192 A Hires (140x192, color)      text    mix     hires
 
-setdisplay: ror
-            bcs sdtext
-            bit D_GRAPHICS
-            ror
-            bcs sdmix
-sdnomix:    bit D_NOMIX
-            ror
-            bcs sdhires
-sdlores:    bit D_LORES
-            rts
-sdtext:     bit D_TEXT
-            ror
-            bcc sdnomix     
-sdmix:      bit D_MIX
-            ror
-            bcc sdlores
-sdhires:    bit D_HIRES
-            rts
+; 32 on first path, 31 on second, 33 on a third.
+; should be about 32 on average.
+setdisplay: ror             ;2
+            bcs sdtext      ;2/3
+            bit D_GRAPHICS  ;4
+            ror             ;2
+            bcs sdmix       ;2/3
+sdnomix:    bit D_NOMIX     ;4
+            ror             ;2
+            bcs sdhires     ;2/3
+sdlores:    bit D_LORES     ;4
+            rts             ;6
+sdtext:     bit D_TEXT      ;4
+            ror             ;2 
+            bcc sdnomix     ;2/3
+sdmix:      bit D_MIX       ;4
+            ror             ;2
+            bcc sdlores     ;2/3
+sdhires:    bit D_HIRES     ;4
+            rts             ;6
 
 CodeEnd     = *
