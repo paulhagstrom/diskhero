@@ -17,6 +17,7 @@ IntZStash:  .byte 0
 NudgePos:   .byte   0   ; smooth scroll parameter A (used when ScrNudge for a region is positive)
 NudgeNeg:   .byte   0   ; smooth scroll parameter B (used when ScrNudge for a region is negative)
 VBLTick:    .byte   0   ; ticked down for each VBL, can use to delay things for several refreshes
+ClockTick:  .byte   0   ; ticked down for each clock-during-VBL, for playing sound during VBL
 
 ; see diskhero.inc for ZP definitions (generally trying to stay between D0-FF)
 
@@ -33,23 +34,6 @@ ScrRegDur:  .byte   $02, $02, $04, $09, $04, $01, $02, $00      ; groups of 8
             ; Key: 21 + 3 + 8 + 15 + 22 + intkey = 69 + intkey
             ; HBL: 21 + 3 + 9 + 9 + inttimer + 22 = 64 + inttimer
 
-; keyboard interrupt handler - just pass it on to the event loop
-; 54 cycles in here, 47 to get here - 101 total
-intkey:     lda IO_KEY          ; 4 load keyboard register
-            bpl keyreturn       ; 2/3 no key pressed, return (could that even happen? modifier only?)
-            sta KeyCaught       ; 4 tell event loop to process this
-keyreturn:  bit IO_KEYCLEAR     ; 4 clear keyboard register
-            lda #$01            ; 2 clear the keyboard (CA2) interrupt
-            sta RE_INTFLAG      ; 4
-            pla                 ; 4 [34 cycles to end, restoring environment]
-            tax                 ; 2
-            pla                 ; 4
-            tay                 ; 2
-            lda IntZStash       ; 4
-            sta R_ZP            ; 4
-            lda IntAStash       ; 4
-            rti                 ; 6
-
 ; VBL interrupt handler
 ; should correspond to a bump to 2MHz for the duration of the blank
 ; at 1MHz a full paint should take 65*192 cycles (12480)
@@ -64,8 +48,22 @@ keyreturn:  bit IO_KEYCLEAR     ; 4 clear keyboard register
 ; or, since I have to oscillate, a 982.5 Hz sound.  In the neighborhood of A440.
 ; but the timer during VBL should be firing at about 1965 Hz, or lie .51 milliseconds.
 ; can I set a RTC-based interrupt during VBL for that?
-; 
-; 83 cycles (reliably) in here, 55 to get here, 138 total.
+; I think that would involve writing something to RE_T1CL and RE_T1CH.
+; I have to compute how long it should tick for but I think probably 520
+; (number of cycles in 8 lines).  Want VBL to trigger turn it on.
+; Then have it fire 8 times and turn itself off.
+; So maybe write $08 to LowRE_T1CL and $02 to RE_T1CH.
+; lda #%11100000 <- enable timers 1 (clock) and 2 (HBL)
+; sta RE_AUXCTL
+; lda #%10000010        ; enable CA1 (RTC) <- are already enabled things left enabled?
+; sta RE_INTENAB
+; lda #$02
+; sta RE_INTFLAG
+; may be all I need to do.  Should help sound.
+; maybe should debug drawing code.
+; and add "sound off" key :D
+
+; 79 cycles (reliably) in here, 55 to get here, 134 total.
 intvbl:     lda #$06            ; 2 reset the HBL counter for top region
             sta RE_T2CL         ; 4
             lda #$0             ; 2
@@ -81,7 +79,16 @@ intvbl:     lda #$06            ; 2 reset the HBL counter for top region
             dec VBLTick         ; 4 bump VBL countdown
             lda #$10            ; 2 clear the VBL (CB1) interrupt
             sta RE_INTFLAG      ; 4 [49 up to here]
-            pla                 ; 4 [34 cycles to end, restoring environment]
+            lda #$08            ; fire the clock interrupt 8 times during VBL
+            sta ClockTick       ;
+            sta RE_T1CL         ;
+            lda #%10000010      ; enable CA1 (RTC)
+            sta RE_INTENAB      ;
+            lda #$02            ;
+            sta RE_T2CL         ; start the clock for $208 cycles
+            ; So maybe write $08 to LowRE_T1CL and $02 to RE_T1CH.
+            lda #$08
+            pla                 ; 4 [30 cycles to end, restoring environment]
             tax                 ; 2
             pla                 ; 4
             tay                 ; 2
@@ -89,6 +96,16 @@ intvbl:     lda #$06            ; 2 reset the HBL counter for top region
             sta R_ZP            ; 4
             lda IntAStash       ; 4
             rti                 ; 6
+
+; timer1 (clock during VBL) interrupt handler
+
+intclock:   sec                 ; 2 - bail out after sound
+            lda #$02            ; 2 clear the timer1 interrupt
+            sta RE_INTFLAG      ; 4
+            dec ClockTick       ; 4 countdown number of interrupts we are doing
+            bpl inttimerb       ; 2/3 go do the sound
+            sta RE_INTENAB      ; disable clock interrupt (we're done)
+            bne intreturn       ; and out
 
 ; keyboard and VBL handlers are above here just to ensure they can be reached by
 ; branches
@@ -116,6 +133,9 @@ inthandle:  sta IntAStash       ; 4
             and #$10            ; 2 was it VBL?
             bne intvbl          ; 2/3 if yes, go handle it [after 39 here]
                                 ; vbl handler is another 58, so 87 cycles total
+            lda RE_INTFLAG      ; 4
+            and #$02            ; 2 was it the clock?
+            bne intclock        ; 2/3 if yes, go handle it [after 47 here]
 intreturn:  pla                 ; 4 [34 cycles to end, restoring environment]
             tax                 ; 2
             pla                 ; 4
@@ -124,6 +144,23 @@ intreturn:  pla                 ; 4 [34 cycles to end, restoring environment]
             sta R_ZP            ; 4
             lda IntAStash       ; 4
             rti                 ; 6 [?? if no interrupt recognized]
+
+; keyboard interrupt handler - just pass it on to the event loop
+; 54 cycles in here, 47 to get here - 101 total
+intkey:     lda IO_KEY          ; 4 load keyboard register
+            bpl keyreturn       ; 2/3 no key pressed, return (could that even happen? modifier only?)
+            sta KeyCaught       ; 4 tell event loop to process this
+keyreturn:  bit IO_KEYCLEAR     ; 4 clear keyboard register
+            lda #$01            ; 2 clear the keyboard (CA2) interrupt
+            sta RE_INTFLAG      ; 4
+            pla                 ; 4 [34 cycles to end, restoring environment]
+            tax                 ; 2
+            pla                 ; 4
+            tay                 ; 2
+            lda IntZStash       ; 4
+            sta R_ZP            ; 4
+            lda IntAStash       ; 4
+            rti                 ; 6
 
 ; timer2 (HBL) interrupt handler
 ; sets the display mode and smooth scroll offset, then timer for next mode switch point
@@ -164,8 +201,11 @@ intreturn:  pla                 ; 4 [34 cycles to end, restoring environment]
 ; takes 39 cycles to get in here, 34 cycles at the end to get out.
 ; so just getting in and out and doing nothing else misses one HBL (minimum 73, 8 cycles after 65)
 ;
-inttimer:   ldy #$00            ; 2
-            lda ZFXPlay         ; 3 [18] see if a sound effect is playing
+inttimer:   clc                 ; do screen regions after sound
+inttimerb:  ldy #$00            ; 2
+            lda ZPlaySFX        ; 3 see if sfx should be played
+            beq doback          ; 2/3 if no sound effects should be played, down to background
+            adc ZFXPlay         ; 3 [18] see if a sound effect is playing
             beq doback          ; 2/3 if no sound effect is playing, down to background
             lda (ZFXPtr), y     ; 5* load next sfx sample
             bpl playfx          ; 2/3 if we have not hit the end of the sample go play it
@@ -179,13 +219,16 @@ playfx:     sta R_TONEHBL       ; 4 send out the sfx sample
 backdone:   lda ZBackNext       ; 4 move to next background sound segment
             sta ZSoundPtr + 1   ; 3 put sample start address into the pointer
             sty ZSoundPtr       ; 3
-doback:     lda (ZSoundPtr), y  ; 5* load next background sample
+doback:     ldx ZPlaySound      ; 3
+            beq backnext        ; 2/3 if we not playing background sound skip (but still advance)
+            lda (ZSoundPtr), y  ; 5* load next background sample
             bmi backdone        ; 2/3 if we hit the end of the sample, move to next one
             sta R_TONEHBL       ; 4
 backnext:   inc ZSoundPtr       ; 5 move to the next background sound sample
             bne doregion        ; 2/3
             inc ZSoundPtr + 1   ; 5
-doregion:   ldy #$07            ; 2 HBLs we expect before next 8th line if just DAC
+doregion:   bcs timerout        ; 2/3 if this was just a clock timer for DAC we are out
+            ldy #$07            ; 2 HBLs we expect before next 8th line if just DAC
             dec ZScrRegBand     ; 5 bump countdown of bands in this region
             bne justdac         ; 2/3 if the region is still being drawn, skip ahead to timer reset
             ldx ZScrRegion      ; 3 put upcoming region (that has now arrived) into X
@@ -242,7 +285,7 @@ justdac:    sty RE_T2CL         ; 4
             sta RE_T2CH         ; 4
             lda #$20            ; 2 clear the HBL interrupt
             sta RE_INTFLAG      ; 4
-            pla                 ; 4 [34 cycles to end, restoring environment]
+timerout:   pla                 ; 4 [34 cycles to end, restoring environment]
             tax                 ; 2
             pla                 ; 4
             tay                 ; 2
@@ -278,6 +321,8 @@ setupenv:   ; save IRQ vector and then install ours
             bpl :-
             lda #$01
             sta ZScrRegion
+            sta ZPlaySFX        ; start by assuming we will play sound effects
+            sta ZPlaySound      ; start by assuming we will play background sound
             lda ZScrRegDur
             sta ZScrRegBand
             lda #$00
@@ -415,7 +460,9 @@ setupenv:   ; save IRQ vector and then install ours
             ; Count: load number to count into T2, dec on pulses, interrupt at zero, counting continues
             ; Is PB6 by any chance HBL? Seems likely.
             ; E-VIA: enable timer 2, one-shot.  HBL.
-            lda #%00100000
+            ; was this
+            ;lda #%00100000
+            lda #%11100000 ; enable timer1 and timer2
             sta RE_AUXCTL
             
             ; E-VIA - CA2 is keyboard, CA1 is clock; CB1, CB2 are VBL

@@ -49,7 +49,8 @@ ZFontCol    = $A8   ; ZP cache for FontCol to speed up drawing (A8-D0)
 
 ; interrupt handler
 ZIntBank    = $D0   ; place to stash the bank register value
-
+ZPlaySound  = $D1   ; set to zero to silence music
+ZPlaySFX    = $D2   ; set to zero to silence both sfx and music
 ZSoundPtr   = $D8   ; current sample in background music
 ZFXPtr      = $DA   ; current sample in sound effect
 ZFXPlay     = $DC   ; nonzero if a sound effect is playing
@@ -114,8 +115,10 @@ F_XFEROFF   = $C0DA     ; turn off font transfer
 ; VIA registers
 
 R_TONEHBL   = $FFE0     ; tone (bits 0-5), I/O count (6), slot nmi (7)
-RE_T2CL     = $FFE8     ; ffdx timer2 count low byte
-RE_T2CH     = $FFE9     ; ffdx timer2 count high byte
+RE_T1CL     = $FFE6     ; ffex timer1 count low byte
+RE_T1CH     = $FFE7     ; ffex timer1 count high byte
+RE_T2CL     = $FFE8     ; ffex timer2 count low byte
+RE_T2CH     = $FFE9     ; ffex timer2 count high byte
 RD_AUXCTL   = $FFDB     ; ffdx auxiliary control register
 RE_AUXCTL   = $FFEB     ; ffex auxiliary control register
 RD_PERCTL   = $FFDC     ; ffdx peripheral control register

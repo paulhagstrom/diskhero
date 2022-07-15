@@ -221,6 +221,18 @@ handlekey:
             sta VelocityX
             sta VelocityY
             jmp keydone
+:           cmp #$D3            ; S (soundtrack)
+            bne :+
+            lda ZPlaySound
+            eor #$01
+            sta ZPlaySound
+            jmp keydone
+:           cmp #$D1            ; Q (quiet)
+            bne :+
+            lda ZPlaySFX
+            eor #$01
+            sta ZPlaySFX
+            jmp keydone
 :           cmp #$C5            ; E (exit)
             bne keydone            
             inc ExitFlag        ; tell event loop we are exiting
