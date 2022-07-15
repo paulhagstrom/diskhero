@@ -5,10 +5,6 @@
 ; display map lines 20-26 (where the top of the upper playfield is 0)
 ;           (or, in other words, up 3 and down 3 from the center)
 
-BorderR:    .byte 0
-BorderV:    .byte 0
-BorderRYet: .byte 0
-
 BorderChar  = $00       ; C_SPACE
 BorderColA  = $AF       ; grey2 background
 BorderColB  = $5F       ; grey1 background
@@ -77,115 +73,123 @@ ThumbXlate: .byte   $80, $80
             .byte   $32, $34, $36, $38
             .byte   $39, $3B, $3D, $3F
             .byte   $80, $80
-ThumbTogg:  .byte   $00
-ThumbNext:  .byte   $00
 PlayLeft:   .byte   $00
 PlayRight:  .byte   $00
+PlStack:    .byte   $00     ; saved stack pointer
+PlEnv:      .byte   $00     ; saved environment register
+BorderR:    .byte   0
+BorderV:    .byte   0
+BorderRYet: .byte   0
 
 drawplay:   
             ; the middle lores field starts at map $42 and draws to $46 (plus NudgePos)
             ; in order to keep hero in the middle, five columns are used by a frame
             ; based on hero position, 5 total, high nibble of HeroX of those are on the right
             ; (i.e. if HeroX is 32, there are 3 on the right, 2 on the left)
-            lda #$08
+            lda R_ENVIRON       ; save evironment register
+            sta PlEnv
+            tsx
+            stx PlStack
+            and #%11111011      ; set stack bit to zero to get alt stack
+            sta R_ENVIRON
+            lda #$08            ; we are at the top of the playfield box (in the top border)
             sta CurScrLine
-            ; compute border columns (0-based count of columns on the right is high nibble of HeroX)
-            lda HeroX
+            lda HeroX           ; take high nibble of HeroX - that is BorderR
             lsr
             lsr
             lsr
             lsr
-            sta BorderR
+            sta BorderR         ; BorderR is how many columns (0-based) of border are on the right
             ; compute thumb boundaries
-            lda HeroX
+            lda HeroX           ; HeroX + $11 is the last drawn column inside the border
             clc
             adc #$11
-            sta ThumbTogg
-            sta PlayRight
-            lda HeroX
+            sta PlayRight       ; PlayRight is the map column of the right edge of visible playfield
+            lda HeroX           ; HeroX - $11 is the first drawn column inside the border
             sec
             sbc #$11            ; could derive left void from this but might not be faster
-            bpl :+
-            lda #$00
-:           sta PlayLeft
-            sta ThumbNext
+            bpl :+              ; if that runs off the left edge of the map,
+            lda #$00            ; record column as zero
+:           sta PlayLeft        ; PlayLeft is the map column of the left edge of visible playfield (or 0)
             ; compute the voids (areas in the display but off the edges of the map)
-            lda #$11
-            sec
-            sbc HeroX
-            bpl :+              ; there is a left void
-            lda #$00
+            eor #$FF
+            clc
+            adc #$01            ; invert the left map column (that is, compute $11 - HeroX)
+            bpl :+              ; if it is positive, it is the left void
+            lda #$00            ; otherwise there is no left void
 :           sta VoidL
-            lda HeroX
-            sec
+            lda HeroX           ; if HeroX - $23 fails to go off the map, it's close enough to the
+            sec                 ; right for there to be a right void
             sbc #$2E
             bpl :+              ; there is a right void
             lda #$00
 :           sta VoidR
-            lda HeroY           ; check for top void, only care if HeroY is in the top half of map
-            bmi novoidu         ; branch if HeroY is in the bottom half of the map
-            lda #$03
+            lda HeroY           ; check for top void (only a chance if HeroY is in the top half of map)
+            bmi novoidu         ; branch away (no upper void) if HeroY is in the bottom half of the map
+            lda #$03            ; if 3 - HeroY is positive, there is a top void
             sec
             sbc HeroY
             bpl :+              ; there is a top void
 novoidu:    lda #$00
 :           sta VoidU
-dppostvoid: ; start with top and bottom borders, just colors, chars will already be there
+dppostvoid: ; start drawing with top and bottom borders (for thumb). Just colors, chars will already be there
             ldy CurScrLine
-borderh:    lda YLoresL, y
-            clc
-            adc #$27
+borderh:    lda YLoresHB, y     ; $800 base (color space)
+            eor #$01            ; where the ZP needs to be for the stack to be where we want it
+            sta R_ZP            ; point stack at color page
+            lda YLoresS, y      ; low byte of the address of the end of this line
             tax
-            lda YLoresHB, y     ; $800 base (color space)
-            sta R_ZP            ; go to color memory
-            ldy #$27            ; draw $28 colors
-            lda #$57            ; grey1 background
-borderhb:   sta Zero, x
-            dex
+            txs                 ; point stack pointer at end of the line
+            lda PlayRight       ; move thumb parms into screen holes to speed up access inside loop
+            sta ZThumbTogg
+            lda PlayLeft
+            sta ZThumbNext
+            ldy #$27            ; paint 28 characters
+            lda #$57            ; with grey1 background
+borderhb:   pha                 ; push into the color space
             dey
-            bmi borderhz
-            pha
+            bmi borderhz        ; branch away if drawing is done
+            tax                 ; stash color in x
             lda ThumbXlate, y   ; what map column are we entering?
             bmi borderfix       ; this column has a fixed color
-            cmp ThumbTogg       ; did we just pass the toggle?
-            bcc borderhtog      ; yes
-            pla
-            bne borderhb        ; branch always
-borderfix:  pla                 ; throw away the color
-            lda #$57            ; brighter gray
-            bne borderhb
-borderhtog: lda ThumbNext       ; arm new left side toggle
-            sta ThumbTogg
+            cmp ZThumbTogg      ; did we just pass the toggle?
+            bcc borderhtog      ; yes, go change the color
+            txa                 ; retrieve color from x
+            jmp borderhb        ; and add it to the line
+borderfix:  lda #$57            ; switch color to brighter gray
+            jmp borderhb        ; and add it to the line
+borderhtog: lda ZThumbNext      ; arm new left side toggle
+            sta ZThumbTogg
             lda #$00            ; disable left side toggle
-            sta ThumbNext
-            pla                 ; and swap colors
-            eor #$A7
-            bne borderhb        ; branch always
+            sta ZThumbNext
+            txa                 ; retrieve color from x
+            eor #$A7            ; and swap color
+            jmp borderhb        ; then add it to the line
 borderhz:   lda CurScrLine
             cmp #$09            ; if we have done both top and bottom
             beq innerplay       ; move on to the middle
-            lda PlayRight
-            sta ThumbTogg
-            lda PlayLeft
-            sta ThumbNext
-            lda #$50
+            lda #$50            ; reset the color
             inc CurScrLine      ; set exit condition for next time (borderh does not use the value)
             ldy #$10            ; do the bottom line (Y holds the current screen line for borderh)
-            bne borderh         ; branch always
-innerplay:  lda HeroY           ; find map pointer for top non-void line
+            jmp borderh
+innerplay:  lda #$1A            ; return ZP and stack to 1A/true
+            sta R_ZP
+            lda PlEnv
+            sta R_ENVIRON
+            ldx PlStack
+            txs
+            lda HeroY           ; find map pointer for top non-void line
             clc
             adc VoidU           ; factor out upper void
             sec
             sbc #$03
             jsr setmapptr
 burnvoidu:  dec VoidU           ; burn through upper void lines first if there are any
-            bmi pfmapstart
-            jsr playvoid
+            bmi pfline          ; branch away if done with upper void
+            jsr playvoid        ; draw the void at CurScrLine
             inc CurScrLine
-            bne burnvoidu       ; branch always
-pfmapstart: lda #$1A
-            sta R_ZP            ; back to 1A00 ZP
-pfline:     jsr loresline            
+            jmp burnvoidu
+pfline:     jsr loresline       ; draw the current MapPtr map line at CurScrLine
             lda MapPtrL         ; advance map pointer
             clc
             adc #$40
@@ -194,7 +198,7 @@ pfline:     jsr loresline
             inc MapPtrH
             lda MapPtrH
             cmp #$60
-            beq burnvoidd       ; just ticked into a lower void
+            beq burnvoidd       ; just ticked into a lower void (MapPtr went off the map)
             ; advance screen line
 :           inc CurScrLine
             lda CurScrLine
@@ -204,8 +208,8 @@ pfdone:     rts
 burnvoidd:  inc CurScrLine
             lda CurScrLine
             cmp #$10
-            beq pfdone
-            jsr playvoid
+            beq pfdone          ; branch away if we have drawn all lines above lower border
+            jsr playvoid        ; draw the void at CurScrLine
             jmp burnvoidd
 
 ; draw a void line in the playfield
@@ -215,9 +219,7 @@ playvoid:   lda #$04            ; draw five border columns total
             lda BorderR         ; save a local copy of this that we can decrement
             sta BorderRYet
             ldy CurScrLine
-            lda YLoresL, y
-            clc
-            adc #$27            ; compute index of right edge of line
+            lda YLoresS, y      ; address of the right edge of the line
             pha                 ; save for second pass as well
             tax
             lda YLoresHB, y     ; $800 base (color space)

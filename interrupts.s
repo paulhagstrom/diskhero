@@ -81,13 +81,11 @@ intvbl:     lda #$06            ; 2 reset the HBL counter for top region
             sta RE_INTFLAG      ; 4 [49 up to here]
             lda #$08            ; fire the clock interrupt 8 times during VBL
             sta ClockTick       ;
-            sta RE_T1CL         ;
+            sta RE_T1CL         ; interval is $208, this is the $08 part.
             lda #%10000010      ; enable CA1 (RTC)
             sta RE_INTENAB      ;
             lda #$02            ;
-            sta RE_T2CL         ; start the clock for $208 cycles
-            ; So maybe write $08 to LowRE_T1CL and $02 to RE_T1CH.
-            lda #$08
+            sta RE_T1CH         ; start the clock for $208 cycles
             pla                 ; 4 [30 cycles to end, restoring environment]
             tax                 ; 2
             pla                 ; 4
@@ -104,7 +102,7 @@ intclock:   sec                 ; 2 - bail out after sound
             sta RE_INTFLAG      ; 4
             dec ClockTick       ; 4 countdown number of interrupts we are doing
             bpl inttimerb       ; 2/3 go do the sound
-            sta RE_INTENAB      ; disable clock interrupt (we're done)
+            sta RE_INTENAB      ; disable clock interrupt (we're done) by writing $02 here
             bne intreturn       ; and out
 
 ; keyboard and VBL handlers are above here just to ensure they can be reached by

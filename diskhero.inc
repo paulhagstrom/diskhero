@@ -65,6 +65,10 @@ ZScrNudge   = $F0   ; copy of ScrNudge (screen region smooth scroll flag) (E0-E7
 ; these are not in conflict with addresses in the 1A00 ZP,
 ; generally limited to screen holes: 78-7F, F8-FF
 
+; playfield
+ZThumbTogg  = $78
+ZThumbNext  = $79
+
 ZScrHole    = $78
 ZOtherZP    = $7A
 ZCurrDrawX  = $7B

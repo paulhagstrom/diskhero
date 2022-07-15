@@ -4,10 +4,10 @@
 ; prints game progress messages on the bottom line of the display
 ; like "Yet another copy of Jeopardy!" or something.
 
-MsgTextA:   .byte "DISKHERO. An Apple /"
-            .byte "// game of software "
-            .byte "preservation. Or som"
-            .byte "ething. As you like."
+MsgTextA:   .byte "S toggles the... uh."
+            .byte ".. music, Q toggles "
+            .byte "the sound effects.  "
+            .byte "Move hero: UIOJKLM,."
 
 TEXTMEVEN   = $6D0              ; text line 21 even characters
 TEXTMODD    = $AD0              ; text line 21 odd characters
