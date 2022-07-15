@@ -1,92 +1,160 @@
 ; Diskhero
 ; Interrupt-related routines
 ;
-; setupenv - set and arm the interrupts
-; interrupt handlers for VBL, HVL, keyboard
-;
-; The SOS manual prescription is for interrupts to use the true ZP
-; But since we're taking over the machine we do not have to honor that
-; We do want to set it to something deterministic, but if we set it to $1A00 (interpreter ZP)
-; then the interpreter can communicate with the interrupt handler more easily, and
-; indirect addressing becomes available in the interrupt handler.
-; So as long as I can avoid running out of ZP space, I will defy convention and use $1A00.
-
-IntAStash:  .byte 0
-IntZStash:  .byte 0
-
-NudgePos:   .byte   0   ; smooth scroll parameter A (used when ScrNudge for a region is positive)
-NudgeNeg:   .byte   0   ; smooth scroll parameter B (used when ScrNudge for a region is negative)
-VBLTick:    .byte   0   ; ticked down for each VBL, can use to delay things for several refreshes
-ClockTick:  .byte   0   ; ticked down for each clock-during-VBL, for playing sound during VBL
+; Against convention, the interrupt handlers will use $1A00 as the ZP for two reasons.
+; One is so the interpreter (also using ZP $1A00) can set parameters used (quickly) by
+; the interrupt handler, and two is so that interrupt handler processing audio has the
+; ability to use extended addressing to grab the next audio sample.
 
 ; see diskhero.inc for ZP definitions (generally trying to stay between D0-FF)
 
-; The following three groups define the screen regions
-; ScrRegMode is the graphics mode of the region as defined by setdisplay
+IntAStash:  .byte   0   ; saved A register from interrupt handler entry
+IntXStash:  .byte   0   ; saved X register from interrupt handler entry
+IntZStash:  .byte   0   ; saved ZP register from interrupt handler entry
+
+; variables used in processing the screen splitting
+ScrRegion:  .byte   0   ; upcoming region (the one after the one we are in)
+ScrRegBand: .byte   0   ; countdown (from ScrRegDur) of 8-pixel-tall bands left in the current region.
+NudgePos:   .byte   0   ; smooth scroll parameter A (used when ScrNudge for a region is positive)
+
+; variables for sound and speed management
+VBLTick:    .byte   0   ; ticked down for each VBL, can use to delay things for several refreshes
+ClockTick:  .byte   0   ; ticked down for each clock-during-VBL, for playing sound (only) during VBL
+
+; Screen regions: (screen splitting definition)
+; ScrRegMode is the graphics mode of the region as defined in the table below
+;   encoded as a multiple of $0C so that it can be used as a branch/jump table.
+; Last mode (only) will use the smooth scroll parameter.
 ; ScrNudge indicates whether smooth scroll is set to inactive (0), A (pos) or B (neg)
-; ScrRegDur is the height of the region in groups of 8-line blocks.  Text rows, essentially.
-; They are copied into ZScrRegMod, ZScrRegDur, ZScrNudge and used there
-ScrRegMode: .byte   $01, $06, $07, $01, $07, $03, $05, $00
-ScrNudge:   .byte   $00, $00, $01, $00, $01, $00, $80, $00
-ScrRegDur:  .byte   $02, $02, $04, $09, $04, $01, $02, $00      ; groups of 8
+; ScrRegDur is the height of the region in groups of 8-line blocks.
+ScrRegMode: .byte   $00, $24, $30, $00, $30, $0C, $24
+TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
+ScrRegDur:  .byte   $02, $02, $04, $09, $04, $01, $02 ; groups of 8 scan lines
+; TwelveBran is a jump table used for setting smooth scroll, 8 multiples of $0C
 
-            ; VBL: 21 + 2 + 15 + 22 + intvbl = 60 + intvbl
-            ; Key: 21 + 3 + 8 + 15 + 22 + intkey = 69 + intkey
-            ; HBL: 21 + 3 + 9 + 9 + inttimer + 22 = 64 + inttimer
+; modes we are using and their index values above.  xC = branch table value
+; 0 xC = 00 - 40 char Apple III color               text    nomix   lores
+; 1 xC = 0C - 80 char b/w                           text    mix     lores
+; 2 xC = 18 - Fg/bg hires (280x192, 16 colors)      text    nomix   hires
+; 3 xC = 24 - super hires (560x192, b/w)            gr      mix     hires
+; 4 xC = 30 - 140x192 A Hires (140x192, color)      text    mix     hires   scroll
 
-; VBL interrupt handler
-; should correspond to a bump to 2MHz for the duration of the blank
-; at 1MHz a full paint should take 65*192 cycles (12480)
-; and then 70 lines' worth during VBL corresponding to 4550 cycles at 1MHz.
-; And if we are really running at 2MHz during VBL, we should have 9100 cycles available.
-; MAME may be overestimating the cycles we have available during non-VBL since it may be
-; running at 2MHz even then.  To stay compatible with real HW, must be conservative with cycles.
-; during paint we have a regular DAC interrupt with HBL (520 cycles, every 8 lines).
-; during VBL, we should try to get the extra 8.75 DAC feeds in.
-; the screen must be painting at 60Hz rather than 30Hz.
-; if I do 32.75 events in a thing going 60Hz, I should be able to make a 1965 Hz sound,
-; or, since I have to oscillate, a 982.5 Hz sound.  In the neighborhood of A440.
-; but the timer during VBL should be firing at about 1965 Hz, or lie .51 milliseconds.
-; can I set a RTC-based interrupt during VBL for that?
-; I think that would involve writing something to RE_T1CL and RE_T1CH.
-; I have to compute how long it should tick for but I think probably 520
-; (number of cycles in 8 lines).  Want VBL to trigger turn it on.
-; Then have it fire 8 times and turn itself off.
-; So maybe write $08 to LowRE_T1CL and $02 to RE_T1CH.
-; lda #%11100000 <- enable timers 1 (clock) and 2 (HBL)
-; sta RE_AUXCTL
-; lda #%10000010        ; enable CA1 (RTC) <- are already enabled things left enabled?
-; sta RE_INTENAB
-; lda #$02
-; sta RE_INTFLAG
-; may be all I need to do.  Should help sound.
-; maybe should debug drawing code.
-; and add "sound off" key :D
+; Getting the HBL timer reset is urgent enough that I will do that even before
+; properly stashing the environment.  To dodge an inaccuracy with MAME (which at
+; present does not downshift to 1MHz during video drawing) I need to get this timer
+; reset within the first 32 cycles ideally (MAME running at double speed, and 65
+; cycles before first HBL would be missed).  Next most crucial thing is switching
+; video modes fast because real hardware is already progressing down the screen.
 
-; 79 cycles (reliably) in here, 55 to get here, 134 total.
-intvbl:     lda #$06            ; 2 reset the HBL counter for top region
+nothbljmp:  jmp nothbl          ; 19 once departing from here.  Jump to rest of interrupt handlers.
+skipregjmp: jmp skipregion      ; 42 once departing from here.  Jump to rest of interrupt handlers.
+
+inthandle:  sta IntAStash       ; 4 save A
+            clc                 ; 2 assume by default that this is not HBL (signal to later code)
+            lda RE_INTFLAG      ; 4 identify the interrupt we got
+            and #$20            ; 2 is it HBL after all?
+            beq nothbljmp       ; 2/3 branch+jump off to the rest of the interrupt handlers
+            sta RE_INTFLAG      ; 4 clear the HBL interrupt
+            lda #$07            ; 2 reset the timer2 flag for 8 HBLs from now
             sta RE_T2CL         ; 4
-            lda #$0             ; 2
-            sta RE_T2CH         ; 4
-            sta D_TEXT          ; 4 assume that the screen starts (after VBL)
-            sta D_NOMIX         ; 4 in mode 1 (Apple III color text)
-            sta D_LORES         ; 4
-            sta D_SCROLLOFF     ; 4 smooth scrolling off is assumed for top region
-            lda #$01            ; 2 
-            sta ZScrRegion      ; 3 reset next region number to 1
-            lda ZScrRegDur      ; 3
-            sta ZScrRegBand     ; 3
-            dec VBLTick         ; 4 bump VBL countdown
-            lda #$10            ; 2 clear the VBL (CB1) interrupt
-            sta RE_INTFLAG      ; 4 [49 up to here]
-            lda #$08            ; fire the clock interrupt 8 times during VBL
-            sta ClockTick       ;
-            sta RE_T1CL         ; interval is $208, this is the $08 part.
-            lda #%10000010      ; enable CA1 (RTC)
-            sta RE_INTENAB      ;
-            lda #$02            ;
-            sta RE_T1CH         ; start the clock for $208 cycles
-            pla                 ; 4 [30 cycles to end, restoring environment]
+            lda #0              ; 2 and...
+            sta RE_T2CH         ; 4 go! [30 to get to this point, made it before any HBLs even on MAME]
+            dec ScrRegBand      ; 6 bump countdown of bands in this region
+            bne skipregjmp      ; 2/3 if the region is still being drawn (need no to switch), skip ahead
+            stx IntXStash       ; 4 stash X because we need to use X for other stuff
+            ldx ScrRegion       ; 4 put upcoming region (that has now arrived) into X
+            lda ScrRegMode, x   ; 4* what is the branch offset for this mode?
+            sta modebranch + 1  ; 4 modify next instruction to go to the right place
+modebranch: bne ismode1         ; 3 [57 to here]
+ismode0:    bit D_TEXT          ;mode 0 - +00 - 40 char A3 text [15 cycles]
+            bit D_NOMIX
+            bit D_LORES
+            jmp isddone
+ismode1:    bit D_TEXT          ;mode 1 - +0C - 80 char bw text? [15 cycles]
+            bit D_MIX
+            bit D_LORES
+            jmp isddone
+ismode2:    bit D_TEXT          ;mode 2 - +18 - medres [15 cycles]
+            bit D_NOMIX
+            bit D_HIRES
+            jmp isddone
+ismode3:    bit D_GRAPHICS      ;mode 3 - +24 - super hires [15 cycles]
+            bit D_MIX
+            bit D_HIRES
+            jmp isddone
+ismode4:    bit D_TEXT          ;mode 4 - +30 - A3 hires (3 cycles fewer to switch to mode 7)
+            bit D_MIX           ; ^4 4
+            bit D_HIRES         ; 4 also will use smooth scroll
+            lda D_SCROLLON      ; 4 turn smooth scroll on (nudge)
+            ldx NudgePos        ; 4 get smooth scroll value
+            lda TwelveBran, x   ; 4* find proper branch value
+            ldx ScrRegion       ; 4 get upcoming region (that has now arrived) back into X
+            sta nudgebran + 1   ; 4 update branch to go to the right place
+nudgebran:  bne nudge1          ; 3 [35 in block to here], then 15 cycles, 12 bytes per block
+nudge0:     bit SS_XXN
+            bit SS_XNX
+            bit SS_NXX
+            jmp postnudge
+nudge1:     bit SS_XXY
+            bit SS_XNX
+            bit SS_NXX
+            jmp postnudge
+nudge2:     bit SS_XXN
+            bit SS_XYX
+            bit SS_NXX
+            jmp postnudge
+nudge3:     bit SS_XXY
+            bit SS_XYX
+            bit SS_NXX
+            jmp postnudge
+nudge4:     bit SS_XXN
+            bit SS_XNX
+            bit SS_YXX
+            jmp postnudge
+nudge5:     bit SS_XXY
+            bit SS_XNX
+            bit SS_YXX
+            jmp postnudge
+nudge6:     bit SS_XXN
+            bit SS_XYX
+            bit SS_YXX
+            jmp postnudge
+nudge7:     bit SS_XXY
+            bit SS_XYX
+            bit SS_YXX
+            jmp postnudge       ; at this point (each block) 50 cycles in mode 4, for 107 total
+isddone:    and D_SCROLLOFF     ; 4 [76 for modes other than 4] turn smooth scroll off
+postnudge:  lda ScrRegDur, x    ; 4* reset the HBL band counter to length of region we just entered
+            sta ScrRegBand      ; 3
+            inc ScrRegion       ; 6 point ScrRegion to the upcoming one
+            ldx IntXStash       ; 4 restore X so it can pushed onto the stack properly when stack arrives
+skipregion: sec                 ; 2 [now 44 if we jumped here] remember that we took this path, to reach rest of handler
+            ; cycle count status update:
+            ;  19 - not HBL, 44 - HBL but mid-region so no switch needed
+            ;  95 - HBL switching to mode other than 4 (65 HBL went by)
+            ; 130 - HBL switching to mode 4 and setting smooth scroll (65 HBL went by, 130 HBL maybe?)
+nothbl:     lda R_ZP            ; 4 ok, now properly stash the environment
+            sta IntZStash       ; 4
+            lda #$1A            ; 2
+            sta R_ZP            ; 4
+            tya                 ; 2
+            pha                 ; 3
+            txa                 ; 2
+            pha                 ; 3
+            cld                 ; 2 [26 to here since update]
+            bcs jmptimer        ; 2/3 if we got here via the HBL timer, go on to do what is left (sound)
+            lda RE_INTFLAG      ; 4 check for other interrupts
+            and #$01            ; 2 was it the keyboard?
+            bne intkey          ; 2/3 if yes, go handle it [after 11+26 + 19 = 56 to here]
+                                ; kbd handler is another 34-40ish, so 64-71ish cycles total
+            lda RE_INTFLAG      ; 4
+            and #$10            ; 2 was it VBL?
+            bne intvbl          ; 2/3 if yes, go handle it [after 19+26 + 19 = 64 to here]
+                                ; vbl handler is another 58, so 87 cycles total
+            lda RE_INTFLAG      ; 4
+            and #$02            ; 2 was it the clock?
+            bne intclock        ; 2/3 if so, go handle it
+intreturn:  pla                 ; 4 [34 cycles to end, restoring environment]
             tax                 ; 2
             pla                 ; 4
             tay                 ; 2
@@ -95,56 +163,8 @@ intvbl:     lda #$06            ; 2 reset the HBL counter for top region
             lda IntAStash       ; 4
             rti                 ; 6
 
-; timer1 (clock during VBL) interrupt handler
-
-intclock:   sec                 ; 2 - bail out after sound
-            lda #$02            ; 2 clear the timer1 interrupt
-            sta RE_INTFLAG      ; 4
-            dec ClockTick       ; 4 countdown number of interrupts we are doing
-            bpl inttimerb       ; 2/3 go do the sound
-            sta RE_INTENAB      ; disable clock interrupt (we're done) by writing $02 here
-            bne intreturn       ; and out
-
-; keyboard and VBL handlers are above here just to ensure they can be reached by
-; branches
-
-; We explicitly set the ZP to 1A here so we can talk to the interpreter.
-
-inthandle:  sta IntAStash       ; 4
-            lda R_ZP            ; 4
-            sta IntZStash       ; 4
-            lda #$1A            ; 2
-            sta R_ZP            ; 4
-            tya                 ; 2
-            pha                 ; 3
-            txa                 ; 2
-            pha                 ; 3
-            cld                 ; 2 [30 to here, stashing environment]
-            lda RE_INTFLAG      ; 4 identify the interrupt we got
-            and #$20            ; 2 was it the timer/HBL (most pressing one)
-            bne inttimer        ; 2/3 if yes, go handle it [after 24 here]
-            lda RE_INTFLAG      ; 4
-            and #$01            ; 2 was it the keyboard?
-            bne intkey          ; 2/3 if yes, go handle it [after 31 here]
-                                ; kbd handler is another 34-40ish, so 64-71ish cycles total
-            lda RE_INTFLAG      ; 4
-            and #$10            ; 2 was it VBL?
-            bne intvbl          ; 2/3 if yes, go handle it [after 39 here]
-                                ; vbl handler is another 58, so 87 cycles total
-            lda RE_INTFLAG      ; 4
-            and #$02            ; 2 was it the clock?
-            bne intclock        ; 2/3 if yes, go handle it [after 47 here]
-intreturn:  pla                 ; 4 [34 cycles to end, restoring environment]
-            tax                 ; 2
-            pla                 ; 4
-            tay                 ; 2
-            lda IntZStash       ; 4
-            sta R_ZP            ; 4
-            lda IntAStash       ; 4
-            rti                 ; 6 [?? if no interrupt recognized]
-
 ; keyboard interrupt handler - just pass it on to the event loop
-; 54 cycles in here, 47 to get here - 101 total
+; 54 cycles in here, 56 to get here - 100 total
 intkey:     lda IO_KEY          ; 4 load keyboard register
             bpl keyreturn       ; 2/3 no key pressed, return (could that even happen? modifier only?)
             sta KeyCaught       ; 4 tell event loop to process this
@@ -160,50 +180,64 @@ keyreturn:  bit IO_KEYCLEAR     ; 4 clear keyboard register
             lda IntAStash       ; 4
             rti                 ; 6
 
-; timer2 (HBL) interrupt handler
-; sets the display mode and smooth scroll offset, then timer for next mode switch point
-; allows for two different smooth scroll offsets, named "NudgePos" and "NudgeNeg"
-; set to go off only every 8 lines
-; timing: each scan line takes 65 1MHz cycles, 40 of which are video, 25 of which are HBL.
-; when this fires, we have 65 cycles before we start missing HBL interrupts
-; it burns 42 just getting here (and needs 22 after), so we will miss one for sure.
-; we will miss two if we take more than 66 cycles to reset the timer and return out.
-; if we are doing just DAC we can make it out in time not to miss the second one.
-; if we are also switching video modes at the end of a band, it can go up to something like 167.
-; so we miss one at 66, and another at 131, and another at 196.
-; HOWEVER: MAME seems to run too fast during non-HBL, so will not miss as many.  May need a MAME switch.
-; i.e. real hw: wait for 7 (no audio, mid-band), 6 (audio, mid-band), or 5 (region switch)
-; MAME: wait for 7 (mid-band) or 6 (region switch)?
-; mid-band no sample: 11 + 23 = 34
-; mid-band sample end: 11 + 22 + 7 + 13 = 53
-; mid-band sample play: 11 + 22 + 6 + 11 = 50
-; end band: 10 + 12 + setdisplay + (10)/(13+setnudge)/(15+setnudge) + 14 + sample-above
-;  or 36 + sample-stuff-minus-1 + setdisplay + 10/13+setnudge/15+setnudge
-;  setdisplay and setnudge each average around 32.
-;  so say 36 + 52 + 32 + 15 + 32 is the most full.  167.  Missed two at 66, another at 131.
-;  in most cases, we are going to miss three HBLs.   Might even want to dawdle on the short path.
-;  we would miss the third at 196, so we can maybe spare another 30ish cycles.
-; tl;dr: when we reset the timer, we tell it to wait for 6 because we missed two.
+; timer1 (clock during VBL) interrupt handler
+intclock:   lda #$02            ; 2 clear the timer1 interrupt
+            sta RE_INTFLAG      ; 4
+            dec ClockTick       ; 4 countdown number of interrupts we are doing
+            bmi tickdone        ; 2/3 if we are done all we expect during VBL, stop the clock interrupts
+jmptimer:   jmp inttimer        ; 3 go do the sound
+tickdone:   sta RE_INTENAB      ; disable clock interrupt (we're done) by writing $02 here
+            jmp intreturn       ; and out
 
-; if I am going to do sound I should try to do it right.
-; so I should use bank 1 for sound data.
-; sound effects will be in the lower pages (0F, 0E, 0D)
-; I have from 0000 to 7FFF.  So, I'll use 8K chunks for three background variants.
-; $2000-a, $4000-b, $6000-c, and then sound effects will be in pages down from $2000 ($1F etc).
-; have a background flag indicating which background is playing, a sequencer for ordering abc that loops
-; maybe try to keep the background ticking when the effects are running.
-; try making samples that are 6-bit 1KHz?
-; got here after 24 cycles in interrupt handler.
-; trust that ZSoundPtr will survive between interrupts and points somewhere readl
-;
-; takes 39 cycles to get in here, 34 cycles at the end to get out.
-; so just getting in and out and doing nothing else misses one HBL (minimum 73, 8 cycles after 65)
-;
-inttimer:   clc                 ; do screen regions after sound
-inttimerb:  ldy #$00            ; 2
-            lda ZPlaySFX        ; 3 see if sfx should be played
-            beq doback          ; 2/3 if no sound effects should be played, down to background
-            adc ZFXPlay         ; 3 [18] see if a sound effect is playing
+; VBL interrupt handler
+; screen timing: 65 1MHz cycles per scan line, 192 lines, should be painting for 12480 cycles.
+; then 70 lines' worth of VBL.  Would be 4550 cycles at 1MHz, but we are running at 2MHz, so ~9000
+; To keep the audio running, we set a clock timer to fire 8 times during VBL, at $208 (520) cycles.
+
+; 98 cycles in here, 64 to get here, 162 total.
+intvbl:     lda #$10            ; 2 clear the VBL (CB1) interrupt
+            sta RE_INTFLAG      ; 4
+            lda #$06            ; 2 reset the HBL counter for top region when it eventually comes
+            sta RE_T2CL         ; 4
+            lda #$0             ; 2
+            sta RE_T2CH         ; 4
+            sta D_TEXT          ; 4 assume that the screen starts (after VBL)
+            sta D_NOMIX         ; 4 in mode 0 (Apple III color text)
+            sta D_LORES         ; 4
+            sta D_SCROLLOFF     ; 4 smooth scrolling off is assumed for top region
+            lda #$01            ; 2
+            sta ScrRegion       ; 4 reset next region number to 1
+            lda ScrRegDur       ; 4 set up the first band counter
+            sta ScrRegBand      ; 4 [40 to here]
+            dec VBLTick         ; 4 bump VBL countdown
+            lda #$08            ; 2 fire the clock interrupt 8 times during VBL
+            sta ClockTick       ; 4
+            sta RE_T1CL         ; 4 interval is $208, this is the $08 part.
+            lda #%10000010      ; 2 enable CA1 (RTC)
+            sta RE_INTENAB      ; 4
+            lda #$02            ; 2
+            sta RE_T1CH         ; 4 [68 to here] start the clock for $208 cycles
+            pla                 ; 4 [30 cycles to end, restoring environment]
+            tax                 ; 2
+            pla                 ; 4
+            tay                 ; 2
+            lda IntZStash       ; 4
+            sta R_ZP            ; 4
+            lda IntAStash       ; 4
+            rti                 ; 6
+
+; timer2 (HBL) interrupt handler
+; the graphics mode switching stuff was all handled in the primary interrupt handler.
+; what is left here is the audio processing (also used by the clock timer during VBL)
+; sound data is in bank 1, and it is set up to constantly play a background, which can
+; be interrupted by sound effects.  Has provisions for multiple background sounds,
+; sequenced using ZBackNext (the high byte of the address in bank 1 where next one starts).
+; unless something changes it, it will just keep cycling back to the one at $2000.
+
+inttimer:   ldy #$00            ; 2
+            lda ZPlaySFX        ; 3 check sfx switch (user controlled)
+            beq doback          ; 2/3 if no sound effects should be played, skip to background
+            lda ZFXPlay         ; 3 see if a sound effect is playing
             beq doback          ; 2/3 if no sound effect is playing, down to background
             lda (ZFXPtr), y     ; 5* load next sfx sample
             bpl playfx          ; 2/3 if we have not hit the end of the sample go play it
@@ -217,72 +251,14 @@ playfx:     sta R_TONEHBL       ; 4 send out the sfx sample
 backdone:   lda ZBackNext       ; 4 move to next background sound segment
             sta ZSoundPtr + 1   ; 3 put sample start address into the pointer
             sty ZSoundPtr       ; 3
-doback:     ldx ZPlaySound      ; 3
-            beq backnext        ; 2/3 if we not playing background sound skip (but still advance)
+doback:     ldx ZPlaySound      ; 3 check sound switch (user controlled)
+            beq backnext        ; 2/3 if background sound should not play, skip play (but still advance)
             lda (ZSoundPtr), y  ; 5* load next background sample
-            bmi backdone        ; 2/3 if we hit the end of the sample, move to next one
+            bmi backdone        ; 2/3 if we hit the end of the sample block, move to next sample block
             sta R_TONEHBL       ; 4
 backnext:   inc ZSoundPtr       ; 5 move to the next background sound sample
-            bne doregion        ; 2/3
+            bne timerout        ; 2/3
             inc ZSoundPtr + 1   ; 5
-doregion:   bcs timerout        ; 2/3 if this was just a clock timer for DAC we are out
-            ldy #$07            ; 2 HBLs we expect before next 8th line if just DAC
-            dec ZScrRegBand     ; 5 bump countdown of bands in this region
-            bne justdac         ; 2/3 if the region is still being drawn, skip ahead to timer reset
-            ldx ZScrRegion      ; 3 put upcoming region (that has now arrived) into X
-            lda ZScrRegMode, x  ; 4 move display to correct mode
-            ror                 ;2 this is just setdisplay (32) but copied in to save 12 cycles
-            bcs isdtext         ;2/3
-            bit D_GRAPHICS      ;4
-            ror                 ;2
-            bcs isdmix          ;2/3
-isdnomix:   bit D_NOMIX         ;4
-            ror                 ;2
-            bcs isdhires        ;2/3
-isdlores:   bit D_LORES         ;4
-            jmp isddone         ;3
-isdtext:    bit D_TEXT          ;4
-            ror                 ;2 
-            bcc isdnomix        ;2/3
-isdmix:     bit D_MIX           ;4
-            ror                 ;2
-            bcc isdlores        ;2/3
-isdhires:   bit D_HIRES         ;4
-isddone:    lda ZScrNudge, x    ; 4 nudge if this region needs nudging
-            beq nonudge         ; 2/3 do no nudging
-            bmi negnudge        ; 2/3 using negative (alt) nudge?
-            lda NudgePos        ; 4 nope, use the positive (regular) nudge value
-            jmp gonudge         ; 3
-nonudge:    and D_SCROLLOFF     ; 4 turn smooth scroll off
-            jmp postnudge       ; 3
-negnudge:   lda NudgeNeg        ; 4 yep, use the negative (alternate) nudge value
-gonudge:    ror                 ; this is just setnudge (32) but copied in to save 12 cycles
-            bcs isnxxy
-            bit SS_XXN
-            ror
-            bcs isnxyx
-isnxnx:     bit SS_XNX
-            ror
-            bcs isnyxx
-isnnxx:     bit SS_NXX
-            jmp isndone
-isnxxy:     bit SS_XXY
-            ror
-            bcc isnxnx     
-isnxyx:     bit SS_XYX
-            ror
-            bcc isnnxx
-isnyxx:     bit SS_YXX
-isndone:    lda D_SCROLLON      ; 4 turn smooth scroll on (nudge)
-postnudge:  lda ZScrRegDur, x   ; 4 reset the HBL counter to length of next region
-            sta ZScrRegBand     ; 3
-            inc ZScrRegion      ; 5 point ScrRegion to the upcoming one
-            ldy #$06            ; 2 wait 8 lines for next interrupt (missed one already)
-justdac:    sty RE_T2CL         ; 4
-            lda #0              ; 2 clear the timer2 flag
-            sta RE_T2CH         ; 4
-            lda #$20            ; 2 clear the HBL interrupt
-            sta RE_INTFLAG      ; 4
 timerout:   pla                 ; 4 [34 cycles to end, restoring environment]
             tax                 ; 2
             pla                 ; 4
@@ -307,22 +283,12 @@ setupenv:   ; save IRQ vector and then install ours
             sta IRQVECT + 1
             lda #>inthandle
             sta IRQVECT + 2
-            ; initialize zero page data that interrupt handlers rely on
-            ldy #$07            ; 8 screen bands
-:           lda ScrRegMode, y
-            sta ZScrRegMode, y
-            lda ScrRegDur, y
-            sta ZScrRegDur, y
-            lda ScrNudge, y
-            sta ZScrNudge, y
-            dey
-            bpl :-
             lda #$01
-            sta ZScrRegion
+            sta ScrRegion
             sta ZPlaySFX        ; start by assuming we will play sound effects
             sta ZPlaySound      ; start by assuming we will play background sound
-            lda ZScrRegDur
-            sta ZScrRegBand
+            lda ScrRegDur
+            sta ScrRegBand
             lda #$00
             sta ZFXPlay
             sta ZSoundPtr

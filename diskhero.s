@@ -10,7 +10,7 @@
 ; I can fudge this a little if needed, by starting with JMP and putting data early,
 ; since the main concern is trying to run code in a bank switched area.
 ; 9F00 leaves 6400, 9E00 leaves 6656 bytes, 9D00 leaves 6912, 9C00 leaves 7167,
-; 9B00 leaves 7423, 9A00 leaves 7679
+; 9B00 leaves 7423, 9A00 leaves 7679, 9900 leaves 7935, 9800 leaves 8191.
 ; but realistically I should start loading things from disk into other banks.
 
             .org     $9A00 - 14
@@ -114,7 +114,6 @@ init:       sei                 ; no interrupts while we are setting up
             jsr setupenv        ; arm interrupts
             lda #$00            ; start at nudge 0
             sta NudgePos
-            sta NudgeNeg
             sta GameLevel
             sta GameScore
             sta GameScore + 1
@@ -139,11 +138,7 @@ eventloop:  lda ExitFlag
             lda VBLTick
             bpl posttick
             jsr domove
-            dec NudgeNeg
-            bpl :+
-            lda #$07
-            sta NudgeNeg
-:           lda #MoveDelay
+            lda #MoveDelay
             sta VBLTick
 posttick:   jmp eventloop
 
@@ -293,12 +288,7 @@ initscreen:
             sta BankSave        ; save current bank
             lda #$00            ; swap in bank zero,
             sta R_BANK          ; where (hires) graphics memory lives
-            lda #$01            ; Apple III color text
-            jsr setdisplay
             bit D_PAGEONE
-            bit D_SCROLLOFF
-            lda #$00
-            jsr setnudge
             jsr initstatus      ; text lines 00-01: score/status
             jsr initmsg         ; text line 21: message
             jsr initshgr        ; mode 6 super hires line 10-1F
@@ -309,58 +299,5 @@ initscreen:
             lda BankSave
             sta R_BANK
             rts
-
-; Set smooth scroll offset to the number (0-7) in A
-; implicitly performs a mod 8 (higher bits don't matter)
-
-setnudge:   ror
-            bcs snxxy
-            bit SS_XXN
-            ror
-            bcs snxyx
-snxnx:      bit SS_XNX
-            ror
-            bcs snyxx
-snnxx:      bit SS_NXX
-            rts
-snxxy:      bit SS_XXY
-            ror
-            bcc snxnx     
-snxyx:      bit SS_XYX
-            ror
-            bcc snnxx
-snyxx:      bit SS_YXX
-            rts
-
-; set display to number in A
-; 0 = 40 char Apple II b/w                  gr      nomix   lores
-; 1 = 40 char Apple III color               text    nomix   lores
-; 2 = 80 char b/w                           gr      mix     lores
-; 3 = 80 char b/w                           text    mix     lores
-; 4 = Apple II hires (280x192 b/w)          gr      nomix   hires
-; 5 = Fg/bg hires (280x192, 16 colors)      text    nomix   hires
-; 6 = super hires (560x192, b/w)            gr      mix     hires
-; 7 = 140x192 A Hires (140x192, color)      text    mix     hires
-
-; 32 on first path, 31 on second, 33 on a third.
-; should be about 32 on average.
-setdisplay: ror             ;2
-            bcs sdtext      ;2/3
-            bit D_GRAPHICS  ;4
-            ror             ;2
-            bcs sdmix       ;2/3
-sdnomix:    bit D_NOMIX     ;4
-            ror             ;2
-            bcs sdhires     ;2/3
-sdlores:    bit D_LORES     ;4
-            rts             ;6
-sdtext:     bit D_TEXT      ;4
-            ror             ;2 
-            bcc sdnomix     ;2/3
-sdmix:      bit D_MIX       ;4
-            ror             ;2
-            bcc sdlores     ;2/3
-sdhires:    bit D_HIRES     ;4
-            rts             ;6
 
 CodeEnd     = *

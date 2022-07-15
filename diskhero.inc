@@ -58,12 +58,8 @@ ZPlaySFX    = $D2   ; set to zero to silence both sfx and music
 ZSoundPtr   = $D8   ; current sample in background music
 ZFXPtr      = $DA   ; current sample in sound effect
 ZFXPlay     = $DC   ; nonzero if a sound effect is playing
-ZScrRegion  = $DD   ; upcoming region (the one after the one we are in)
-ZScrRegBand = $DE   ; countdown (from ScrRegDur) of 8-pixel hig bands left in the current region.
+
 ZBackNext   = $DF   ; page number of first sample of next background segment after this one
-ZScrRegMode = $E0   ; copy of ScrRegMode (screen region graphics modes) (D0-D7)
-ZScrRegDur  = $E8   ; copy of ScrRegDur (screen region height in units of 8) (D8-DF)
-ZScrNudge   = $F0   ; copy of ScrNudge (screen region smooth scroll flag) (E0-E7)
 
 ; Used when ZP is pointed at a display buffer
 ; these are not in conflict with addresses in the 1A00 ZP,
