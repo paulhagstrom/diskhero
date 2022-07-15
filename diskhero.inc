@@ -32,11 +32,15 @@ ZMapTemp    = $4D   ; temporary storage for a map byte being tested for collisio
 ZXXTemp     = $4E   ; temporary storage for second segment x-coordinate
 ZFrame      = $4F   ; temporary storage for current animation frame
 
-PTopRastA   = $6B
-PTopRastD   = $6C
-PBotRastA   = $6D
-PBotRastD   = $6E
-PTopMapOff  = $6F
+ZBorderV    = $50   ; playfield border counter (total vertical border columns)
+ZBorderR    = $51   ; playfield border counter (total border columns on the right)
+ZBorderRYet = $52   ; playfield border counter (right border columns yet to draw)
+
+PTopRastA   = $6B   ; hires map parm: first copy target raster line upper field
+PTopRastD   = $6C   ; hires map parm: raster line for drawing new upper field line
+PBotRastA   = $6D   ; hires map parm: first copy target raster line lower field
+PBotRastD   = $6E   ; hires map parm: raster line for drawing new lower field line
+PTopMapOff  = $6F   ; hires map parm: map offset back from HeroY for new line
 
 PNudge      = $70
 TouchedVoid = $71

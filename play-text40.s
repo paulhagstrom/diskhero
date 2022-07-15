@@ -77,21 +77,12 @@ PlayLeft:   .byte   $00
 PlayRight:  .byte   $00
 PlStack:    .byte   $00     ; saved stack pointer
 PlEnv:      .byte   $00     ; saved environment register
-BorderR:    .byte   0
-BorderV:    .byte   0
-BorderRYet: .byte   0
 
 drawplay:   
             ; the middle lores field starts at map $42 and draws to $46 (plus NudgePos)
             ; in order to keep hero in the middle, five columns are used by a frame
             ; based on hero position, 5 total, high nibble of HeroX of those are on the right
             ; (i.e. if HeroX is 32, there are 3 on the right, 2 on the left)
-            lda R_ENVIRON       ; save evironment register
-            sta PlEnv
-            tsx
-            stx PlStack
-            and #%11111011      ; set stack bit to zero to get alt stack
-            sta R_ENVIRON
             lda #$08            ; we are at the top of the playfield box (in the top border)
             sta CurScrLine
             lda HeroX           ; take high nibble of HeroX - that is BorderR
@@ -99,7 +90,7 @@ drawplay:
             lsr
             lsr
             lsr
-            sta BorderR         ; BorderR is how many columns (0-based) of border are on the right
+            sta ZBorderR        ; BorderR is how many columns (0-based) of border are on the right
             ; compute thumb boundaries
             lda HeroX           ; HeroX + $11 is the last drawn column inside the border
             clc
@@ -133,6 +124,12 @@ drawplay:
 novoidu:    lda #$00
 :           sta VoidU
 dppostvoid: ; start drawing with top and bottom borders (for thumb). Just colors, chars will already be there
+            lda R_ENVIRON       ; save evironment register
+            sta PlEnv
+            tsx
+            stx PlStack
+            and #%11111011      ; set stack bit to zero to get alt stack
+            sta R_ENVIRON
             ldy CurScrLine
 borderh:    lda YLoresHB, y     ; $800 base (color space)
             eor #$01            ; where the ZP needs to be for the stack to be where we want it
@@ -215,9 +212,9 @@ burnvoidd:  inc CurScrLine
 ; draw a void line in the playfield
 ; TODO - maybe can refactor so I do not have border logic in both loresline and playvoid
 playvoid:   lda #$04            ; draw five border columns total
-            sta BorderV
-            lda BorderR         ; save a local copy of this that we can decrement
-            sta BorderRYet
+            sta ZBorderV
+            lda ZBorderR        ; save a local copy of this that we can decrement
+            sta ZBorderRYet
             ldy CurScrLine
             lda YLoresS, y      ; address of the right edge of the line
             pha                 ; save for second pass as well
@@ -227,28 +224,28 @@ playvoid:   lda #$04            ; draw five border columns total
             lda YLoresHA, y     ; $400 base (char space)
             sta R_ZP            ; go to character memory
             ldy #$27
-            lda #BorderChar
+            lda #BorderChar     ; draw right border
 :           sta Zero, x
             dex
             dey
-            dec BorderV
-            dec BorderRYet
+            dec ZBorderV
+            dec ZBorderRYet
             bpl :-
-            lda #C_SPACE
+            lda #C_SPACE        ; draw void
 :           sta Zero, x
             dex
             dey
-            cpy BorderV
+            cpy ZBorderV
             bne :-
-            lda #BorderChar
+            lda #BorderChar     ; draw left border
 :           sta Zero, x
             dex
             dey
             bpl :-
-            lda #$04
-            sta BorderV
-            lda BorderR
-            sta BorderRYet
+            lda #$04            ; reset border (draw 5) now for color
+            sta ZBorderV
+            lda ZBorderR
+            sta ZBorderRYet
             pla                 ; recall color space page
             sta R_ZP            ; go to color memory
             pla                 ; recall index of right edge of line
@@ -259,14 +256,14 @@ playvoid:   lda #$04            ; draw five border columns total
             lda #BorderColA     ; switch to darker gray
             dex
             dey
-            dec BorderV
-            dec BorderRYet
+            dec ZBorderV
+            dec ZBorderRYet
             bpl :-
             lda #$10            ; magenta background, black foreground
 :           sta Zero, x
             dex
             dey
-            cpy BorderV
+            cpy ZBorderV
             bne :-
             lda #BorderColA
 :           sta Zero, x
@@ -288,9 +285,9 @@ loresline:  lda MapPtrL
             ; (ZScrHole), 0 is now the left side of the map data line
             ; buffer all diplayed map bytes into the stack, from right to left
             lda #$04            ; draw five border columns total
-            sta BorderV
-            lda BorderR         ; save a local copy of this that we can decrement
-            sta BorderRYet
+            sta ZBorderV
+            lda ZBorderR         ; save a local copy of this that we can decrement
+            sta ZBorderRYet
             ldx #$27
             ; draw the right border
             lda #BorderChar
@@ -302,8 +299,8 @@ loresline:  lda MapPtrL
             ldy #BorderColA     ; switch color to darker gray
             pla                 ; recall character for next push
             dex                 ; decrement drawn x coordinate
-            dec BorderV         ; we've drawn one border element
-            dec BorderRYet      ; we've drawn one of the right side border elements
+            dec ZBorderV        ; we've drawn one border element
+            dec ZBorderRYet     ; we've drawn one of the right side border elements
             bpl :-              ; we have not yet drawn ALL of the right side border elements
             stx ZPxScratch      ; save where the border ended
             lda HeroX           ; find the per-line offset into the map data from the left side of the map
@@ -347,11 +344,11 @@ gotcolorb:  ldx ZPxScratch
             bmi leftvoid        ; oops, we are about to plummet into the left void
             dec ZPxScratch
             dex
-            cpx BorderV
+            cpx ZBorderV
             beq leftborder
             bne loreschar
 leftvoid:   dex                 ; we touched the void, any left to draw?
-            cpx BorderV
+            cpx ZBorderV
             beq leftborder      ; nope, we have now drawn them all
             lda #C_SPACE        ; left edge void, push a magenta blank - DEBUG
             pha
@@ -367,7 +364,7 @@ leftborder: lda #BorderChar
             sta Zero, x         ; store color
             pla                 ; recall character for next push
             dex                 ; decrement drawn x coordinate
-            dec BorderV         ; we've drawn one border element
+            dec ZBorderV         ; we've drawn one border element
             bpl :-              ; we have not yet drawn ALL of the left side border elements
             ; replace last color with lighter gray
             lda #BorderColB

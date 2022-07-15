@@ -365,5 +365,5 @@ gotaccount: pla
             sbc #$01
             sta DisksLeft, x    ; fewer out there of this type
             cld
-            ; removing the disk is unnecessary because the hero/antagonist will replace it
+            ; removing the disk is unnecessary because the hero/hoarder will replace it
             rts

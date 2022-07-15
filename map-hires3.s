@@ -281,12 +281,12 @@ prepdraw:   lda YHiresHA, x     ; get 2000-based address of current line on scre
             ; engineer it so that ZOtherZP in hgr pages always points to the other ZP to flip quickly.
             sta ZOtherZP        ; store HGR1 page in 1A00 ZP.
             sta R_ZP            ; switch to HGR page 1 ZP
-            pha                 ; stash it for putting in other ZP's ZOtherZP.
+            tay                 ; stash it for putting in other ZP's ZOtherZP.
             clc
             adc #$20            ; second page is $2000 higher than first
             sta ZOtherZP        ; store HGR2 2 ZP in HGR1's ZP
             sta R_ZP            ; go to HGR2 ZP
-            pla
+            tya
             sta ZOtherZP        ; recall and store HGR1's ZP in HGR2's ZP
             lda #$1A            ; and go back to 1A00 ZP.
             sta R_ZP
@@ -409,12 +409,12 @@ drawlineb:  jsr prepdraw
 toplineseg:
             lda #$06            ; we will buffer seven map elements
             sta ZBufCount
-            ldy ZCurrMapX
-bufmap:     lda (ZScrHole), y
+bufmap:     ldy ZCurrMapX
+            lda (ZScrHole), y
             ; now that we have the byte from the map, we can translate this into
             ; the two pixels it will be displaying.
             ; this information comes from FontDots, which we cached into ZFontDots (1A ZP)
-            pha                 ; stash the map byte
+            tay                 ; stash the map byte
             and #$3F            ; strip any color bits
             tax
             lda ZFontDots, x    ; get the pixels
@@ -422,17 +422,15 @@ bufmap:     lda (ZScrHole), y
             txa
             and #%00110000      ; test to see if this is 0-F (separate color info in two high bits)
             beq :+              ; branch if this is an element with an indexed color
-            pla                 ; throw away the map byte
             lda ZPxScratch      ; these are the final pixels
             jmp bufmappix
-:           pla                 ; recall the map byte to grab the color
-            pha                 ; re-stash so we can check for disk
+:           tya                 ; recall the map byte to grab the color
             asl
             rol
             rol                 ; move color bits into lower two bits to serve as color index
             and #$03
             tax
-            pla                 ; recall the map byte one last time
+            tya                 ; recall the map byte one last time
             and #$3F            ; filter out color bits
             cmp #C_DISK         ; if it is a disk, use the disk colors
             bne usemapcol
@@ -441,10 +439,9 @@ bufmap:     lda (ZScrHole), y
 usemapcol:  lda MapColors, x    ; load the indexed color
 applycolor: and ZPxScratch      ; apply to the pixels
 bufmappix:  pha                 ; push buffered pixels onto the stack (safe from ZP switch)
-            dey
+            dec ZCurrMapX
             dec ZBufCount
             bpl bufmap
-            sty ZCurrMapX       ; save new pointer for end of next (to the left) block after this
             ; the pixels have now been translated, we can send them to the screen
             ; the 7 pixels on the stack each use 8 bits, but we need to smear them across the
             ; 8 bytes of graphics memory using 7 bits at a time.  I know, right?
@@ -489,19 +486,17 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             sta R_ZP
             ; byte 0 (byte 0 page 1): -1110000 [0+0] 421/8421
             pla                 ; pixels 0-1
-            ;lda #$21            ; DEBUG troubleshoot blit
-            pha                 ; remember for later
+            tay                 ; remember for later
             and #$7F
             sta Zero, x
             ; byte 1 (byte 0 page 2): -3322221 [0+1+1] 21/8421/8
-            pla                 ; recall color of pixel 1
+            tya                 ; recall color of pixel 1
             asl                 ; move hi bit of pixel 1 color
             rol                 ; into lo bit of byte 1
             and #$01
             sta ZPxScratch      ; stash bit of pixel 1
             pla                 ; pixels 2-3
-            ;lda #$43            ; DEBUG troubleshoot blit
-            pha                 ; remember for later
+            pha                 ; remember for later across ZP switch
             asl                 ; move pixel 2's and 3's bits up
             and #%011111110     ; and chop off the two hi bits of pixel 3
             ora ZPxScratch
@@ -520,15 +515,14 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             and #$03            ; isolate the pixel 3 color's higher two bits
             sta ZPxScratch      ; and stash them
             pla                 ; pixels 4-5
-            ;lda #$65            ; DEBUG troubleshoot blit
-            pha                 ; remember for later
+            tay                 ; remember for later
             asl
             asl
             ora ZPxScratch
             and #$7F
             sta Zero, x
             ; byte 3 (byte 1 page 2): -6666555 [2+3] 8421/842
-            pla                 ; recall color of pixel 5
+            tya                 ; recall color of pixel 5
             asl                 ; move higher 3 bits of pixel 5 into low 3 bits
             rol
             rol
@@ -536,8 +530,7 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             and #$07
             sta ZPxScratch
             pla                 ; pixels 6-7
-            ;lda #$87            ; DEBUG troubleshoot blit
-            pha                 ; remember for later
+            pha                 ; remember for later across ZP switch
             asl
             asl
             asl
@@ -558,8 +551,7 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             lsr
             sta ZPxScratch
             pla                 ; pixels 8-9
-            ;lda #$A9            ; DEBUG troubleshoot blit
-            pha                 ; remember for later
+            tay                 ; remember for later
             asl
             asl
             asl
@@ -568,14 +560,13 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             and #$7F
             sta Zero, x
             ; byte 5 (byte 2 page 2): -AA99998 [4+4+5]  21/8421/8
-            pla                 ; recall color of pixels 8 and 9
+            tya                 ; recall color of pixels 8 and 9
             lsr
             lsr
             lsr
             sta ZPxScratch
             pla                 ; pixels A-B
-            ;lda #$CB            ; DEBUG troubleshoot blit
-            pha                 ; remember for later
+            pha                 ; remember for later across ZP switch
             lsr
             ror
             ror
@@ -596,15 +587,14 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             and #%00111111
             sta ZPxScratch
             pla                 ; pixels C-D
-            ;lda #$ED            ; DEBUG troubleshoot blit
-            pha                 ; remember for later
+            tay                 ; remember for later
             lsr
             ror
             and #%01000000
             ora ZPxScratch
             sta Zero, x
             ; byte 7 (byte 3 page 2): -DDDDCCC [6+6] 4218421
-            pla                 ; recall color of pixels C and D
+            tya                 ; recall color of pixels C and D
             lsr
             and #$7F
             ; put this data on the other ZP
