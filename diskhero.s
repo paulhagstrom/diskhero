@@ -13,7 +13,7 @@
 ; 9B00 leaves 7423, 9A00 leaves 7679, 9900 leaves 7935, 9800 leaves 8191.
 ; but realistically I should start loading things from disk into other banks.
 
-            .org     $9A00 - 14
+            .org     $9900 - 14
             
 ; SOS interpreter header
             .byte    "SOS NTRP"

@@ -6,8 +6,8 @@
 ; (updates afterwards are incremental, drawing single lines and using smooth scroll)
 ; This is designed to be able to paint under any circumstance, but it turns out that
 ; within the logic of the game it's only called once at the beginning.
-; So all the logic about void regions will never get called upon unless it is decided
-; later to randomize the hero's starting point.
+; Given that it does not refer to NudgePos, it may only work properly if
+; (HeroY-3) is an even multiple of 8.
 
 initmap:    lda #$20            ; top field starts at absolute raster line $20
             sta CurScrLine      ; CurScrLine keeps track of the current absolute raster line
@@ -135,7 +135,7 @@ umbegin:    lda HeroY
             sbc PTopMapOff      ; counting back from HeroY to either top or bottom of top field
             bcs umnotvoid
             inc TouchedVoid     ; we have touched the void in the top field
-umnotvoid:  sta MapOffset       ; store the map offset we will draw top field line from
+umnotvoid:  sta MapOffset       ; store the map offset we will draw top field line from (not used if in void)
             lda PTopRastA       ; first raster line (inc=top, dec=bottom) in copy operation in top field
             clc
             adc NudgePos        ; newnudge/oldnudge
@@ -267,10 +267,10 @@ lmdone:     lda CLEnv           ; restore environment, ZP, stack
 
 ; seven magenta pixels for the left and right two bytes in the map region
 ; and for the void lines
-BorderBits: .byte %00010001
-            .byte %00100010
-            .byte %01000100
-            .byte %00001000
+BorderBits: .byte %00110001
+            .byte %00100110
+            .byte %01001100
+            .byte %00011000
 
 ; do the hires page lookup and ZP setup, common to drawvoid and drawline
 ; enter with X holding the target line on the graphics page, assumes we are in 1A00 ZP
@@ -404,9 +404,131 @@ drawlineb:  jsr prepdraw
             clc
             adc #32              ; to get left edge of last group of graphics memory for line
             sta ZCurrDrawX
+toplineseg: jsr drawseg         ; draw a single 14-pixel segment
+            ; drawseg will move ZCurrMapX back 7 units while buffering map
+            ; if that didn't run off the edge of the map, then back up the pixel pointer too
+            lda ZCurrMapX
+            bmi :+          ; we had run off the left edge of the line, so now we are done
+            lda ZCurrDrawX
+            sec
+            sbc #$04
+            sta ZCurrDrawX
+            jmp toplineseg
+:           rts
+
+MapTemp:    .byte   0
+TopLine:    .byte   0
+TopNudge:   .byte   0
+MapDiff:    .byte   0
+MapNudge:   .byte   0
+
+; compute where in screen memory a map line would be.
+; enter with A being the map line.  X is destroyed, but Y is sae.
+; there might be a mathematically simpler way to do this, I fought with the concepts for
+; a while.
+; algorithm to get there:
+; top line = TL = HeroY - 23 (top field), HeroY + 4 (bottom field)
+; top mod 8 = T8 = TL mod 8
+; map diff = MD = map line - TL
+; map mod 8 = M8 = map line mod 8
+; base = 18 if T8 > M8 otherwise base = 20 (bottom field base = 88 or 80)
+; memory line of map line is: base + map diff + top mod 8.
+; only on display in map fields if map line is between HeroY-23 and HeroY-4 (top)
+; or between HeroY+4 and HeroY+23 (bottom)
+findraster: sta MapTemp
+            ldx #$88        ; default assumption is video base of lower field
+            sec             ; is it actually on screen?
+            sbc HeroY       ; compute map line minus HeroY
+            bcs belowhero   ; branch if result is positive, map line is below hero
+            bpl froff       ; this wrapped but remained positive, very far away
+            eor #$FF        ; map line is above HeroY, so this was negative
+            adc #$01        ; make it positive to see if it is within screen bounds
+            ldx #$20        ; we are in upper field so change video base
+            jmp chbound
+belowhero:  bmi froff       ; this did not wrap but went negative, very far away
+chbound:    cmp #$04        ; if the distance to hero is less than 4
+            bcc froff       ; it is off screen (in the playfield)
+            cmp #$23        ; or more than 23
+            bcs froff       ; it is off screen (beyond borders)
+            lda MapTemp     ; get the mod 8 of mapline
+            and #$07
+            sta MapNudge
+            lda HeroY       ; find top line in field
+            cpx #$88        ; are we in the lower field?
+            beq toplower    ; yes, find the top line of the lower field
+            sec             ; top line in upper field is HeroY-23
+            sbc #$23
+            clc             ; top nudge is based on top line as computed
+            jmp :+
+toplower:   clc             ; top line in lower field is HeroY+4
+            adc #$04
+            sec             ; and we add one to value before computing top nudge
+:           sta TopLine
+            adc #$00        ; add one before mod 8 if we are in the lower field
+            and #$07
+            sta TopNudge
+            cmp MapNudge
+            bcc :+
+            txa             ; subtract 8 from the video base
+            sec
+            sbc #$08
+            tax
+:           lda MapTemp
+            sec
+            sbc TopLine
+            sta MapDiff     ; distance from the top line of the field it is in
+            ; and we are finally ready
+            txa             ; video base (18, 20, 80, or 88)
+            clc
+            adc MapDiff
+            adc TopNudge
+            ; A should now hold the line in video memory corresponding to the map
+            rts
+froff:      lda #$00        ; return zero (which is clearly not a valid line)
+            rts             ; if the line is offscreen.
+
+; update a single 14-pixel segment
+; enter with A being the map line
+; and Y being the horizontal map location of the pixel we wish to redraw.
+updsingle:  pha                 ; stash map line while we check if it is onscreen
+            jsr findraster
+            beq usoff           ; offscreen, do nothing
+            tax                 ; move raster line to X
+            pla                 ; get the map line back and set up the pointer
+            jsr setmapptr
+            lda MapEnds, y      ; get the offset of the right edge of map bytes
+            sta ZCurrMapX       ; look it up rather than multiplying by seven
+            lda MapPixG, y      ; get the offset of the left edge of pixel groups
+            sta ZCurrDrawX
+            jsr prepdraw        ; relies on raster line being in X
+            lda MapPtrL
+            sta ZScrHole
+            lda MapPtrH
+            sta ZScrHole + 1
+            lda #$82
+            sta ZScrHole + XByte
+            lda R_BANK
+            sta USBank
+            lda #$00
+            sta R_BANK
+            jsr drawseg         ; draw the segment
+            lda USBank
+            sta R_BANK
+            rts
+usoff:      pla                 ; toss out the map line we saved
+            rts
+
+USBank:     .byte   0
+
+; draw a single 14-pixel segment (useful also in selectively updating screen)
+; enter with:
+; ZCurrMapX = right edge of group of map bytes (i.e. 6 for first group)
+; ZCurrDrawX = offset of first byte of 4-byte group of graphics memory (i.e. 4 for second group)
+; ZScrHole should point to the map line (as derived from setmapptr)
+; should have already called prepdraw with x holding the raster line to set up ZPs
+drawseg:
             ; buffer in the stack the seven map elements we will represent
             ; read them from right to left, then we draw them from left to right
-toplineseg:
             lda #$06            ; we will buffer seven map elements
             sta ZBufCount
 bufmap:     ldy ZCurrMapX
@@ -499,7 +621,7 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             pha                 ; remember for later across ZP switch
             asl                 ; move pixel 2's and 3's bits up
             and #%011111110     ; and chop off the two hi bits of pixel 3
-            ora ZPxScratch
+            ora ZPxScratch      ; and then add pixel 1's last bit in
             ; put this pixel data on the other ZP (page 2)
             ldy ZOtherZP
             sty R_ZP            ; go to page 2 ZP
@@ -511,15 +633,15 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             pla                 ; recall color of pixel 3
             asl
             rol
-            rol                 ; put pixel 3's hi bits in low bits
+            rol                 ; put pixel 3's hi 2 bits in low bits
             and #$03            ; isolate the pixel 3 color's higher two bits
             sta ZPxScratch      ; and stash them
             pla                 ; pixels 4-5
             tay                 ; remember for later
+            asl                 ; shift them up
             asl
-            asl
-            ora ZPxScratch
-            and #$7F
+            ora ZPxScratch      ; add in pixel 3's hi 2 bits
+            and #$7F            ; chop off the msb
             sta Zero, x
             ; byte 3 (byte 1 page 2): -6666555 [2+3] 8421/842
             tya                 ; recall color of pixel 5
@@ -533,9 +655,9 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             pha                 ; remember for later across ZP switch
             asl
             asl
-            asl
-            ora ZPxScratch
-            and #$7F
+            asl                 ; move pixel 6 left three
+            ora ZPxScratch      ; and add in pixel 5's bits
+            and #$7F            ; chop off the msb
             ; put this data on the page 2 ZP
             ldy ZOtherZP
             sty R_ZP            ; go to page 2 ZP
@@ -544,35 +666,35 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             sty R_ZP            ; go to page 1 ZP
             inx
             ; byte 4 (byte 2 page 1): -8887777 [3+4] 421/8421
-            pla                 ; recall color of pixel 7
-            lsr
+            pla                 ; recall color of pixels 6-7
+            lsr                 ; demote pixel 7 to low nibble
             lsr
             lsr
             lsr
             sta ZPxScratch
             pla                 ; pixels 8-9
             tay                 ; remember for later
-            asl
+            asl                 ; promote pixel 8 to high nibble
             asl
             asl
             asl
             ora ZPxScratch
-            and #$7F
+            and #$7F            ; chop off the msb
             sta Zero, x
             ; byte 5 (byte 2 page 2): -AA99998 [4+4+5]  21/8421/8
             tya                 ; recall color of pixels 8 and 9
-            lsr
-            lsr
+            lsr                 ; get highest pixel 8 bit into lsb
+            lsr                 ; putting pixel 9 in the right place too
             lsr
             sta ZPxScratch
             pla                 ; pixels A-B
             pha                 ; remember for later across ZP switch
-            lsr
+            lsr                 ; rotate A's low two pixels into bits 7 and 6
             ror
             ror
             ror
-            and #%01100000
-            ora ZPxScratch
+            and #%01100000      ; and isolate just those bits 7 and 6
+            ora ZPxScratch      ; add in pixels 9 and 8
             ; put this data on the other ZP
             ldy ZOtherZP
             sty R_ZP            ; go to page 2 ZP
@@ -580,23 +702,23 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             ldy ZOtherZP
             sty R_ZP            ; go to page 1 ZP
             inx
-            ; byte 6 (byte 3 page 1): -CBBBBAA [5+5+6] 1842184
-            pla                 ; recall color of pixel A
-            lsr
-            lsr
-            and #%00111111
+            ; byte 6 (byte 3 page 1): -CBBBBAA [5+5+6] 1/8421/84
+            pla                 ; recall color of pixels A-B
+            lsr                 ; move pixel A's high two bits to lowest two
+            lsr                 ; also puts pixel B in the right place
+            and #%00111111      ; clear out last space for pixel C
             sta ZPxScratch
             pla                 ; pixels C-D
             tay                 ; remember for later
-            lsr
+            lsr                 ; rotate low bit of pixel C into bit 6
             ror
-            and #%01000000
-            ora ZPxScratch
+            ror
+            and #%01000000      ; isolate that low bit of pixel C
+            ora ZPxScratch      ; add it in to pixels A and B
             sta Zero, x
-            ; byte 7 (byte 3 page 2): -DDDDCCC [6+6] 4218421
+            ; byte 7 (byte 3 page 2): -DDDDCCC [6+6] 8421/842
             tya                 ; recall color of pixels C and D
-            lsr
-            and #$7F
+            lsr                 ; shift away the lsb and strip msb
             ; put this data on the other ZP
             ldy ZOtherZP
             sty R_ZP            ; go to page 2 ZP
@@ -605,28 +727,29 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             sty R_ZP            ; go to 1A00 ZP
 
             ; the 14 pixels are now drawn
-            ; continue back through the line
-            ; the map pointer was left pointing in the right place after we buffered it.
-            ; move the pointer for the (left edge of) drawn pixels back by 4 bytes.
-            
-            lda ZCurrMapX
-            bmi :+          ; we had run off the left edge of the line, so now we are done
-            lda ZCurrDrawX
-            sec
-            sbc #$04
-            sta ZCurrDrawX
-            jmp toplineseg
-:           rts
+            rts
 
 ; table of map x-coordinates and the corresponding place to find them in a line, for use
 ; when we selectively update the screen display.  Indexed by x-coordinate in map row.
 
-MapPix: .byte   $00, $00, $00, $00, $00, $00, $00
-        .byte   $01, $01, $01, $01, $01, $01, $01
-        .byte   $02, $02, $02, $02, $02, $02, $02
-        .byte   $03, $03, $03, $03, $03, $03, $03
-        .byte   $04, $04, $04, $04, $04, $04, $04
-        .byte   $05, $05, $05, $05, $05, $05, $05
-        .byte   $06, $06, $06, $06, $06, $06, $06
-        .byte   $07, $07, $07, $07, $07, $07, $07
-        .byte   $08, $08, $08, $08, $08, $08, $08
+; Lookup for ZCurrMapX values for updsingle
+MapEnds:    .byte   6, 6, 6, 6, 6, 6, 6
+            .byte   13, 13, 13, 13, 13, 13, 13
+            .byte   20, 20, 20, 20, 20, 20, 20
+            .byte   27, 27, 27, 27, 27, 27, 27
+            .byte   34, 34, 34, 34, 34, 34, 34
+            .byte   41, 41, 41, 41, 41, 41, 41
+            .byte   48, 48, 48, 48, 48, 48, 48
+            .byte   55, 55, 55, 55, 55, 55, 55
+            .byte   62, 62, 62, 62, 62, 62, 62
+
+; Lookup for ZCurrDrawX values for updsingle
+MapPixG:    .byte   2, 2, 2, 2, 2, 2, 2
+            .byte   6, 6, 6, 6, 6, 6, 6
+            .byte   10, 10, 10, 10, 10, 10, 10
+            .byte   14, 14, 14, 14, 14, 14, 14
+            .byte   18, 18, 18, 18, 18, 18, 18
+            .byte   22, 22, 22, 22, 22, 22, 22
+            .byte   26, 26, 26, 26, 26, 26, 26
+            .byte   30, 30, 30, 30, 30, 30, 30
+            .byte   34, 34, 34, 34, 34, 34, 34

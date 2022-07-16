@@ -190,7 +190,7 @@ handoff:    ldy NewX
             clc
             adc ZFrame          ; select animation frame
             sta (ZPtrA), y      ; update the map
-            
+            jsr gmupdscr
             ; TODO - if the current hoarder is moving to or from someplace in the visible map,
             ; we need to update the map display too.  Locate the 14-pixel chunk it is in and redraw
             ; it selectively.  This is the place where having more hoarders can possibly slow things
@@ -216,7 +216,26 @@ donehoard:
             sec
             jmp updatemap
 :           rts
-            
+
+; update the screen where things moved
+; later make this just collect things that will all be updated en masse at the end
+; maybe consolating complications and avoiding redundancy
+; not even sure that this is right (oldx, oldy), might this mess up on some hoarder moves
+; since they are two segments long?
+gmupdscr:   lda OldY
+            ldy OldX
+            jsr updsingle
+            lda NewY
+            ldy NewX
+            jsr updsingle
+            lda NewY
+            ldy OldX
+            jsr updsingle
+            lda OldY
+            ldy NewX
+            jsr updsingle
+            rts
+
 ; do moving (called maximally once per MoveDelay VBLs)
 ; (since otherwise it can be too fast, though this might be a way to make it harder)
 

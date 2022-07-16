@@ -188,14 +188,14 @@ FontDots:
             .byte   %11011101         ; hero
             .byte   %11001100         ; hoarder head 1
             .byte   %11001100         ; hoarder head 2
-            .byte   %11001100         ; hoarder hands up 1
-            .byte   %11001100         ; hoarder hands up 2
-            .byte   %11001100         ; hoarder hands down 1
-            .byte   %11001100         ; hoarder hands down 2
-            .byte   %11001100         ; hoarder hands right 1
-            .byte   %11001100         ; hoarder hands right 2
-            .byte   %11001100         ; hoarder hands left 1
-            .byte   %11001100         ; hoarder hands left 2
+            .byte   %11001101         ; hoarder hands up 1
+            .byte   %11011100         ; hoarder hands up 2
+            .byte   %11001101         ; hoarder hands down 1
+            .byte   %11011100         ; hoarder hands down 2
+            .byte   %11001101         ; hoarder hands right 1
+            .byte   %11011100         ; hoarder hands right 2
+            .byte   %11001101         ; hoarder hands left 1
+            .byte   %11011100         ; hoarder hands left 2
             .byte   %11011101         ; drive left
             .byte   %11011101         ; drive right
             .byte   %11011101         ; drive up
