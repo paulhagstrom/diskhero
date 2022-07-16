@@ -32,10 +32,6 @@ ZMapTemp    = $4D   ; temporary storage for a map byte being tested for collisio
 ZXXTemp     = $4E   ; temporary storage for second segment x-coordinate
 ZFrame      = $4F   ; temporary storage for current animation frame
 
-ZBorderV    = $50   ; playfield border counter (total vertical border columns)
-ZBorderR    = $51   ; playfield border counter (total border columns on the right)
-ZBorderRYet = $52   ; playfield border counter (right border columns yet to draw)
-
 PTopRastA   = $6B   ; hires map parm: first copy target raster line upper field
 PTopRastD   = $6C   ; hires map parm: raster line for drawing new upper field line
 PBotRastA   = $6D   ; hires map parm: first copy target raster line lower field
@@ -46,6 +42,8 @@ PNudge      = $70
 TouchedVoid = $71
 MapOffset   = $72
 PInc        = $73
+
+ZCharTemp  = $74
 
 ; lookup tables
 ZFontDots   = $80   ; ZP cache for FontDots to speed up drawing (80-A7)
@@ -68,6 +66,7 @@ ZBackNext   = $DF   ; page number of first sample of next background segment aft
 ; playfield
 ZThumbTogg  = $78
 ZThumbNext  = $79
+ZMapPtr     = $7A
 
 ZScrHole    = $78
 ZOtherZP    = $7A

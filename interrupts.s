@@ -15,7 +15,7 @@ IntZStash:  .byte   0   ; saved ZP register from interrupt handler entry
 ; variables used in processing the screen splitting
 ScrRegion:  .byte   0   ; upcoming region (the one after the one we are in)
 ScrRegBand: .byte   0   ; countdown (from ScrRegDur) of 8-pixel-tall bands left in the current region.
-NudgePos:   .byte   0   ; smooth scroll parameter A (used when ScrNudge for a region is positive)
+NudgePos:   .byte   0   ; smooth scroll parameter (used when ScrNudge for a region is positive)
 
 ; variables for sound and speed management
 VBLTick:    .byte   0   ; ticked down for each VBL, can use to delay things for several refreshes
@@ -27,7 +27,7 @@ ClockTick:  .byte   0   ; ticked down for each clock-during-VBL, for playing sou
 ; Last mode (only) will use the smooth scroll parameter.
 ; ScrNudge indicates whether smooth scroll is set to inactive (0), A (pos) or B (neg)
 ; ScrRegDur is the height of the region in groups of 8-line blocks.
-ScrRegMode: .byte   $00, $24, $30, $00, $30, $0C, $24
+ScrRegMode: .byte   $00, $24, $30, $00, $30, $0C, $18
 TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 ScrRegDur:  .byte   $02, $02, $04, $09, $04, $01, $02 ; groups of 8 scan lines
 ; TwelveBran is a jump table used for setting smooth scroll, 8 multiples of $0C
