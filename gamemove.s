@@ -10,6 +10,8 @@ OldX:       .byte   0
 OldY:       .byte   0
 NewX:       .byte   0
 NewY:       .byte   0
+OldOldX:    .byte   0
+OldOldY:    .byte   0
 IsHero:     .byte   0
 CurrHoard:  .byte   0
 ScrollUp:   .byte   0
@@ -20,7 +22,7 @@ domove:     lda #$82            ; we will use ZPtrA, ZPtrB, ZPtrC
             sta ZPtrB + XByte   ; so we do not wind up setting them repeatedly
             sta ZPtrC + XByte   ; inside a loop
             ; move hero
-            sta IsHero
+            sta IsHero          ; determines sound and score effects of hitting a disk
             lda #$00            ; reset scroll up/down triggers
             sta ScrollUp
             sta ScrollDown
@@ -48,24 +50,22 @@ herostop:   lda VelX
             sta VelocityX       ; record new X velocity
             lda VelY
             sta VelocityY       ; record new Y velocity
-            beq herodone        ; scroll the map if we need to
-            bmi scrolldown
-            inc ScrollUp
-            bne herodone
+            beq herodone        ; skip scrolling the map if there was no Y movement
+            bmi scrolldown      ; if Y velocity is negative (hero moves up), map scrolls down
+            inc ScrollUp        ; if Y velocity is positive (hero moves down), map scrolls up
+            jmp herodone
 scrolldown: inc ScrollDown
-herodone:            
-            ; move hoarders
-            lda #$00
-            sta IsHero
+herodone:   lda #$00            ; move hoarders
+            sta IsHero          ; determines sound and score effects of hitting a disk
             ldy NumHoards
             sty CurrHoard
 movehoard:  ldy CurrHoard
-            lda (ZHoardTick), y ; ready to move yet?
+            lda (ZHoardTick), y ; ready to move yet? (up to 8 tick delay for each, governing speed)
             lsr
             beq ticksdone
-            sta (ZHoardTick), y
+            sta (ZHoardTick), y ; not ready to move, decrease ticks and move to check next hoarder
             jmp nexthoard
-ticksdone:  lda (ZHoardSp), y   ; reset ticks for next move
+ticksdone:  lda (ZHoardSp), y   ; this one can move now, reset ticks for next move after this one
             sta (ZHoardTick), y
             lda (ZHoardXX), y   ; stash second segment (head) X-coordinate
             sta ZXXTemp         ; in ZXXTemp for easy retrieval later
@@ -83,18 +83,18 @@ hoardcont:  lda (ZHoardXV), y
             sta VelX
             lda (ZHoardYV), y
             sta VelY
-            bne hmoving
+            bne hmoving         ; if there was Y velocity, hoarder is moving
             lda VelX            ; Y velocity was 0, is X velocity 0 also?
-            bne hmoving
+            bne hmoving         ; if there is X velocity, hoarder is moving
             ; swap head and hands if hoarder was stopped, so it does not corner itself
             lda ZXXTemp         ; old head X-coordinate
-            pha
-            lda (ZHoardX), y    ; old hands x-coordinate
-            sta (ZHoardXX), y   ; put in old head x-oordinate
-            sta ZXXTemp
-            pla
-            sta (ZHoardX), y    ; put it in old hands x-coordinate
-            lda (ZHoardY), y
+            pha                 ; stash it as we sawap
+            lda (ZHoardX), y    ; get the old hands x-coordinate
+            sta (ZHoardXX), y   ; and put it in old head x-coordinate
+            sta ZXXTemp         ; which we also are continuing to save for later use
+            pla                 ; recall old head X-coordinate
+            sta (ZHoardX), y    ; and put it in old hands x-coordinate
+            lda (ZHoardY), y    ; then do the same for the Y coordinate
             pha
             lda (ZHoardYY), y
             sta (ZHoardY), y
@@ -118,14 +118,14 @@ hoardredir: ldx Seed            ; if hoarder was not moving
             lda Random, x       ; send it in a random direction
             bpl sendhoriz       ; horizontal/vertical choice yields: horizontal
             inx
-            lda Random, x       ; send it vertically
+            lda Random, x       ; send it vertically in a random direction
             stx Seed
             sta VelY
             lda #$00
             sta VelX
             beq hmoving
 sendhoriz:  inx
-            lda Random, x       ; send it horizontally
+            lda Random, x       ; send it horizontally in a random direction
             stx Seed
             sta VelX
             lda #$00
@@ -147,14 +147,16 @@ hmoved:     ldy CurrHoard
             sta (ZHoardAnim), y
             sta ZFrame          ; stash in ZFrame for use in adding in later
             lda (ZHoardYY), y   ; replace second segment (head) with zero
+            sta OldOldY
             jsr setmapptr       ; locate original second segment y-coordinate on map
             ldy ZXXTemp         ; we stashed second segment X coordinate in here earlier
+            sty OldOldX
             lda MapPtrL
             sta ZPtrC
             lda MapPtrH
             sta ZPtrC + 1       ; X-Byte was set up top
             lda #$00            ; remove second segment from the map
-            sta (ZPtrC), y
+            sta (ZPtrC), y            
             lda #C_HHEADA       ; put head in old first segment (hands) position
             clc
             adc ZFrame          ; select animation frame
@@ -190,7 +192,7 @@ handoff:    ldy NewX
             clc
             adc ZFrame          ; select animation frame
             sta (ZPtrA), y      ; update the map
-            jsr gmupdscr
+            jsr gmupdscr        ; update the screen
             ; TODO - if the current hoarder is moving to or from someplace in the visible map,
             ; we need to update the map display too.  Locate the 14-pixel chunk it is in and redraw
             ; it selectively.  This is the place where having more hoarders can possibly slow things
@@ -222,16 +224,13 @@ donehoard:
 ; maybe consolating complications and avoiding redundancy
 ; not even sure that this is right (oldx, oldy), might this mess up on some hoarder moves
 ; since they are two segments long?
-gmupdscr:   lda OldY
+gmupdscr:   lda OldOldY     ; where the head was (segment 2)
+            ldy OldOldX
+            jsr updsingle
+            lda OldY        ; where the hands were
             ldy OldX
             jsr updsingle
-            lda NewY
-            ldy NewX
-            jsr updsingle
-            lda NewY
-            ldy OldX
-            jsr updsingle
-            lda OldY
+            lda NewY        ; where the hands are
             ldy NewX
             jsr updsingle
             rts
@@ -251,41 +250,41 @@ NewHeroY:   .byte   0
 
 trymove:    ldx OldX
             lda VelX
-            beq xchecked
-            bmi xleft
+            beq xchecked        ; if not moving horizontally, need not check
+            bmi xleft           ; if moving left, jump to leftward check
             inx
-            cpx #$3F
+            cpx #$3F            ; check to see if moving right goes off the map
             bne xchecked
             dex                 ; ran off the right edge, stop horizontal motion
             lda #$00
             sta VelX
-            beq xchecked
-xleft:      dex
+            jmp xchecked
+xleft:      dex                 ; check to see if moving left goes off the map
             bpl xchecked
             inx                 ; ran off the left edge, stop horizontal motion
             stx VelX
-xchecked:   stx NewX
-            lda OldY
-            tax
+xchecked:   stx NewX            ; NewX is OldX + VelX but VelX got zeroed if it would leave the map
+            ldx OldY
+            txa
             jsr setmapptr       ; locate original y-coordinate on map
             lda MapPtrL         ; and store in ZPtrB
             sta ZPtrB
             lda MapPtrH
             sta ZPtrB + 1       ; X-Byte was set up top
             lda VelY
-            beq ychecked
-            bmi yup
+            beq ychecked        ; if not moving vertically, need not check
+            bmi yup             ; if moving up, jump to upward check
             inx
-            bne ychecked
+            bne ychecked        ; check to see if moving down wraps around the map
             stx VelY            ; ran off the bottom, stop vertical motion
             dex
-            bne ychecked
+            jmp ychecked
 yup:        dex
-            cpx #$FF
+            cpx #$FF            ; check to see if moving up wraps around the map
             bne ychecked
             inx                 ; ran off the top, stop vertical motion
             stx VelY
-ychecked:   stx NewY
+ychecked:   stx NewY            ; NewY is OldY + VelY but VelY got zeroed if it would leave the map
             txa
             jsr setmapptr       ; locate new y-coordinate on map
             lda MapPtrL         ; and store in ZPtrA
@@ -324,18 +323,18 @@ ychecked:   stx NewY
             lda #$00            ; set velocity to zero
             sta VelX
             sta VelY
-            lda ZPtrB           ; map line pointer for new Y is same as old Y
+            lda ZPtrB           ; make map line pointer for new Y be same as old Y
             sta ZPtrA
             lda ZPtrB + 1
             sta ZPtrA + 1
-            sec                 ; move failed, return with carry
+            sec                 ; move failed, return with carry set
             rts
 horizdisk:  jsr gotdisk
 horizok:    lda #$00            ; stop vertical movement
             sta VelY
             lda OldY            ; new hero Y is unchanged from old hero Y
             sta NewY
-            lda ZPtrB           ; map line pointer for new Y is same as old Y
+            lda ZPtrB           ; make map line pointer for new Y be same as old Y
             sta ZPtrA
             lda ZPtrB + 1
             sta ZPtrA + 1
@@ -351,15 +350,15 @@ moveclear:  clc                 ; return with clear carry if move succeeds
             rts
 
 ; called if moving player/antagonist lands on a disk
-; assumes that the map byte is in A on entry.  X does not survive.
 gotdisk:    lda ZMapTemp        ; map (disk) was stored here, includes type
-            and #$C0            ; disk type
+            and #$C0            ; determine disk type (color bits)
             pha
             ldx IsHero
             beq gotnot
             ora #$20            ; add to score if hero got the disk
             lsr
             jsr addscore        ; add type multiplier to the score
+            lda #$00
             sta ZFXPtr
             lda #$1F            ; play SndHeroGot sound ("hero got disk")
             sta ZFXPtr + 1
@@ -369,12 +368,12 @@ gotnot:     sta ZFXPtr
             lda #$1E            ; play SndHrdrGot sound ("hoarder got disk")
             sta ZFXPtr + 1
             sta ZFXPlay
-gotaccount: pla
-            asl
+gotaccount: pla                 ; retrieve disk type (bits 7 and 8)
+            asl                 ; shift them over to bits 1 and 2
             rol
             rol
-            tax
-            sed
+            tax                 ; move type to x
+            sed                 ; add in decimal mode to accounting for types
             lda DisksGot, x
             clc
             adc #$01

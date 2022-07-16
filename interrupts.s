@@ -142,7 +142,7 @@ nothbl:     lda R_ZP            ; 4 ok, now properly stash the environment
             txa                 ; 2
             pha                 ; 3
             cld                 ; 2 [26 to here since update]
-            bcs jmptimer        ; 2/3 if we got here via the HBL timer, go on to do what is left (sound)
+            ;bcs jmptimer        ; 2/3 if we got here via the HBL timer, go on to do what is left (sound)
             lda RE_INTFLAG      ; 4 check for other interrupts
             and #$01            ; 2 was it the keyboard?
             bne intkey          ; 2/3 if yes, go handle it [after 11+26 + 19 = 56 to here]
@@ -193,6 +193,7 @@ tickdone:   sta RE_INTENAB      ; disable clock interrupt (we're done) by writin
 ; screen timing: 65 1MHz cycles per scan line, 192 lines, should be painting for 12480 cycles.
 ; then 70 lines' worth of VBL.  Would be 4550 cycles at 1MHz, but we are running at 2MHz, so ~9000
 ; To keep the audio running, we set a clock timer to fire 8 times during VBL, at $208 (520) cycles.
+; real hardware couldn't handle it, switching to 4 at $410 cycles.
 
 ; 98 cycles in here, 64 to get here, 162 total.
 intvbl:     lda #$10            ; 2 clear the VBL (CB1) interrupt
@@ -210,12 +211,13 @@ intvbl:     lda #$10            ; 2 clear the VBL (CB1) interrupt
             lda ScrRegDur       ; 4 set up the first band counter
             sta ScrRegBand      ; 4 [40 to here]
             dec VBLTick         ; 4 bump VBL countdown
-            lda #$08            ; 2 fire the clock interrupt 8 times during VBL
+            lda #$03            ; 2 fire the clock interrupt 4 times during VBL
             sta ClockTick       ; 4
-            sta RE_T1CL         ; 4 interval is $208, this is the $08 part.
+            lda #$10            ; 
+            sta RE_T1CL         ; 4 interval is $410, this is the $10 part.
             lda #%10000010      ; 2 enable CA1 (RTC)
             sta RE_INTENAB      ; 4
-            lda #$02            ; 2
+            lda #$04            ; 2
             sta RE_T1CH         ; 4 [68 to here] start the clock for $208 cycles
             pla                 ; 4 [30 cycles to end, restoring environment]
             tax                 ; 2
@@ -234,7 +236,8 @@ intvbl:     lda #$10            ; 2 clear the VBL (CB1) interrupt
 ; sequenced using ZBackNext (the high byte of the address in bank 1 where next one starts).
 ; unless something changes it, it will just keep cycling back to the one at $2000.
 
-inttimer:   ldy #$00            ; 2
+inttimer:   jmp timerout
+            ldy #$00            ; 2
             lda ZPlaySFX        ; 3 check sfx switch (user controlled)
             beq doback          ; 2/3 if no sound effects should be played, skip to background
             lda ZFXPlay         ; 3 see if a sound effect is playing
@@ -382,7 +385,7 @@ setupenv:   ; save IRQ vector and then install ours
             ; CB1 - [hi nibble: ---1] pos active edge
             ; CA2 - [lo nibble: 011-] independent interrupt input pos edge
             ; CA1 - [lo nibble: ---0] neg active edge
-            ; high nibble here is largely irrelevant, ineterrupts CB1, CB@ not used
+            ; high nibble here is largely irrelevant, ineterrupts CB1, CB2 not used
             ; maybe CB1, CB2 relate to joystick.
             lda #%01110110
             sta RD_PERCTL

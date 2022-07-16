@@ -32,8 +32,8 @@ CodeStart:  jmp init
             .include "play-text40.s"
             .include "reg-medres.s"
             .include "map-hires3.s"         ; switches in bank 0 to use stack
-            .include "interrupts.s"         ; critical, should be always available
             .include "gamemove.s"           ; does not switch bank
+            .include "interrupts.s"         ; critical, should be always available
             .include "lookups.s"            ; lookups, should be always available
 
 IRQSave:    .byte   0, 0 , 0        ; saved state
@@ -113,6 +113,7 @@ init:       sei                 ; no interrupts while we are setting up
             jsr buildmap        ; set up map data (in bank 2) (includes dropping in the hero)
             jsr setupenv        ; arm interrupts
             lda #$00            ; start at nudge 0
+            ;sta ZPlaySound
             sta NudgePos
             sta GameLevel
             sta GameScore
