@@ -31,13 +31,14 @@ medresline: ldy MedLine
             sta ZPtrA + XByte
             sta ZPtrB + XByte
             ldy #$27
-            ldx #%00101001      ; color pattern to rotate
+            ;ldx #%00101001      ; color pattern to rotate
+            ldx #%01001100      ; color pattern to rotate
             lda StartPix        ; pixel pattern
 medresbyte: sta (ZPtrA), y
             ror
             pha
             txa
-            ror
+            ;ror
             tax
             sta (ZPtrB), y
             pla
@@ -50,4 +51,3 @@ medresbyte: sta (ZPtrA), y
             dec MedGroups
             bpl medresgrp
             rts
-            

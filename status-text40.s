@@ -3,25 +3,25 @@
 ; top score and progress display
 ; occupies scan lines 00-0F, text lines 0-1.
 
-StatTextA:  .byte " Level    "
-            .byte " Score:   "
-            .byte "          "
-            .byte " DISKHERO "
+StatTextA:  .byte "  00 LEVEL"
+            .byte "      disk"
+            .byte "hero  SCOR"
+            .byte "E 000000  "
 
-StatColA:   .byte $2D, $2D, $2D, $2D, $2D, $2D, $2E, $2E, $2E, $2E
-            .byte $0C, $0C, $0C, $0C, $0C, $0C, $0C, $0C, $0D, $0D
-            .byte $0D, $0D, $0D, $0D, $0D, $F0, $B0, $E0, $C0, $D0
-            .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
+StatColA:   .byte $2D, $2D, $2C, $2C, $2D, $2D, $2D, $2D, $2D, $2D
+            .byte $2D, $2D, $2D, $2D, $2D, $3C, $3C, $3C, $3C, $3C
+            .byte $3C, $3C, $3C, $3C, $3C, $2D, $2D, $2D, $2D, $2D
+            .byte $2D, $2D, $2E, $2E, $2E, $2E, $2E, $2E, $2E, $2E
 
 ProgTextA:  .byte "00 ", C_DISK, " 00 1 "
             .byte "2 00 ", C_DISK, " 00 "
             .byte " 00 ", C_DISK, " 00 3"
             .byte " 4 00 ", C_DISK, " 00"
 
-ProgColA:   .byte $0F, $0F, $0F, $0E, $0F, $0E, $0E, $0F, $A5, $0F
-            .byte $A5, $0F, $0F, $0F, $0F, $0D, $0F, $0E, $0E, $0F
-            .byte $0F, $0F, $0F, $0F, $0C, $0F, $0E, $0E, $0F, $A5
-            .byte $0F, $A5, $0F, $0F, $0F, $0F, $0B, $0F, $0E, $0E
+ProgColA:   .byte $03, $03, $0F, $0E, $0F, $09, $09, $0F, $A5, $0F
+            .byte $A5, $0F, $03, $03, $0F, $0D, $0F, $09, $09, $0F
+            .byte $0F, $03, $03, $0F, $0C, $0F, $09, $09, $0F, $A5
+            .byte $0F, $A5, $0F, $03, $03, $0F, $0B, $0F, $09, $09
 
 ; paint the initial background
 
@@ -68,7 +68,7 @@ initstatus: lda #$8F
 drawlevel:  ldx #$03
             lda YLoresL, x
             clc
-            adc #$07            ; +$07 is screen location of level
+            adc #$02            ; screen location of level
             sta ZNumPtr
             lda YLoresHA, x
             sta ZNumPtr + 1
@@ -86,7 +86,7 @@ drawstatus: ldx #$03
             lda YLoresL, x
             sta ZPxScratch
             clc
-            adc #$16            ; +$16 is screen location of score (end)
+            adc #$24            ; screen location of score (end)
             sta ZNumPtr
             lda YLoresHA, x
             sta ZNumPtr + 1
