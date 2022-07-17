@@ -3,12 +3,12 @@
 ; top score and progress display
 ; occupies scan lines 00-0F, text lines 0-1.
 
-StatTextA:  .byte "  00 LEVEL"
+StatTextA:  .byte "  Level 00"
             .byte "      disk"
-            .byte "hero  SCOR"
-            .byte "E 000000  "
+            .byte "hero  Scor"
+            .byte "e 000000  "
 
-StatColA:   .byte $2D, $2D, $2C, $2C, $2D, $2D, $2D, $2D, $2D, $2D
+StatColA:   .byte $2D, $2D, $2D, $2D, $2D, $2D, $2D, $2D, $2C, $2C
             .byte $2D, $2D, $2D, $2D, $2D, $3C, $3C, $3C, $3C, $3C
             .byte $3C, $3C, $3C, $3C, $3C, $2D, $2D, $2D, $2D, $2D
             .byte $2D, $2D, $2E, $2E, $2E, $2E, $2E, $2E, $2E, $2E
@@ -68,7 +68,7 @@ initstatus: lda #$8F
 drawlevel:  ldx #$03
             lda YLoresL, x
             clc
-            adc #$02            ; screen location of level
+            adc #$08            ; screen location of level
             sta ZNumPtr
             lda YLoresHA, x
             sta ZNumPtr + 1
