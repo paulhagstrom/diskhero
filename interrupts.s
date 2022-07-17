@@ -241,8 +241,7 @@ intvbl:     lda #$05            ; 2 reset the HBL counter for top region when it
 ; sequenced using ZBackNext (the high byte of the address in bank 1 where next one starts).
 ; unless something changes it, it will just keep cycling back to the one at $2000.
 
-intaudio:   jmp timerout        ; DEBUG - remove sound for now
-            ldy #$00            ; 2
+intaudio:   ldy #$00            ; 2
             lda ZPlaySFX        ; 3 check sfx switch (user controlled)
             beq doback          ; 2/3 if no sound effects should be played, skip to background
             lda ZFXPlay         ; 3 see if a sound effect is playing
