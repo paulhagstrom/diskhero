@@ -87,7 +87,7 @@ imdone:     rts
 ; copy graphics line 00 + nudge to 08 + nudge
 ; draw map line for graphics line 00 + nudge on graphics line 00 + nudge
 ; top field starts at $20, draws $20 lines of map (offsets 0-1F),
-; bottom field starts at $88, draws $20 lines of map (offsets 27-46).
+; bottom field starts at $90, draws $20 lines of map (offsets 27-46).
 ; The zero point (no void, map offsets from 0-46 are rendered) has HeroY at 23.
 ; So, the top visible line is HeroY - 23,
 ; the last visible line in the upper field is HeroY - 4
@@ -267,10 +267,10 @@ lmdone:     lda CLEnv           ; restore environment, ZP, stack
 
 ; seven magenta pixels for the left and right two bytes in the map region
 ; and for the void lines
-BorderBits: .byte %00110001
-            .byte %00100110
-            .byte %01001100
-            .byte %00011000
+BorderBits: .byte %00010001
+            .byte %00100010
+            .byte %01000100
+            .byte %00001000
 
 ; do the hires page lookup and ZP setup, common to drawvoid and drawline
 ; enter with X holding the target line on the graphics page, assumes we are in 1A00 ZP
@@ -418,70 +418,68 @@ toplineseg: jsr drawseg         ; draw a single 14-pixel segment
 
 MapTemp:    .byte   0
 TopLine:    .byte   0
+TopLineZ:   .byte   0
 TopNudge:   .byte   0
 MapDiff:    .byte   0
 MapNudge:   .byte   0
 
 ; compute where in screen memory a map line would be.
-; enter with A being the map line.  X is destroyed, but Y is sae.
-; there might be a mathematically simpler way to do this, I fought with the concepts for
-; a while.
-; algorithm to get there:
-; top line = TL = HeroY - 23 (top field), HeroY + 4 (bottom field)
-; top mod 8 = T8 = TL mod 8
-; map diff = MD = map line - TL
-; map mod 8 = M8 = map line mod 8
-; base = 18 if T8 > M8 otherwise base = 20 (bottom field base = 88 or 80)
-; memory line of map line is: base + map diff + top mod 8.
-; only on display in map fields if map line is between HeroY-23 and HeroY-4 (top)
-; or between HeroY+4 and HeroY+23 (bottom)
+; this took a lot of scribbling on paper, but here is an algorithm that seems to work.
+; if Map > HeroY, bottom field, on screen if 3 < Map-HeroY < 24
+; if HeroY > Map, top field, on screen if 3 < HeroY-Map < 24
+; TL = HeroY - 23 (top field) or TL = HeroY + 4 (bottom field)
+; T8 = TL & 07, ZTL = TL - T8, MD = Map - ZTL, M8 = MD & 07
+; base = 8 * ( M8 < T8 )
+; raster = MD - base + 20 (top field) or + 90 (bottom field)
 findraster: sta MapTemp
             ldx #$90        ; default assumption is video base of lower field
             sec             ; is it actually on screen?
             sbc HeroY       ; compute map line minus HeroY
-            bcs belowhero   ; branch if result is positive, map line is below hero
+            bcs belowhero   ; branch if result is positive, map line is below hero (lower field)
             bpl froff       ; this wrapped but remained positive, very far away
-            eor #$FF        ; map line is above HeroY, so this was negative
+            eor #$FF        ; map line is above HeroY (upper field), so this was negative
             adc #$01        ; make it positive to see if it is within screen bounds
             ldx #$20        ; we are in upper field so change video base
+            pha             ; stash while we compute TL
+            lda HeroY
+            sec
+            sbc #$23
+            sta TopLine
+            pla
             jmp chbound
 belowhero:  bmi froff       ; this did not wrap but went negative, very far away
+            pha             ; stash while we compute TL
+            lda HeroY
+            clc
+            adc #$04
+            sta TopLine
+            pla
 chbound:    cmp #$04        ; if the distance to hero is less than 4
             bcc froff       ; it is off screen (in the playfield)
             cmp #$23        ; or more than 23
             bcs froff       ; it is off screen (beyond borders)
-            lda MapTemp     ; get the mod 8 of mapline
-            and #$07
-            sta MapNudge
-            lda HeroY       ; find top line in field
-            cpx #$88        ; are we in the lower field?
-            beq toplower    ; yes, find the top line of the lower field
-            sec             ; top line in upper field is HeroY-23
-            sbc #$23
-            clc             ; top nudge is based on top line as computed
-            jmp :+
-toplower:   clc             ; top line in lower field is HeroY+4
-            adc #$04
-            sec             ; and we add one to value before computing top nudge
-:           sta TopLine
-            ;adc #$00        ; add one before mod 8 if we are in the lower field
+            lda TopLine
             and #$07
             sta TopNudge
-            cmp MapNudge
-            bcc :+
-            txa             ; subtract 8 from the video base
+            lda TopLine
+            sec
+            sbc TopNudge
+            sta TopLineZ
+            lda MapTemp
+            sec
+            sbc TopLineZ
+            sta MapDiff
+            and #$07
+            sta MapNudge
+            cmp TopNudge
+            bcs :+
+            txa             ; M8 < T8, so back up the base by 8 lines
             sec
             sbc #$08
             tax
-:           lda MapTemp
-            sec
-            sbc TopLine
-            sta MapDiff     ; distance from the top line of the field it is in
-            ; and we are finally ready
-            txa             ; video base (18, 20, 88, or 90)
+:           txa
             clc
             adc MapDiff
-            adc TopNudge
             ; A should now hold the line in video memory corresponding to the map
             rts
 froff:      lda #$00        ; return zero (which is clearly not a valid line)

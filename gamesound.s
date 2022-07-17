@@ -99,12 +99,20 @@ soundinit:  lda #$81    ; bank 1
             lda #>FXHrdrGot
             sta fxcopyloop + 2
             jsr fxcopy
-            ; 1D - FXSthing - something
+            ; 1D - FXDoh - error sound (drop something you do not have)
             lda #$1D
             sta ZPtrA + 1
-            lda #<FXSthing
+            lda #<FXDoh
             sta fxcopyloop + 1
-            lda #>FXSthing
+            lda #>FXDoh
+            sta fxcopyloop + 2
+            jsr fxcopy
+            ; 1C - FXDrtop - drop disk
+            lda #$1C
+            sta ZPtrA + 1
+            lda #<FXDrop
+            sta fxcopyloop + 1
+            lda #>FXDrop
             sta fxcopyloop + 2
             jsr fxcopy
             ; background segments
@@ -217,13 +225,18 @@ FXHrdrGot:
             .byte   $80
             ; $80 ($B6)
 
-FXSthing:
+FXDrop:
             .byte   $0, $10, $3F, $10, $0, $10, $3F, $10, $0
             .byte   $10, $3F, $10, $0, $10, $3F, $10, $0, $10
             .byte   $0, $10, $3F, $5, $0, $3F, $20, $10, $3F
             .byte   $10, $3F, $20, $0, $30, $3F, $20, $3F, $10
             .byte   $80
-            
+
+FXDoh:
+            .byte   $00, $1F, $00, $3F, $2F, $1F, $00, $3F, $00, $1F
+            .byte   $00, $1F, $00, $3F, $2F, $1F, $00, $3F, $00, $1F
+            .byte   $80
+
             
 ; Above are sound effects
 ; Could perhaps try creating music

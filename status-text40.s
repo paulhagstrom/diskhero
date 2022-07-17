@@ -14,14 +14,14 @@ StatColA:   .byte $2D, $2D, $2D, $2D, $2D, $2D, $2E, $2E, $2E, $2E
             .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E
 
 ProgTextA:  .byte "00 ", C_DISK, " 00 1 "
-            .byte "00 ", C_DISK, " 00 2 "
-            .byte "00 ", C_DISK, " 00 3 "
-            .byte "00 ", C_DISK, " 00 4 "
+            .byte "2 00 ", C_DISK, " 00 "
+            .byte " 00 ", C_DISK, " 00 3"
+            .byte " 4 00 ", C_DISK, " 00"
 
-ProgColA:   .byte $0F, $0F, $0F, $0E, $0F, $0E, $0E, $0F, $E1, $0F
-            .byte $0F, $0F, $0F, $0D, $0F, $0E, $0E, $0F, $E1, $0F
-            .byte $0F, $0F, $0F, $0C, $0F, $0E, $0E, $0F, $E1, $0F
-            .byte $0F, $0F, $0F, $0B, $0F, $0E, $0E, $0F, $E1, $0F
+ProgColA:   .byte $0F, $0F, $0F, $0E, $0F, $0E, $0E, $0F, $A5, $0F
+            .byte $A5, $0F, $0F, $0F, $0F, $0D, $0F, $0E, $0E, $0F
+            .byte $0F, $0F, $0F, $0F, $0C, $0F, $0E, $0E, $0F, $A5
+            .byte $0F, $A5, $0F, $0F, $0F, $0F, $0B, $0F, $0E, $0E
 
 ; paint the initial background
 
@@ -79,8 +79,8 @@ drawlevel:  ldx #$03
 
 ; draw the score and progress
 
-CharGot:    .byte $00, $0A, $14, $1E
-CharLeft:   .byte $05, $0F, $19, $23
+CharGot:    .byte $00, $0C, $15, $21
+CharLeft:   .byte $05, $11, $1A, $26
 
 drawstatus: ldx #$03
             lda YLoresL, x

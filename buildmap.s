@@ -246,6 +246,7 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
 
             lda #$30            ; disks to scatter around
             sta MFPlaced
+            sta NumDisks
 :           jsr mfrndspot
             sty ZPxScratch      ; stash the x-coordinate
             txa

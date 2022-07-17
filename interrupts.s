@@ -19,6 +19,7 @@ NextMode:   .byte   0   ; screen mode to switch into next
 
 ; variables for sound and speed management
 VBLTick:    .byte   0   ; ticked down for each VBL, can use to delay things for several refreshes
+VBLTickP:   .byte   0   ; playfield ticker, try to draw during VBL
 ClockTick:  .byte   0   ; ticked down for each clock-during-VBL, for playing sound (only) during VBL
 
 
@@ -213,15 +214,16 @@ intvbl:     lda #$05            ; 2 reset the HBL counter for top region when it
             sta ScrRegion       ; 4 reset next region number to 1
             lda ScrRegMode + 1  ; 4 
             sta NextMode        ; 4
-            dec VBLTick         ; 4 bump VBL countdown
+            dec VBLTick         ; 6 bump VBL countdown
+            dec VBLTickP        ; 6 bump VBL countdown
             lda #$03            ; 2 fire the clock interrupt 4 times during VBL
             sta ClockTick       ; 4
             lda #$10            ; 
             sta RE_T1CL         ; 4 interval is $410, this is the $10 part.
-            lda #%10000010      ; 2 enable CA1 (RTC)
-            sta RE_INTENAB      ; 4
-            lda #$04            ; 2
-            sta RE_T1CH         ; 4 [68 to here] start the clock for $208 cycles
+            ;lda #%10000010      ; 2 enable CA1 (RTC)
+            ;sta RE_INTENAB      ; 4
+            ;lda #$04            ; 2
+            ;sta RE_T1CH         ; 4 [68 to here] start the clock for $208 cycles
             lda #$0             ; 2
             sta RE_T2CH         ; 4
             pla                 ; 4 [30 cycles to end, restoring environment]
@@ -241,7 +243,8 @@ intvbl:     lda #$05            ; 2 reset the HBL counter for top region when it
 ; sequenced using ZBackNext (the high byte of the address in bank 1 where next one starts).
 ; unless something changes it, it will just keep cycling back to the one at $2000.
 
-intaudio:   ldy #$00            ; 2
+intaudio:   ;jmp timerout
+            ldy #$00            ; 2
             lda ZPlaySFX        ; 3 check sfx switch (user controlled)
             beq doback          ; 2/3 if no sound effects should be played, skip to background
             lda ZFXPlay         ; 3 see if a sound effect is playing

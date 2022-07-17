@@ -3,7 +3,6 @@
 ;
 ; includes antagonist movement
 
-
 VelX:       .byte   0
 VelY:       .byte   0
 OldX:       .byte   0
@@ -16,6 +15,13 @@ IsHero:     .byte   0
 CurrHoard:  .byte   0
 ScrollUp:   .byte   0
 ScrollDown: .byte   0
+TargX:      .byte   0
+TargY:      .byte   0
+TargV:      .byte   0
+TargD:      .byte   0
+TargDX:     .byte   0
+TargDY:     .byte   0
+TargDTemp:  .byte   0
 
 domove:     lda #$82            ; we will use ZPtrA, ZPtrB, ZPtrC
             sta ZPtrA + XByte   ; so set up the XByte for all three up here
@@ -83,11 +89,13 @@ hoardcont:  lda (ZHoardXV), y
             sta VelX
             lda (ZHoardYV), y
             sta VelY
-            bne hmoving         ; if there was Y velocity, hoarder is moving
-            lda VelX            ; Y velocity was 0, is X velocity 0 also?
-            bne hmoving         ; if there is X velocity, hoarder is moving
+            beq hnovely         ; if there was Y velocity, hoarder is moving
+            jmp hmoving
+hnovely:    lda VelX            ; Y velocity was 0, is X velocity 0 also?
+            beq hnotmoving  ; if there is X velocity, hoarder is moving
+            jmp hmoving
             ; swap head and hands if hoarder was stopped, so it does not corner itself
-            lda ZXXTemp         ; old head X-coordinate
+hnotmoving: lda ZXXTemp         ; old head X-coordinate
             pha                 ; stash it as we sawap
             lda (ZHoardX), y    ; get the old hands x-coordinate
             sta (ZHoardXX), y   ; and put it in old head x-coordinate
@@ -100,22 +108,59 @@ hoardcont:  lda (ZHoardXV), y
             sta (ZHoardY), y
             pla
             sta (ZHoardYY), y
-            ;
-            ; TODO - make the hoarders actually seek out higher-value disks.
-            ; May mean they need to stop before hitting something and turn.
-            ; Start with omniscience rather than line of sight.
-            ; TODO - maybe I should test all four spots a horder could go, then
-            ; have it pick the one that takes it closer to its target?  Or pick
-            ; randomly.
-            ; 
-            ; For the mechanic of dropping a disk to distract hoarders, it
-            ; would need to be the case that hoarders go for close rather than
-            ; value.  Unless the mechanic is to drop a high value disk (that you had)
-            ; so you can go for a lower value disk while hoarders are distracted.
-            ; your goal and hoarders goals are different.  You want most disks,
-            ; hoarders want high value disks.
 hoardredir: ldx Seed            ; if hoarder was not moving
-            lda Random, x       ; send it in a random direction
+            lda Random, x       ; send it in a new direction
+            inx
+            and #$03            ; one out of 4 chance it goes in a random direction
+            beq hranddir        ; otherwise seeks high value disk
+            stx Seed
+            ; scan disks to find closest highest value one
+            lda #$FF
+            sta TargD
+            lda #$00
+            sta TargX
+            sta TargY
+            sta TargV
+            ldy NumDisks
+dcheckdist: lda (ZDiskType), y
+            cmp TargV
+            bcc dnotmore
+            lda (ZDiskX), y     ; higher value than ones previously seen
+            sta TargX           ; store this as the new target
+            sta TargY
+            jmp dnotbetter
+dnotmore:   lda (ZDiskX), y
+            sec
+            sbc (ZHoardX), y
+            sta TargDX          ; will be negative if disk is to the left
+            bcs dxdpos
+            eor #$FF
+            adc #$01
+dxdpos:     sta TargDTemp
+            lda (ZDiskY), y
+            sec
+            sbc (ZHoardY), y
+            sta TargDY          ; will be negative if disk is above
+            bcs dydpos
+            eor #$FF
+            adc #$01
+dydpos:     clc
+            adc TargDTemp       ; very distant could seem close. Shrug.
+            cmp TargD
+            bcc dnotbetter
+            sta TargD           ; this disk is closer than other same value
+            lda (ZDiskX), y     ; so make this the new target
+            sta TargX
+            lda (ZDiskY), y
+            sta TargY
+dnotbetter: dey
+            bpl dcheckdist
+            lda TargDX          ; velocity is just pos/neg/zero anyway, so store
+            sta VelX
+            lda TargDY
+            sta VelY
+            jmp hmoving         ; and go
+hranddir:   lda Random, x       ; send it in a random direction
             bpl sendhoriz       ; horizontal/vertical choice yields: horizontal
             inx
             lda Random, x       ; send it vertically in a random direction
@@ -193,10 +238,6 @@ handoff:    ldy NewX
             adc ZFrame          ; select animation frame
             sta (ZPtrA), y      ; update the map
             jsr gmupdscr        ; update the screen
-            ; TODO - if the current hoarder is moving to or from someplace in the visible map,
-            ; we need to update the map display too.  Locate the 14-pixel chunk it is in and redraw
-            ; it selectively.  This is the place where having more hoarders can possibly slow things
-            ; down.
 nexthoard:  dec CurrHoard
             bmi donehoard
             jmp movehoard
@@ -354,7 +395,7 @@ gotdisk:    lda ZMapTemp        ; map (disk) was stored here, includes type
             and #$C0            ; determine disk type (color bits)
             pha
             ldx IsHero
-            beq gotnot
+            beq gotnotsnd
             ora #$20            ; add to score if hero got the disk
             lsr
             jsr addscore        ; add type multiplier to the score
@@ -364,7 +405,8 @@ gotdisk:    lda ZMapTemp        ; map (disk) was stored here, includes type
             sta ZFXPtr + 1
             sta ZFXPlay
             jmp gotaccount
-gotnot:     sta ZFXPtr
+gotnotsnd:  lda #$00
+            sta ZFXPtr
             lda #$1E            ; play SndHrdrGot sound ("hoarder got disk")
             sta ZFXPtr + 1
             sta ZFXPlay
@@ -374,14 +416,47 @@ gotaccount: pla                 ; retrieve disk type (bits 7 and 8)
             rol
             tax                 ; move type to x
             sed                 ; add in decimal mode to accounting for types
+            lda IsHero
+            beq gotnotact       ; only add to "got" if hero got it
             lda DisksGot, x
             clc
             adc #$01
             sta DisksGot, x     ; got one of this type
-            lda DisksLeft, x
+            lda #$50            ; start a splash
+            sta SplashG, x
+gotnotact:  lda DisksLeft, x
             sec
             sbc #$01
             sta DisksLeft, x    ; fewer out there of this type
+            lda #$50            ; start a splash
+            sta SplashL, x
             cld
             ; removing the disk is unnecessary because the hero/hoarder will replace it
+            rts
+
+; drop a disk of type in X
+dropdisk:   lda DisksGot, x
+            beq havenone
+            lda #$00
+            sta ZFXPtr
+            lda #$1C            ; play the drop sound
+            sta ZFXPtr + 1
+            sta ZFXPlay
+            ; TODO - actually drop it
+            sed
+            lda DisksGot, x
+            sec
+            sbc #$01
+            sta DisksGot, x
+            lda DisksLeft, x
+            clc
+            adc #$01
+            sta DisksLeft, x
+            cld
+            rts
+havenone:   lda #$00
+            sta ZFXPtr
+            lda #$1D            ; play the error sound ("d'oh!")
+            sta ZFXPtr + 1
+            sta ZFXPlay
             rts

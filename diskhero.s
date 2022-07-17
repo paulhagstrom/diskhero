@@ -10,10 +10,10 @@
 ; I can fudge this a little if needed, by starting with JMP and putting data early,
 ; since the main concern is trying to run code in a bank switched area.
 ; 9F00 leaves 6400, 9E00 leaves 6656 bytes, 9D00 leaves 6912, 9C00 leaves 7167,
-; 9B00 leaves 7423, 9A00 leaves 7679, 9900 leaves 7935, 9800 leaves 8191.
+; 9B00 leaves 7423, 9A00 leaves 7679, 9900 leaves 7935, 9800 leaves 8191, 9700 leaves 8447.
 ; but realistically I should start loading things from disk into other banks.
 
-            .org     $9900 - 14
+            .org     $9800 - 14
             
 ; SOS interpreter header
             .byte    "SOS NTRP"
@@ -25,15 +25,15 @@ CodeStart:  jmp init
 
             .include "buildmap.s"           ; does not switch bank, called early and once
             .include "gamesound.s"          ; does not switch bank, called early and once
-            .include "gamefont.s"           ; does not switch bank, called early and once
             .include "status-text40.s"      ; does not switch bank
-            .include "reg-superhires.s"
             .include "play-text40.s"
+            .include "gamemove.s"           ; does not switch bank
+            .include "gamefont.s"           ; does not switch bank, called early and once
+            .include "reg-superhires.s"
             .include "reg-medres.s"
             .include "map-hires3.s"         ; switches in bank 0 to use stack
-            .include "gamemove.s"           ; does not switch bank
-            .include "interrupts.s"         ; critical, should be always available
             .include "lookups.s"            ; lookups, should be always available
+            .include "interrupts.s"         ; critical, should be always available
 
 IRQSave:    .byte   0, 0 , 0        ; saved state
 ZPSave:     .byte   0
@@ -52,6 +52,7 @@ GameScore:  .byte   0, 0, 0
 DisksGot:   .byte   0, 0, 0, 0
 DisksLeft:  .byte   0, 0, 0, 0
 NumHoards:  .byte   0
+NumDisks:   .byte   0
 
 FieldH:     .byte   $04, $05, $05, $06, $06, $07
 FieldL:     .byte   $A8, $25, $A8, $28, $A8, $28
@@ -129,14 +130,13 @@ eventloop:  lda ExitFlag
             bne alldone
             lda KeyCaught
             beq :+
-            sta $0400           ; 4 DEBUG - put it in the corner so I can see it
             jsr handlekey
 :            
-            inc $427            ; DEBUG - constantly churn screen memory to detect hang
             jsr drawstatus
             lda VBLTick
             bpl posttick
             jsr domove
+            jsr updsplash
             lda #MoveDelay
             sta VBLTick
 posttick:   jmp eventloop
@@ -227,6 +227,26 @@ handlekey:
             eor #$01
             sta ZPlaySFX
             jmp keydone
+:           cmp #$B1            ; 1 (drop disk type 1)
+            bne :+
+            ldx #$00
+            jsr dropdisk
+            jmp keydone
+:           cmp #$B2            ; 2 (drop disk type 2)
+            bne :+
+            ldx #$01
+            jsr dropdisk
+            jmp keydone
+:           cmp #$B3            ; 3 (drop disk type 3)
+            bne :+
+            ldx #$02
+            jsr dropdisk
+            jmp keydone
+:           cmp #$B4            ; 4 (drop disk type 4)
+            bne :+
+            ldx #$03
+            jsr dropdisk
+            jmp keydone
 :           cmp #$C5            ; E (exit)
             bne keydone            
             inc ExitFlag        ; tell event loop we are exiting
@@ -285,15 +305,15 @@ seedRandom:
 initscreen:
             lda R_BANK
             sta BankSave        ; save current bank
+            jsr initstatus      ; text lines 02-03: score/status
+            jsr initplay        ; text lines 08-11: playfield (draw frame)
+            jsr drawplay        ; draw actual playfield
             lda #$00            ; swap in bank zero,
             sta R_BANK          ; where (hires) graphics memory lives
             bit D_PAGEONE
-            jsr initstatus      ; text lines 00-01: score/status
-            jsr initshgr        ; mode 6 super hires line 10-1F
+            jsr initshgr        ; mode 6 super hires line 00-0F
             jsr initmedres      ; med res lines B0-BF
             jsr initmap         ; mode 7 a3 hires map regions
-            jsr initplay        ; text lines 08-11: playfield (draw frame)
-            jsr drawplay        ; draw actual playfield
             lda BankSave
             sta R_BANK
             rts
