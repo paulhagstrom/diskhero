@@ -27,7 +27,6 @@ CodeStart:  jmp init
             .include "gamesound.s"          ; does not switch bank, called early and once
             .include "gamefont.s"           ; does not switch bank, called early and once
             .include "status-text40.s"      ; does not switch bank
-            .include "status-text80.s"      ; does not switch bank
             .include "reg-superhires.s"
             .include "play-text40.s"
             .include "reg-medres.s"
@@ -60,12 +59,11 @@ FieldHC:    .byte   $08, $09, $09, $0A, $0A, $0B
 MapColors:  .byte   $88, $66, $33, $44
 DiskColors: .byte   $EE, $DD, $CC, $BB
 ; Screen layout:
-; mode 1 (text)      lines 00-0F (10) 00-01  score/status
-; mode 6 (bw hires)  lines 10-1F (10)        b/w map display
+; mode 6 (bw hires)  lines 00-0F (10)        b/w map display
+; mode 1 (text)      lines 10-1F (10) 02-03  score/status
 ; mode 7 (a3 hires)  lines 20-3F (20)        hires map upper field  map: 00-1F
-; mode 1 (text)      lines 40-87 (48) 08-10  text play field        map: 20-26
-; mode 7 (a3 hires)  lines 88-A7 (20)        hires map lower field  map: 27-46
-; mode 3 (80 text)   linwa A8-AF (08) 15     b/w 80 column text
+; mode 1 (text)      lines 40-8F (50) 08-11  text play field        map: 20-27
+; mode 7 (a3 hires)  lines 90-AF (20)        hires map lower field  map: 28-47
 ; mode 5 (a3 medres) lines B0-BF (18) 15-17  medium res something
 ;
 ; Define the screen region; mode is a display mode, length is number of HBLs.
@@ -291,7 +289,6 @@ initscreen:
             sta R_BANK          ; where (hires) graphics memory lives
             bit D_PAGEONE
             jsr initstatus      ; text lines 00-01: score/status
-            jsr initmsg         ; text line 21: message
             jsr initshgr        ; mode 6 super hires line 10-1F
             jsr initmedres      ; med res lines B0-BF
             jsr initmap         ; mode 7 a3 hires map regions

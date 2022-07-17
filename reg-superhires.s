@@ -1,7 +1,7 @@
 ; DISKHERO
 ; Apple III super-hires region
 ;
-; occupies  lines 10-1F (10)
+; occupies  lines 00-0F (10)
 ;
 ; has no present function
 
@@ -14,7 +14,7 @@ SHRStart:   .byte   0
 
 initshgr:   lda #$00            ; number of groups
             sta SHRGroups
-            lda #$10            ; first line
+            lda #$00            ; first line
             sta SHRLine
 shgrgrp:    lda #$0F            ; number of lines to fill
             sta SHRLines

@@ -1,7 +1,7 @@
 ; DISKHERO
 ; Apple III 40-column text region
 ; middle primary play field display
-; occupies scan lines 40-87, text lines 08-10.
+; occupies scan lines 40-8F, text lines 08-11.
 ; display map lines 20-26 (where the top of the upper playfield is 0)
 ;           (or, in other words, up 3 and down 3 from the center)
 
@@ -36,10 +36,30 @@ iploop:     lda YLoresHA, y
             dex
             dey
             bpl :-
-            bcc ipdone
+            bcc ipshadow
             ldy #$10
             clc
             jmp iploop
+ipshadow:   ldy #$11
+            lda YLoresHA, y
+            sta R_ZP
+            ldx YLoresS, y
+            lda #C_SPACE
+            ldy #$27
+:           sta Zero, x
+            dex
+            dey
+            bpl :-
+            ldy #$11
+            lda YLoresHB, y
+            sta R_ZP
+            ldx YLoresS, y
+            ldy #$27
+            lda #BorderColA
+:           sta Zero, x
+            dex
+            dey
+            bpl :-
 ipdone:     lda IpZPSave
             sta R_ZP
             rts

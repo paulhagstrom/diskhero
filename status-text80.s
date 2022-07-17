@@ -4,6 +4,7 @@
 ; prints game progress messages on the bottom line of the display
 ; like "Yet another copy of Jeopardy!" or something.
 
+
 MsgTextA:   .byte "S toggles the... uh."
             .byte ".. music, Q toggles "
             .byte "the sound effects.  "

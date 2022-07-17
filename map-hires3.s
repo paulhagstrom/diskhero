@@ -43,17 +43,17 @@ hiresline:  ldx CurScrLine      ; load the target raster line into X
             cmp #$60            ; did we just fall off the map into the bottom void?
             bne novoiddown      ; no, so continue on
 :           ldx CurScrLine      ; note that if we are in the lower void, we must be in bottom field
-            cpx #$A9            ; last line of bottom field complete? ($88-$A8)
+            cpx #$B0            ; last line of bottom field complete? ($90-$AF)
             beq imdone
             jsr drawvoid        ; draw the void line
             inc CurScrLine      ; advance the graphics raster line
             jmp :-
 novoiddown: ldx CurScrLine
-            cpx #$A9            ; last line of bottom field complete? ($88-$A8)
+            cpx #$B0            ; last line of bottom field complete? ($90-$AF)
             beq imdone          ; if so, we are finished drawing the hires map
             cpx #$40            ; last line of top field complete? ($20-$3F)
             bne hiresline       ; nope, keep going            
-            lda #$88            ; we just finished the top field, so skip ahead to the lower field
+            lda #$90            ; we just finished the top field, so skip ahead to the lower field
             sta CurScrLine      ; set the raster line for the start of the lower field
             lda HeroY           ; set up map starting point for the top of the lower field
             clc                 ; which is 4 lines past HeroY.
@@ -65,7 +65,7 @@ novoiddown: ldx CurScrLine
             jsr drawvoid
             inc CurScrLine
             lda CurScrLine
-            cmp #$A9            ; last line of bottom field complete? ($88-$A8)
+            cmp #$B0            ; last line of bottom field complete? ($90-$AF)
             bne :-              ; nope, keep drawing void lines
 imdone:     rts
             
@@ -99,9 +99,9 @@ updatemap:  bcs umdec           ; if we decrementing nudge, skip past the increm
             sta PTopRastA
             lda #$38            ; raster offset for drawing new upper field line ($20 + $18)
             sta PTopRastD
-            lda #$88            ; first copy target raster line of lower field (then up, copying toward zero)
+            lda #$90            ; first copy target raster line of lower field (then up, copying toward zero)
             sta PBotRastA
-            lda #$A0            ; raster offset for drawing new lower field line ($88 + $18)
+            lda #$A8            ; raster offset for drawing new lower field line ($90 + $18)
             sta PBotRastD
             lda #$04            ; map offset back from HeroY for newly drawn line in top field.
             sta PTopMapOff
@@ -112,9 +112,9 @@ umdec:      lda #$38            ; first copy target raster line in lower field (
             sta PTopRastA
             lda #$20            ; raster offset for drawing new upper field line ($20 + 0)
             sta PTopRastD
-            lda #$A0            ; first copy target raster line in lower field (then down, copying away from zero)
+            lda #$A8            ; first copy target raster line in lower field (then down, copying away from zero)
             sta PBotRastA
-            lda #$88            ; raster offset for drawing new lower field line ($88 + 0)
+            lda #$90            ; raster offset for drawing new lower field line ($90 + 0)
             sta PBotRastD
             lda #$23            ; map offset back from HeroY for newly drawn line in top field.
             sta PTopMapOff
@@ -436,7 +436,7 @@ MapNudge:   .byte   0
 ; only on display in map fields if map line is between HeroY-23 and HeroY-4 (top)
 ; or between HeroY+4 and HeroY+23 (bottom)
 findraster: sta MapTemp
-            ldx #$88        ; default assumption is video base of lower field
+            ldx #$90        ; default assumption is video base of lower field
             sec             ; is it actually on screen?
             sbc HeroY       ; compute map line minus HeroY
             bcs belowhero   ; branch if result is positive, map line is below hero
@@ -464,7 +464,7 @@ toplower:   clc             ; top line in lower field is HeroY+4
             adc #$04
             sec             ; and we add one to value before computing top nudge
 :           sta TopLine
-            adc #$00        ; add one before mod 8 if we are in the lower field
+            ;adc #$00        ; add one before mod 8 if we are in the lower field
             and #$07
             sta TopNudge
             cmp MapNudge
@@ -478,7 +478,7 @@ toplower:   clc             ; top line in lower field is HeroY+4
             sbc TopLine
             sta MapDiff     ; distance from the top line of the field it is in
             ; and we are finally ready
-            txa             ; video base (18, 20, 80, or 88)
+            txa             ; video base (18, 20, 88, or 90)
             clc
             adc MapDiff
             adc TopNudge

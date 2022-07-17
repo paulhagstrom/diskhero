@@ -25,29 +25,52 @@ ProgColA:   .byte $0F, $0F, $0F, $0E, $0F, $0E, $0E, $0F, $E1, $0F
 
 ; paint the initial background
 
-TEXT1CHAR   = $400              ; text line 1
-TEXT1COL    = $800              ; colors line 1
-TEXT2CHAR   = $480              ; text line 2
-TEXT2COL    = $880              ; colors line 2
-
-initstatus: ldy #$27
+initstatus: lda #$8F
+            sta ZPtrA + XByte
+            ldx #$03            ; score on line 4
+            lda YLoresL, x
+            sta ZPtrA
+            lda YLoresHA, x
+            sta ZPtrA + 1
+            ldy #$27
 :           lda StatTextA, y
-            sta TEXT1CHAR, y
-            lda StatColA, y
-            sta TEXT1COL, y
-            lda ProgTextA, y
-            sta TEXT2CHAR, y
-            lda ProgColA, y
-            sta TEXT2COL, y
+            sta (ZPtrA), y
+            dey
+            bpl :-
+            lda YLoresHB, x
+            sta ZPtrA + 1
+            ldy #$27
+:           lda StatColA, y
+            sta (ZPtrA), y
+            dey
+            bpl :-
+            ldx #$02            ; pregress on line 3
+            lda YLoresL, x
+            sta ZPtrA
+            lda YLoresHA, x
+            sta ZPtrA + 1
+            ldy #$27
+:           lda ProgTextA, y
+            sta (ZPtrA), y
+            dey
+            bpl :-
+            lda YLoresHB, x
+            sta ZPtrA + 1
+            ldy #$27
+:           lda ProgColA, y
+            sta (ZPtrA), y
             dey
             bpl :-
             ; fall through to drawlevel
             
 ; update level on screen - kept separate because it rarely changes
 
-drawlevel:  lda #$07            ; update level - $407 is screen location of level
+drawlevel:  ldx #$03
+            lda YLoresL, x
+            clc
+            adc #$07            ; +$07 is screen location of level
             sta ZNumPtr
-            lda #$04
+            lda YLoresHA, x
             sta ZNumPtr + 1
             lda #$8F
             sta ZNumPtr + XByte
@@ -56,12 +79,16 @@ drawlevel:  lda #$07            ; update level - $407 is screen location of leve
 
 ; draw the score and progress
 
-CharGot:    .byte $80, $8A, $94, $9E
-CharLeft:   .byte $85, $8F, $99, $A3
+CharGot:    .byte $00, $0A, $14, $1E
+CharLeft:   .byte $05, $0F, $19, $23
 
-drawstatus: lda #$16            ; update score - $416 is screen location of score (end)
+drawstatus: ldx #$03
+            lda YLoresL, x
+            sta ZPxScratch
+            clc
+            adc #$16            ; +$16 is screen location of score (end)
             sta ZNumPtr
-            lda #$04
+            lda YLoresHA, x
             sta ZNumPtr + 1
             lda #$8F
             sta ZNumPtr + XByte
@@ -72,12 +99,21 @@ drawstatus: lda #$16            ; update score - $416 is screen location of scor
             dec ZNumPtr
             dex
             bpl :-
+            ldx #$02
+            lda YLoresHA, x
+            sta ZNumPtr + 1
+            lda YLoresL, x
+            sta ZPxScratch
             ldx #$03            ; update disk types gotten and left
 :           lda CharGot, x
+            clc
+            adc ZPxScratch
             sta ZNumPtr
             lda DisksGot, x
             jsr drawnumber
             lda CharLeft, x
+            clc
+            adc ZPxScratch
             sta ZNumPtr
             lda DisksLeft, x
             jsr drawnumber
