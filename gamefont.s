@@ -170,21 +170,21 @@ FontAscii:
 
 FontDots:
             .byte   %00000000         ; space
-            .byte   %11110000         ; wall right end
-            .byte   %11110000         ; wall right down
-            .byte   %11110000         ; wall right up
-            .byte   %11110000         ; wall right up down
+            .byte   %11111111         ; wall right end
+            .byte   %11111111         ; wall right down
+            .byte   %11111111         ; wall right up
+            .byte   %11111111         ; wall right up down
             .byte   %11111111         ; wall horiz
-            .byte   %00001111         ; wall left end
-            .byte   %00001111         ; wall left down
-            .byte   %00001111         ; wall left up
-            .byte   %00001111         ; wall left up down
+            .byte   %11111111         ; wall left end
+            .byte   %11111111         ; wall left down
+            .byte   %11111111         ; wall left up
+            .byte   %11111111         ; wall left up down
             .byte   %11111111         ; wall vert
             .byte   %11111111         ; wall up end
             .byte   %11111111         ; wall down end
             .byte   %11111111         ; wall left right up
             .byte   %11111111         ; wall left right down
-            .byte   %11111111         ; disk
+            .byte   %11110000         ; disk
             .byte   %11011101         ; hero
             .byte   %11001100         ; hoarder head 1
             .byte   %11001100         ; hoarder head 2

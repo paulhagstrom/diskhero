@@ -55,7 +55,7 @@ ipshadow:   ldy #$11
             sta R_ZP
             ldx YLoresS, y
             ldy #$27
-            lda #BorderColA
+            lda #$10    ; void color
 :           sta Zero, x
             dex
             dey
