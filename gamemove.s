@@ -13,6 +13,7 @@ OldOldX:    .byte   0
 OldOldY:    .byte   0
 IsHero:     .byte   0
 CurrHoard:  .byte   0
+CurrDisk:   .byte   0
 ScrollUp:   .byte   0
 ScrollDown: .byte   0
 TargX:      .byte   0
@@ -111,25 +112,29 @@ hnotmoving: lda ZXXTemp         ; old head X-coordinate
 hoardredir: ldx Seed            ; if hoarder was not moving
             lda Random, x       ; send it in a new direction
             inx
-            and #$03            ; one out of 4 chance it goes in a random direction
-            beq hranddir        ; otherwise seeks high value disk
             stx Seed
-            ; scan disks to find closest highest value one
-            lda #$FF
+            and #$03            ; one out of 4 chance it goes in a random direction
+            bne hoardseek       ; otherwise seeks high value disk
+            jmp hranddir        ; go forth randomly
+hoardseek:  lda #$FF            ; scan disks to find closest highest value one
             sta TargD
             lda #$00
             sta TargX
             sta TargY
             sta TargV
             ldy NumDisks
-dcheckdist: lda (ZDiskType), y
+            sty CurrDisk
+dcheckdist: ldy CurrDisk
+            lda (ZDiskType), y
             cmp TargV
             bcc dnotmore
             lda (ZDiskX), y     ; higher value than ones previously seen
             sta TargX           ; store this as the new target
             sta TargY
             jmp dnotbetter
-dnotmore:   lda (ZDiskX), y
+dnotmore:   ldy CurrDisk
+            lda (ZDiskX), y
+            ldy CurrHoard
             sec
             sbc (ZHoardX), y
             sta TargDX          ; will be negative if disk is to the left
@@ -137,7 +142,9 @@ dnotmore:   lda (ZDiskX), y
             eor #$FF
             adc #$01
 dxdpos:     sta TargDTemp
+            ldy CurrDisk
             lda (ZDiskY), y
+            ldy CurrHoard
             sec
             sbc (ZHoardY), y
             sta TargDY          ; will be negative if disk is above
@@ -149,11 +156,12 @@ dydpos:     clc
             cmp TargD
             bcc dnotbetter
             sta TargD           ; this disk is closer than other same value
+            ldy CurrDisk
             lda (ZDiskX), y     ; so make this the new target
             sta TargX
             lda (ZDiskY), y
             sta TargY
-dnotbetter: dey
+dnotbetter: dec CurrDisk
             bpl dcheckdist
             lda TargDX          ; velocity is just pos/neg/zero anyway, so store
             sta VelX
@@ -175,7 +183,8 @@ sendhoriz:  inx
             sta VelX
             lda #$00
             sta VelY
-hmoving:    lda (ZHoardY), y
+hmoving:    lda CurrHoard
+            lda (ZHoardY), y
             sta OldY
             lda (ZHoardX), y
             sta OldX
