@@ -202,6 +202,7 @@ TargHB:     .byte   0
 CLStack:    .byte   0
 CLEnv:      .byte   0
 USBank:     .byte   0
+LinesDec:   .byte   0           ; record carry status from entry (1=decrementing, moving map down)
 
 copylines:  tay                 ; move start line into Y
             tsx                 ; preserve stack state for recall when we are done
@@ -212,13 +213,19 @@ copylines:  tay                 ; move start line into Y
             sta R_ENVIRON
             lda #$02            ; move three lines, countdown in LinesLeft
             sta LinesLeft
+            lda #$00            ; set LinesDec to 1 if carry was set or 0 if carry was clear
+            rol
+            sta LinesDec
             lda YHiresS, y
             sta TargS           ; target stack (end of line)
             lda YHiresHA, y
             sta TargHA          ; target A high
-            lda YHiresHB, y
+            clc
+            adc #$20            ; compute HB
             sta TargHB          ; target B high
-lmnext:     tya                 ; compute source line relative to target line
+lmnext:     lda LinesDec        ; restore carry from entry
+            ror
+            tya                 ; compute source line relative to target line
             bcs :+              ; if carry is set we are subtracting
             adc #$08            ; if carry is clear we are adding
             bcc lmprep          ; carry survives from entry (no chance carry got set)
@@ -229,7 +236,8 @@ lmprep:     tay
             sta lmsrcb + 1
             lda YHiresHA, y
             sta lmsrca + 2      ; source A high
-            lda YHiresHB, y
+            clc
+            adc #$20            ; compute HB
             sta lmsrcb + 2      ; source B high
             lda YHiresS, y      ; stack pointer not used in source but passed on to be target after
             sta SourceS
@@ -308,14 +316,14 @@ drawvoid:   jsr prepdraw
             lda ZOtherZP        ; HGR1
             sta R_ZP
             lda BorderBits      ; write first byte to even bytes on HGR1
-            ldy #$1F            ; fill $20 of them
+            ldy #$13            ; fill $14 of them from left to right
 :           sta Zero, x
             inx
             inx
             dey
             bpl :-
-            inx                 ; skip 1 to get to odd bytes
-            ldy #$1F            ; fill $20 of them
+            inx                 ; skip pointer ahead 1 to get to odd bytes, starting with $27
+            ldy #$13            ; fill $14 of them as we pass back from right to left
             lda BorderBits + 2  ; write third byte to odd bytes on HGR1
 :           sta Zero, x
             dex
@@ -325,14 +333,14 @@ drawvoid:   jsr prepdraw
             lda ZOtherZP        ; HGR2
             sta R_ZP
             lda BorderBits + 3  ; write fourth byte to odd bytes on HGR2
-            ldy #$1F            ; fill $20 of them
+            ldy #$13            ; fill $14 of them
 :           sta Zero, x
             inx
             inx
             dey
             bpl :-
             dex                 ; skip back 1 to get to even bytes
-            ldy #$1F            ; fill $20 of them
+            ldy #$13            ; fill $14 of them
             lda BorderBits + 1  ; write second byte to odd bytes on HGR2
 :           sta Zero, x
             dex
@@ -343,7 +351,7 @@ drawvoid:   jsr prepdraw
             sta R_ZP
             rts
 
-; enter with X holding the target line on the graphics page
+; enter with X holding the target line on the graphics page (raster)
 ; and A holding the map line we will be drawing there
 ; drawlineb is a second entry point if the map pointer is already set
 ; this assumes that 1A00 is the normal ZP we start in, and bank 0 (hgr) is switched in
@@ -435,16 +443,18 @@ MapNudge:   .byte   0
 ; this took a lot of scribbling on paper, but here is an algorithm that seems to work.
 ; if Map > HeroY, bottom field, on screen if 3 < Map-HeroY < 24
 ; if HeroY > Map, top field, on screen if 3 < HeroY-Map < 24
-; TL = HeroY - 23 (top field) or TL = HeroY + 4 (bottom field)
-; T8 = TL & 07 (or TL+1 & 07 top field), ZTL = TL - T8, MD = Map - ZTL, M8 = MD & 07
-; base = 8 * ( M8 < T8 )
+; TL = HeroY - 23 (top field) or TL = HeroY + 4 (bottom field) (top line)
+; T8 = TL & 07 (top field) or T8 = (TL + 1) & 07 (bottom field) (nudge value of top line)
+; TLZ = TL - T8 (top line at nudge 0)
+; MD = Map - TLZ, M8 = MD & 07 (map difference, distance to top of field, and the mod 8 value)
+; base = 8 * ( M8 < T8 ) (whether the line has already been nudged into the prior group of 8)
 ; raster = MD - base + 20 (top field) or + 90 (bottom field)
 findraster: sta MapTemp
             ldx #$90        ; default assumption is video base of lower field
             sec             ; is it actually on screen?
-            sbc HeroY       ; compute map line minus HeroY
+            sbc HeroY       ; compute map line minus HeroY (to see if it in bounds)
             bcs belowhero   ; branch if result is positive, map line is below hero (lower field)
-            bpl froff       ; this wrapped but remained positive, very far away
+            bpl froff       ; this wrapped but remained positive (< -7F), very far away
             eor #$FF        ; map line is above HeroY (upper field), so this was negative
             adc #$01        ; make it positive to see if it is within screen bounds
             ldx #$20        ; we are in upper field so change video base
@@ -453,42 +463,42 @@ findraster: sta MapTemp
             sec
             sbc #$23
             sta TopLine
-            sta TopLine4N
+            sta TopLine4N   ; preparing to work out T8, mod 8 step still remains
             pla
             jmp chbound
-belowhero:  bmi froff       ; this did not wrap but went negative, very far away
+belowhero:  bmi froff       ; this did not wrap but is nevertheless negative (> 7F), very far away
             pha             ; stash while we compute TL
             lda HeroY
             clc
             adc #$04
             sta TopLine
-            sta TopLine4N
-            inc TopLine4N
+            sta TopLine4N   ; preparing to work out T8
+            inc TopLine4N   ; T8 is based on TL+1 when in the lower field (only 7 lines in playfield)
             pla
 chbound:    cmp #$04        ; if the distance to hero is less than 4
             bcc froff       ; it is off screen (in the playfield)
             cmp #$23        ; or more than 23
             bcs froff       ; it is off screen (beyond borders)
-            lda TopLine4N
+            lda TopLine4N   ; T8 = TL mod 8 (or TL+1 mod 8 in lower field), on-screen nudge progress
             and #$07
             sta TopNudge
-            lda TopLine
+            lda TopLine     ; TLZ = TL - T8, the top line when nudge was zero
             sec
             sbc TopNudge
             sta TopLineZ
-            lda MapTemp
+            lda MapTemp     ; MD = TLZ - map, distance between map line and top of its field, when nudge was zero
             sec
             sbc TopLineZ
             sta MapDiff
             and #$07
-            sta MapNudge
+            sta MapNudge    ; M8 = nudge value at which point this line moves to prior 8-line group
             cmp TopNudge
-            bcs :+          ; M8 >= T8, keep base where it is
-            txa             ; M8 < T8, so back up the base by 8 lines
+            bcs :+          ; M8 >= T8, keep base where it is, nudge has not reached point where this line moves
+            txa             ; M8 < T8, so back up the base by 8 lines, it is drawn in prior group
             sec
             sbc #$08
             tax
-:           txa
+:           txa             ; raster = base line (from X) + MD, which factors out smooth scroll nudge
             clc
             adc MapDiff
             ; A should now hold the line in video memory corresponding to the map
@@ -549,11 +559,11 @@ bufmap:     ldy ZCurrMapX
             lda ZFontDots, x    ; get the pixels
             sta ZPxScratch      ; stash the pixels
             txa
-            and #%00110000      ; test to see if this is 0-F (separate color info in two high bits)
-            beq :+              ; branch if this is an element with an indexed color
-            lda ZPxScratch      ; these are the final pixels
+            and #%00110000      ; test to see if this is 0-F (those have color info in two high bits)
+            beq :+              ; branch if this is an element with an indexed color (char < $10)
+            lda ZPxScratch      ; color was as retrieved, these are the final pixels
             jmp bufmappix
-:           tya                 ; recall the map byte to grab the color
+:           tya                 ; recall the map byte to grab the color bits
             asl
             rol
             rol                 ; move color bits into lower two bits to serve as color index
@@ -562,14 +572,14 @@ bufmap:     ldy ZCurrMapX
             tya                 ; recall the map byte one last time
             and #$3F            ; filter out color bits
             cmp #C_DISK         ; if it is a disk, use the disk colors
-            bne usemapcol
-            lda DiskColors, x
-            bne applycolor
+            bne usemapcol       ; otherwise, use the general colors (walls)
+            lda DiskColors, x   ; load the indexed color for disks
+            jmp applycolor
 usemapcol:  lda MapColors, x    ; load the indexed color
-applycolor: and ZPxScratch      ; apply to the pixels
+applycolor: and ZPxScratch      ; apply to the pixels (should be 1111 or 0000 else color would be affected)
 bufmappix:  pha                 ; push buffered pixels onto the stack (safe from ZP switch)
-            dec ZCurrMapX
-            dec ZBufCount
+            dec ZCurrMapX       ; move the map pointer back
+            dec ZBufCount       ; keep going until we have buffered 7 map elements
             bpl bufmap
             ; the pixels have now been translated, we can send them to the screen
             ; the 7 pixels on the stack each use 8 bits, but we need to smear them across the

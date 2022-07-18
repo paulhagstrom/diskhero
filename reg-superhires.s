@@ -31,7 +31,8 @@ splashline: ldx PatRaster
             sta ZPtrB
             lda YHiresHA, x
             sta ZPtrA + 1
-            lda YHiresHB, x
+            clc
+            adc #$20                ; compute HB
             sta ZPtrB + 1
             ldx #$06
             stx SplashCol
@@ -78,7 +79,8 @@ shgrclear:  lda YHiresL, x
             sta ZPtrB
             lda YHiresHA, x
             sta ZPtrA + 1
-            lda YHiresHB, x
+            clc
+            adc #$20                ; compute HB
             sta ZPtrB + 1
             lda #$8F
             sta ZPtrA + XByte

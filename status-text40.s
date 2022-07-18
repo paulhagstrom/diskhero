@@ -37,7 +37,9 @@ initstatus: lda #$8F
             sta (ZPtrA), y
             dey
             bpl :-
-            lda YLoresHB, x
+            lda ZPtrA + 1       ; go to color space
+            clc
+            adc #$04
             sta ZPtrA + 1
             ldy #$27
 :           lda StatColA, y
@@ -54,7 +56,9 @@ initstatus: lda #$8F
             sta (ZPtrA), y
             dey
             bpl :-
-            lda YLoresHB, x
+            lda ZPtrA + 1       ; go to color space
+            clc
+            adc #$04
             sta ZPtrA + 1
             ldy #$27
 :           lda ProgColA, y

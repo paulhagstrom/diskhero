@@ -78,31 +78,6 @@ YHiresHA:   ; high byte of address of each hires line on page $20
             .byte $23, $27, $2B, $2F, $33, $37, $3B, $3F
             .byte $23, $27, $2B, $2F, $33, $37, $3B, $3F
 
-YHiresHB:   ; high byte of address of each hires line on page $40
-            .byte $40, $44, $48, $4C, $50, $54, $58, $5C
-            .byte $40, $44, $48, $4C, $50, $54, $58, $5C
-            .byte $41, $45, $49, $4D, $51, $55, $59, $5D
-            .byte $41, $45, $49, $4D, $51, $55, $59, $5D
-            .byte $42, $46, $4A, $4E, $52, $56, $5A, $5E
-            .byte $42, $46, $4A, $4E, $52, $56, $5A, $5E
-            .byte $43, $47, $4B, $4F, $53, $57, $5B, $5F
-            .byte $43, $47, $4B, $4F, $53, $57, $5B, $5F
-            .byte $40, $44, $48, $4C, $50, $54, $58, $5C
-            .byte $40, $44, $48, $4C, $50, $54, $58, $5C
-            .byte $41, $45, $49, $4D, $51, $55, $59, $5D
-            .byte $41, $45, $49, $4D, $51, $55, $59, $5D
-            .byte $42, $46, $4A, $4E, $52, $56, $5A, $5E
-            .byte $42, $46, $4A, $4E, $52, $56, $5A, $5E
-            .byte $43, $47, $4B, $4F, $53, $57, $5B, $5F
-            .byte $43, $47, $4B, $4F, $53, $57, $5B, $5F
-            .byte $40, $44, $48, $4C, $50, $54, $58, $5C
-            .byte $40, $44, $48, $4C, $50, $54, $58, $5C
-            .byte $41, $45, $49, $4D, $51, $55, $59, $5D
-            .byte $41, $45, $49, $4D, $51, $55, $59, $5D
-            .byte $42, $46, $4A, $4E, $52, $56, $5A, $5E
-            .byte $42, $46, $4A, $4E, $52, $56, $5A, $5E
-            .byte $43, $47, $4B, $4F, $53, $57, $5B, $5F
-            .byte $43, $47, $4B, $4F, $53, $57, $5B, $5F
 
 YLoresL:    ; low byte of start of text line
             .byte $00, $80, $00, $80, $00, $80, $00, $80
@@ -118,11 +93,6 @@ YLoresHA:   ; high byte of start of text line in $400 page
             .byte $04, $04, $05, $05, $06, $06, $07, $07
             .byte $04, $04, $05, $05, $06, $06, $07, $07
             .byte $04, $04, $05, $05, $06, $06, $07, $07
-
-YLoresHB:   ; high byte of start of text line in $800 page
-            .byte $08, $08, $09, $09, $0A, $0A, $0B, $0B
-            .byte $08, $08, $09, $09, $0A, $0A, $0B, $0B
-            .byte $08, $08, $09, $09, $0A, $0A, $0B, $0B
 
 ; I took DOOM's "random" numbers.
 ; https://github.com/id-Software/DOOM/blob/77735c3ff0772609e9c8d29e3ce2ab42ff54d20b/linuxdoom-1.10/m_random.c#L27

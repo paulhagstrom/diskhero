@@ -43,17 +43,21 @@ iploop:     lda YLoresHA, y
 ipshadow:   ldy #$11        ; draw line 11 (space, with shadow color)
             lda YLoresHA, y
             sta R_ZP
-            ldx YLoresS, y
+            lda YLoresS, y
+            pha             ; save end of line index for later
+            tax
             lda #C_SPACE
             ldy #$27
 :           sta Zero, x
             dex
             dey
             bpl :-
-            ldy #$11
-            lda YLoresHB, y
+            lda R_ZP
+            clc
+            adc #$04        ; go to color space
             sta R_ZP
-            ldx YLoresS, y
+            pla             ; recall end of line index
+            tax
             ldy #$27
             lda #BorderColA
 :           sta Zero, x
@@ -147,7 +151,9 @@ dppostvoid: ; start drawing with top and bottom borders (for thumb). Just colors
             sta R_ENVIRON
             ldy #$08            ; we are at the top of the playfield box (in the top border)
             sty CurScrLine      ; text line $08
-borderh:    lda YLoresHB, y     ; $800 base (color space)
+borderh:    lda YLoresHA, y     ; $800 base (color space) is computed from char space
+            clc
+            adc #$04
             eor #$01            ; where the ZP needs to be for the stack to be where we want it
             sta R_ZP            ; point stack at correct line on color page (ZP now also in there somewhere)
             ldx YLoresS, y      ; low byte of the address of the end of this line
@@ -246,8 +252,9 @@ pbdraw:     sta R_ZP            ; point ZP at appropriate space
             sta BorDataB
             lda #BorderColA
             sta BorDataA
-            ldy CurScrLine      ; and find the color space
-            lda YLoresHB, y     ; $800 base (color space)
+            lda R_ZP            ; we stored the char space high byte in here
+            clc                 ; and color space is $04 away
+            adc #$04            ; so find $800 base color space and do it again
             jmp pbdraw          ; and do it again but with colors to the color space
 :           lda #$1A            ; put ZP back
             sta R_ZP
@@ -256,24 +263,26 @@ pbdraw:     sta R_ZP            ; point ZP at appropriate space
 ; draw a void line in the playfield
 playvoid:   jsr playbord        ; draw the border and compute the edges
             ldy CurScrLine
-            lda YLoresHB, y     ; $800 base (color space)
-            sta R_ZP            ; go to color space
-            lda BorderL         ; computed first left column
-            sta pvcol + 1       ; store it in the upcoming instruction as the 0-base
-            lda #$10            ; magenta background, black foreground
-            ldx #$22            ; drawing 35 columns between borders (0 to $22)
-pvcol:      sta Zero, x
-            dex
-            bpl pvcol
             lda YLoresHA, y     ; $800 base (char space)
             sta R_ZP            ; go to char space
             lda BorderL         ; computed first left column
             sta pvchar + 1      ; store it in the upcoming instruction as the 0-base
             lda #C_SPACE        ; void character is C_SPACE
-            ldx #$22            ; drawing 35 columns between borders
+            ldx #$22            ; drawing 35 columns between borders (0 to $22)
 pvchar:     sta Zero, x
             dex
             bpl pvchar
+            lda R_ZP            ; find $800 base (col space)
+            clc
+            adc #$04
+            sta R_ZP            ; go to col space
+            lda BorderL         ; computed first left column
+            sta pvcol + 1       ; store it in the upcoming instruction as the 0-base
+            lda #$10            ; magenta background, black foreground
+            ldx #$22            ; drawing 35 columns between borders
+pvcol:      sta Zero, x
+            dex
+            bpl pvcol
             lda #$1A            ; put ZP back
             sta R_ZP
             rts
@@ -349,7 +358,9 @@ pfwchar:    sta Zero, x         ; store it in character space
             inx
             cpx #$23            ; 0-22 are all there are
             bne :-
-            lda YLoresHB, y     ; $800 base (color space)
+            lda R_ZP            ; move to $800 base (color space)
+            clc
+            adc #$04
             sta R_ZP
             lda BorderL         ; left edge inside border
             sta pfwcol + 1      ; store it in the upcoming instruction as 0-base

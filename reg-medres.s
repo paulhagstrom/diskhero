@@ -25,7 +25,8 @@ medresline: ldy MedLine
             sta ZPtrB
             lda YHiresHA, y
             sta ZPtrA + 1
-            lda YHiresHB, y
+            clc
+            adc #$20            ; compute HB
             sta ZPtrB + 1
             lda #$8F
             sta ZPtrA + XByte
