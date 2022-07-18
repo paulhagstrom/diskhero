@@ -1,13 +1,22 @@
 ; DISKHERO
 ; map construction
-; this places the map data in bank 2, from $2000-5FFF.
-; called once at the beginning to move the data, not again
-; so it can be in lower memory that gets switched out
 
+; This is called early and fills in map and tracking data in bank 2.
+; It does not switch the banks, and does not present any externally-accessible
+; variables.  So it should be ok in bank switched memory.
+;
+; Bank 2:
+; Map data is from $2000-5FFF.
+; Element tracking variables are from $300-640.
+; 
 ; the map is $40 units wide and $100 units tall.
 ; map bytes have shape info in lower 6 bits, color/variant info in higher 2.
 ; the last byte of every map line is unused, the playable lines are only $3F wide.
 ; because it needs to be a multiple of 7.
+
+; This is still a bit of a placeholder.  In order to avoid spending time building
+; levels or mazes, this makes a "maze-like" structure by scattering boxes around
+; Also places the hero, the disks, and the hoarders.
 
 ; 5x5 box patterns for randomly adding to the map.  Each pattern is $19 bytes long.
 BoxIndex:   .byte 0, 25, 50, 75, 100, 125, 150, 175
@@ -73,7 +82,8 @@ MFBoxIndex: .byte 0
 MFPlaced:   .byte 0
     
 buildmap:   
-            ; start by initializing memory pointers for location tracking in bank 2
+            ; Start by initializing memory pointers for location tracking.
+            ; All of this is in bank 2.
             ; DiskX = 300, DiskY = 340, DiskType = 380
             ; HoardX = 400, HoardY = 440, HoardXV = 480,
             ; HoardYV = 4C0, HoardSp = 500, HoardXX = 540, 
@@ -169,8 +179,8 @@ mfbox:      ldx Seed
             ; then add $2000 and store in ZPtrA(H)
             ; so: if map coordinate MFY were $21, shift it so we have
             ; MFY: 0010 0001 -> Zptr: 0100 0000 0001 1000 (40 18 -> $2840)
-            ; which is effectively multiplying Y by $40 and adding $2000
-            ; then add MFX to get the horizontal offset
+            ; which is effectively multiplying Y by $40 and adding $2000.
+            ; Then, add MFX to get the horizontal offset
             ; ZPtrA will then point to the upper left corner of box target
             lda MFY
             lsr
@@ -318,6 +328,7 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
 mfdone:     rts
 
 ; find a random spot that is open in the map
+; (more specifically, two horizontally-adjacent free locations)
 ; returns with y holding the map x coordinate, x holding the map y coordinate,
 ; and ZPtrA pointing to the map row start
 mfrndspot:  ldx Seed

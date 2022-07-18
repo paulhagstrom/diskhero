@@ -9,7 +9,11 @@
 ; Given that it does not refer to NudgePos, it may only work properly if
 ; (HeroY-3) is an even multiple of 8.
 
-initmap:    lda #$20            ; top field starts at absolute raster line $20
+initmap:    lda R_BANK          ; save bank
+            sta BankSave        ; (but assume we are already in 1A00 ZP)
+            lda #$00
+            sta R_BANK          ; move to bank zero for the graphics
+            lda #$20            ; top field starts at absolute raster line $20
             sta CurScrLine      ; CurScrLine keeps track of the current absolute raster line
             lda HeroY           ; HeroY is the $23rd abstract line down
             sec                 ; so the map data pointer for the top raster line in the top field
@@ -67,7 +71,9 @@ novoiddown: ldx CurScrLine
             lda CurScrLine
             cmp #$B0            ; last line of bottom field complete? ($90-$AF)
             bne :-              ; nope, keep drawing void lines
-imdone:     rts
+imdone:     lda BankSave
+            sta R_BANK
+            rts
             
 ; updatemap will effect a vertical movement of the map regions of the screen.
 ; if you call it with carry clear, it will move the map up (hero downward), increasing nudge
@@ -195,6 +201,7 @@ TargHA:     .byte   0
 TargHB:     .byte   0
 CLStack:    .byte   0
 CLEnv:      .byte   0
+USBank:     .byte   0
 
 copylines:  tay                 ; move start line into Y
             tsx                 ; preserve stack state for recall when we are done
@@ -418,6 +425,7 @@ toplineseg: jsr drawseg         ; draw a single 14-pixel segment
 
 MapTemp:    .byte   0
 TopLine:    .byte   0
+TopLine4N:  .byte   0
 TopLineZ:   .byte   0
 TopNudge:   .byte   0
 MapDiff:    .byte   0
@@ -428,7 +436,7 @@ MapNudge:   .byte   0
 ; if Map > HeroY, bottom field, on screen if 3 < Map-HeroY < 24
 ; if HeroY > Map, top field, on screen if 3 < HeroY-Map < 24
 ; TL = HeroY - 23 (top field) or TL = HeroY + 4 (bottom field)
-; T8 = TL & 07, ZTL = TL - T8, MD = Map - ZTL, M8 = MD & 07
+; T8 = TL & 07 (or TL+1 & 07 top field), ZTL = TL - T8, MD = Map - ZTL, M8 = MD & 07
 ; base = 8 * ( M8 < T8 )
 ; raster = MD - base + 20 (top field) or + 90 (bottom field)
 findraster: sta MapTemp
@@ -445,6 +453,7 @@ findraster: sta MapTemp
             sec
             sbc #$23
             sta TopLine
+            sta TopLine4N
             pla
             jmp chbound
 belowhero:  bmi froff       ; this did not wrap but went negative, very far away
@@ -453,12 +462,14 @@ belowhero:  bmi froff       ; this did not wrap but went negative, very far away
             clc
             adc #$04
             sta TopLine
+            sta TopLine4N
+            inc TopLine4N
             pla
 chbound:    cmp #$04        ; if the distance to hero is less than 4
             bcc froff       ; it is off screen (in the playfield)
             cmp #$23        ; or more than 23
             bcs froff       ; it is off screen (beyond borders)
-            lda TopLine
+            lda TopLine4N
             and #$07
             sta TopNudge
             lda TopLine
@@ -472,7 +483,7 @@ chbound:    cmp #$04        ; if the distance to hero is less than 4
             and #$07
             sta MapNudge
             cmp TopNudge
-            bcs :+
+            bcs :+          ; M8 >= T8, keep base where it is
             txa             ; M8 < T8, so back up the base by 8 lines
             sec
             sbc #$08
@@ -485,7 +496,7 @@ chbound:    cmp #$04        ; if the distance to hero is less than 4
 froff:      lda #$00        ; return zero (which is clearly not a valid line)
             rts             ; if the line is offscreen.
 
-; update a single 14-pixel segment
+; update a single 14-pixel segment (called when things move)
 ; enter with A being the map line
 ; and Y being the horizontal map location of the pixel we wish to redraw.
 updsingle:  pha                 ; stash map line while we check if it is onscreen
@@ -499,7 +510,7 @@ updsingle:  pha                 ; stash map line while we check if it is onscree
             lda MapPixG, y      ; get the offset of the left edge of pixel groups
             sta ZCurrDrawX
             jsr prepdraw        ; relies on raster line being in X
-            lda MapPtrL
+            lda MapPtrL         ; point ZScrHole at the left side of present line in the map data.
             sta ZScrHole
             lda MapPtrH
             sta ZScrHole + 1
@@ -507,7 +518,7 @@ updsingle:  pha                 ; stash map line while we check if it is onscree
             sta ZScrHole + XByte
             lda R_BANK
             sta USBank
-            lda #$00
+            lda #$00            ; switch to bank 0 so we can address graphics memory
             sta R_BANK
             jsr drawseg         ; draw the segment
             lda USBank
@@ -515,8 +526,6 @@ updsingle:  pha                 ; stash map line while we check if it is onscree
             rts
 usoff:      pla                 ; toss out the map line we saved
             rts
-
-USBank:     .byte   0
 
 ; draw a single 14-pixel segment (useful also in selectively updating screen)
 ; enter with:
@@ -727,27 +736,3 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             ; the 14 pixels are now drawn
             rts
 
-; table of map x-coordinates and the corresponding place to find them in a line, for use
-; when we selectively update the screen display.  Indexed by x-coordinate in map row.
-
-; Lookup for ZCurrMapX values for updsingle
-MapEnds:    .byte   6, 6, 6, 6, 6, 6, 6
-            .byte   13, 13, 13, 13, 13, 13, 13
-            .byte   20, 20, 20, 20, 20, 20, 20
-            .byte   27, 27, 27, 27, 27, 27, 27
-            .byte   34, 34, 34, 34, 34, 34, 34
-            .byte   41, 41, 41, 41, 41, 41, 41
-            .byte   48, 48, 48, 48, 48, 48, 48
-            .byte   55, 55, 55, 55, 55, 55, 55
-            .byte   62, 62, 62, 62, 62, 62, 62
-
-; Lookup for ZCurrDrawX values for updsingle
-MapPixG:    .byte   2, 2, 2, 2, 2, 2, 2
-            .byte   6, 6, 6, 6, 6, 6, 6
-            .byte   10, 10, 10, 10, 10, 10, 10
-            .byte   14, 14, 14, 14, 14, 14, 14
-            .byte   18, 18, 18, 18, 18, 18, 18
-            .byte   22, 22, 22, 22, 22, 22, 22
-            .byte   26, 26, 26, 26, 26, 26, 26
-            .byte   30, 30, 30, 30, 30, 30, 30
-            .byte   34, 34, 34, 34, 34, 34, 34

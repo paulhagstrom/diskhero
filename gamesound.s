@@ -78,7 +78,6 @@ twosinb:    lda SinTable, y
             bpl twosinb
             rts
 
-
 soundinit:  lda #$81    ; bank 1
             sta ZPtrA + XByte
             lda #$00
@@ -238,10 +237,6 @@ FXDoh:
             .byte   $80
 
             
-; Above are sound effects
-; Could perhaps try creating music
-; with a sine table for some frequencies, addition
-
 SinTable:
             .byte   $80, $83, $86, $89, $8C, $90, $93, $96
             .byte   $99, $9C, $9F, $A2, $A5, $A8, $AB, $AE

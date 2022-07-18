@@ -32,6 +32,11 @@ ZMapTemp    = $4D   ; temporary storage for a map byte being tested for collisio
 ZXXTemp     = $4E   ; temporary storage for second segment x-coordinate
 ZFrame      = $4F   ; temporary storage for current animation frame
 
+; pointers used during movement processing
+ZOldPtr     = $50   ; original position of element moving
+ZNewPtr     = $52   ; new position of element moving
+ZTailPtr    = $54   ; original position of second segment of element moving (hoarder)
+
 PTopRastA   = $6B   ; hires map parm: first copy target raster line upper field
 PTopRastD   = $6C   ; hires map parm: raster line for drawing new upper field line
 PBotRastA   = $6D   ; hires map parm: first copy target raster line lower field
@@ -64,8 +69,6 @@ ZBackNext   = $DF   ; page number of first sample of next background segment aft
 ; generally limited to screen holes: 78-7F, F8-FF
 
 ; playfield
-ZThumbTogg  = $78
-ZThumbNext  = $79
 ZMapPtr     = $7A
 
 ZScrHole    = $78

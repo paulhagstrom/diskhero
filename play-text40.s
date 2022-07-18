@@ -25,7 +25,7 @@ IpZPSave:   .byte   0
 
 initplay:   lda R_ZP
             sta IpZPSave
-            ldy #$08
+            ldy #$08        ; draw line 8
             sec
 iploop:     lda YLoresHA, y
             sta R_ZP
@@ -37,10 +37,10 @@ iploop:     lda YLoresHA, y
             dey
             bpl :-
             bcc ipshadow
-            ldy #$10
+            ldy #$10        ; then draw line 10
             clc
             jmp iploop
-ipshadow:   ldy #$11
+ipshadow:   ldy #$11        ; draw line 11 (space, with shadow color)
             lda YLoresHA, y
             sta R_ZP
             ldx YLoresS, y
@@ -60,7 +60,7 @@ ipshadow:   ldy #$11
             dex
             dey
             bpl :-
-ipdone:     lda IpZPSave
+            lda IpZPSave
             sta R_ZP
             rts
             
@@ -85,6 +85,8 @@ BorderL:    .byte   0       ; memory index of rightmost playfield column offset 
 BorderS:    .byte   0       ; memory index of leftmost playfield column from YLoresS after border done
 BorDataA:   .byte   0       ; character or color inside border on left and right
 BorDataB:   .byte   0       ; character or color on border on left and right
+ThumbTogg:  .byte   0
+ThumbNext:  .byte   0
 
 ; the middle lores field starts at map $42 and draws to $46 (plus NudgePos)
 ; in order to keep hero in the middle, five columns are used by a frame
@@ -144,20 +146,20 @@ dppostvoid: ; start drawing with top and bottom borders (for thumb). Just colors
             and #%11111011      ; set stack bit to zero to get alt stack
             sta R_ENVIRON
             ldy #$08            ; we are at the top of the playfield box (in the top border)
-            sty CurScrLine
+            sty CurScrLine      ; text line $08
 borderh:    lda YLoresHB, y     ; $800 base (color space)
             eor #$01            ; where the ZP needs to be for the stack to be where we want it
-            sta R_ZP            ; point stack at correct line on color page
+            sta R_ZP            ; point stack at correct line on color page (ZP now also in there somewhere)
             ldx YLoresS, y      ; low byte of the address of the end of this line
             txs                 ; point stack pointer at end of the line
             lda PlayRight
-            sta ZThumbTogg
+            sta ThumbTogg       ; absolute despite cycle hit, ZP is in a hazardous location
             lda PlayLeft
-            sta ZThumbNext
+            sta ThumbNext
             ldy #$27            ; paint 28 characters
 borderhb:   ldx ThumbXlate, y   ; map column approximation for each playfield column
             bmi bordfixed       ; negative numbers are magic, indicating a fixed edge color
-            cpx ZThumbTogg      ; did we just pass the toggle value?
+            cpx ThumbTogg       ; did we just pass the toggle value?
             bcc bordtogg        ; yes, go change the color (enter, or exit, thumb)
 bordpush:   pha                 ; push the value onto the color page
             dey                 ; continue back the line
@@ -170,10 +172,10 @@ bordpush:   pha                 ; push the value onto the color page
             jmp borderh
 bordfixed:  lda #$57            ; fixed color is brighter gray
             jmp bordpush
-bordtogg:   ldx ZThumbNext      ; arm new left side toggle
-            stx ZThumbTogg
+bordtogg:   ldx ThumbNext       ; arm new left side toggle
+            stx ThumbTogg
             ldx #$00            ; disable other toggling
-            stx ZThumbNext
+            stx ThumbNext
             eor #$A7            ; swap color (turn on, then off, thumb color)
             jmp bordpush
 innerplay:  lda #$1A            ; return ZP and stack to 1A/true
