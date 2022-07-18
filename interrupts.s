@@ -13,9 +13,9 @@ IntXStash:  .byte   0   ; saved X register from interrupt handler entry
 IntZStash:  .byte   0   ; saved ZP register from interrupt handler entry
 
 ; variables used in processing the screen splitting
-ScrRegion:  .byte   0   ; upcoming region (the one after the one we are in)
-NudgePos:   .byte   0   ; smooth scroll parameter (used when ScrNudge for a region is positive)
-NextMode:   .byte   0   ; screen mode to switch into next 
+ScrRegion:  .byte   0   ; upcoming region (the one after the one we are in) counts downward from $17
+NudgePos:   .byte   0   ; smooth scroll parameter - MUST BE BETWEEN 0 AND 7 when HBL interrupt fires
+NextMode:   .byte   0   ; screen mode to switch into next - MUST BE VALID when HBL interrupt fires
 
 ; variables for sound and speed management
 VBLTick:    .byte   0   ; ticked down for each VBL, can use to delay things for several refreshes
@@ -28,9 +28,13 @@ ClockTick:  .byte   0   ; ticked down for each clock-during-VBL, for playing sou
 ;   encoded as a multiple of $0C so that it can be used as a branch/jump table.
 ; This is set up to split in blocks of 8 scan lines, to do multiples, repeat the mode
 ; Last mode (only) will use the smooth scroll parameter.
-ScrRegMode: .byte   $18, $18, $00, $00, $24, $24, $24, $24
+; These are in reverse order so that I can quickly detect if it runs off the end somehow
+; and reset it to the top.  ScrRegModB is used in resetting, it is "NextMode" when resetting.
+ScrRegMode: .byte   $0C, $0C, $24, $24, $24, $24, $00, $00
             .byte   $00, $00, $00, $00, $00, $00, $00, $00
-            .byte   $00, $00, $24, $24, $24, $24, $0C, $0C
+            .byte   $24, $24, $24, $24, $00, $00 
+ScrRegModB: .byte   $18, $18
+
 ; TwelveBran is a jump table used for setting smooth scroll, 8 multiples of $0C
 TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 
@@ -87,7 +91,7 @@ ismode3:    bit D_TEXT          ;mode 3 - +30 - A3 hires (3 cycles fewer to swit
             bit D_MIX           ; ^4 4
             bit D_HIRES         ; 4 also will use smooth scroll
             lda D_SCROLLON      ; 4 turn smooth scroll on (nudge)
-            ldx NudgePos        ; 4 get smooth scroll value
+            ldx NudgePos        ; 4 get smooth scroll value - CRITICAL THAT THIS BE BETWEEN 0 AND 7
             lda TwelveBran, x   ; 4* find proper branch value
             sta nudgebran + 1   ; 4 update branch to go to the right place
 nudgebran:  bne nudge1          ; 3 [35 in block to here], then 15 cycles, 12 bytes per block
@@ -125,8 +129,10 @@ nudge7:     bit SS_XXY
             jmp postnudge       ; at this point (each block) 50 cycles in mode 4, for 107 total
 isddone:    and D_SCROLLOFF     ; 4 [76 for modes other than 4] turn smooth scroll off
 postnudge:  ldx ScrRegion       ; 4 prepare for next mode switch
-            inx                 ; 2
-            stx ScrRegion       ; 4
+            dex                 ; 2
+            bpl snextmode       ; 2/3 we MUST reset this if somehow we roll off the bottom
+            ldx #$16            ; 2 this is the topmost region
+snextmode:  stx ScrRegion       ; 4
             lda ScrRegMode, x   ; 4*
             sta NextMode        ; 4            
             ldx IntXStash       ; 4 restore X so it can pushed onto the stack properly when stack arrives
@@ -210,9 +216,9 @@ intvbl:     lda #$05            ; 2 reset the HBL counter for top region when it
             sta D_SCROLLOFF     ; 4 smooth scrolling off is assumed for top region
             lda #$10            ; 2 clear the VBL (CB1) interrupt
             sta RE_INTFLAG      ; 4
-            lda #$01            ; 2
-            sta ScrRegion       ; 4 reset next region number to 1
-            lda ScrRegMode + 1  ; 4 
+            lda #$16            ; 2
+            sta ScrRegion       ; 4 reset next region number to $16 (counts down from $17)
+            lda ScrRegModB      ; 4 the first "next" region
             sta NextMode        ; 4
             dec VBLTick         ; 6 bump VBL countdown
             dec VBLTickP        ; 6 bump VBL countdown
@@ -293,10 +299,11 @@ setupenv:   ; save IRQ vector and then install ours
             sta IRQVECT + 1
             lda #>inthandle
             sta IRQVECT + 2
-            lda ScrRegMode + 1
+            lda ScrRegModB      ; first next mode
             sta NextMode
+            lda #$16
+            sta ScrRegion       ; first next region is $16
             lda #$01
-            sta ScrRegion
             sta ZPlaySFX        ; start by assuming we will play sound effects
             sta ZPlaySound      ; start by assuming we will play background sound
             lda #$00

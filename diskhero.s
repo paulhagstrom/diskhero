@@ -21,12 +21,13 @@
 ; mode 5 (a3 medres) lines B0-BF (18) 15-17  medium res something
 
 ; Notes to self about how much space I am allowed by starting below A000.
+; Also: it actually seems to start having problems if I get within ~40 bytes of full.
 ; start leaves  start   leaves  start   leaves
 ; 9F00  6400    9E00    6656    9D00    6912
 ; 9C00  7167    9B00    7423    9A00    7679
 ; 9900  7935    9800    8191    9700    8447
 
-            .org     $9800 - 14
+            .org     $9700 - 14
             
 ; SOS interpreter header
             .byte    "SOS NTRP"
@@ -226,6 +227,24 @@ addscore:   ldx #$02
             dex
             lda GameScore, x
             adc #$00
+            sta GameScore, x
+            cld
+            rts
+
+; subtract from score, remove the number in A from the score
+            
+subscore:   ldx #$02
+            sed
+            sec
+            sbc GameScore, x
+            sta GameScore, x
+            dex
+            lda GameScore, x
+            sbc #$00
+            sta GameScore, x
+            dex
+            lda GameScore, x
+            sbc #$00
             sta GameScore, x
             cld
             rts

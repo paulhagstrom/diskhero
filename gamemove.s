@@ -80,7 +80,7 @@ ticksdone:  lda (ZHoardSp), y   ; this one can move now, reset ticks for next mo
             lda Random, x
             inx
             stx Seed
-            and #$07            ; one in 8 chance hoarder stops (maybe changes directions)
+            and #$0F            ; one in 16 chance hoarder stops (maybe changes directions)
             bne hoardcont
             lda #$00            ; horder stopped and may change direction.
             sta VelY
@@ -113,7 +113,7 @@ hoardredir: ldx Seed            ; hoarder was not moving. so send it in a new di
             lda Random, x
             inx
             stx Seed
-            and #$03            ; one out of 4 chance it goes in a random direction
+            and #$07            ; one out of 8 chance it goes in a random direction
             bne hoardseek       ; otherwise seeks high value disk
             jmp hranddir        ; hoader will go forth randomly
 hoardseek:  lda #$FF            ; scan disks to find closest highest value one
@@ -162,12 +162,12 @@ dydpos:     clc                 ; add X and Y distances.  Not very accurate.
             sta TargX
             lda (ZDiskY), y
             sta TargY
-dnotbetter: dec CurrDisk        ; move on to next disk.
-            bpl dcheckdist
             lda TargDX          ; velocity is just pos/neg/zero anyway, so store
             sta VelX            ; 8-way direction to disk as the new hoarder velocity to try
             lda TargDY
             sta VelY
+dnotbetter: dec CurrDisk        ; move on to next disk.
+            bpl dcheckdist
             jmp hmoving         ; and go
 hranddir:   lda Random, x       ; send it in a random direction.  Which axis?
             bpl sendhoriz       ; horizontal/vertical choice yields: horizontal
@@ -251,18 +251,16 @@ handoff:    ldy NewX
 nexthoard:  dec CurrHoard
             bmi donehoard
             jmp movehoard
-donehoard:
-            ; scroll if we need to
-            jsr drawplay        ; redraw middle playfield
+donehoard:  jsr drawplay        ; redraw middle playfield
             lda DoScrollUp      ; did we need to scroll up based on hero movement?
-            beq :+              ; nope
+            beq noscrollup      ; nope
             clc                 ; yep, set scrolling direction parameter to "down" (clc)
             jmp updatemap       ; scroll the screen (using smooth scroll) - rts from there
-:           lda DoScrollDn      ; did we need to scroll down based on hero movement?
-            beq :+              ; nope
+noscrollup: lda DoScrollDn      ; did we need to scroll down based on hero movement?
+            beq noscrolldn      ; nope
             sec                 ; yep, set scrolling direction parameter to "up" (sec)
             jmp updatemap       ; scroll the screen (using smooth scroll) - rts from there
-:           rts
+noscrolldn: rts
 
 ; update the screen where things moved
 ; later make this just collect things that will all be updated en masse at the end
@@ -277,8 +275,7 @@ gmupdscr:   lda OldOldY     ; where the head was (segment 2)
             jsr updsingle
             lda NewY        ; where the hands are
             ldy NewX
-            jsr updsingle
-            rts
+            jmp updsingle   ; rts from there
 
 ; do moving (called maximally once per MoveDelay VBLs)
 ; (since otherwise it can be too fast, though speeding up might be a way to make the game harder)
@@ -444,17 +441,65 @@ gotnotact:  lda DisksLeft, x
 
 ; drop a disk of type in X
 dropdisk:   lda DisksGot, x
-            beq havenone
-            lda #$00
-            sta ZFXPtr
-            lda #$1C            ; play the drop sound
-            sta ZFXPtr + 1
-            sta ZFXPlay
-            ; TODO - actually drop it
-            ; also consider removing the disk points from your score
-            ;ora #$20            ; add to score if hero got the disk
-            ;lsr
-            ;jsr addscore        ; add type multiplier to the score
+            bne drophave
+            jmp dropfail        ; don't have any to drop
+drophave:   stx ZPxScratch      ; stash type
+            lda HeroY
+            jsr setmapptr
+            lda MapPtrL
+            sta ZPtrA
+            lda MapPtrH
+            sta ZPtrA + 1
+            lda #$82
+            sta ZPtrA + XByte
+            ldy HeroX
+            beq dropright       ; at the left edge, cannot drop left
+            dey
+            lda (ZPtrA), y      ; is left space empty?
+            bne dropright
+            jmp dodrop
+dropright:  ldy HeroX           ; left wasn't empty, try right instead
+            iny
+            cpy #$3F
+            beq dropup          ; left did not work and right is off the map
+            lda (ZPtrA), y      ; is right space empty?
+            bne dropup
+            jmp dodrop
+dropup:     lda HeroY
+            beq dropdown
+            sec
+            sbc #$01
+            jsr setmapptr
+            lda MapPtrL
+            sta ZPtrA
+            lda MapPtrH
+            sta ZPtrA + 1
+            lda (ZPtrA), y
+            bne dropdown
+            jmp dodrop
+dropdown:   lda HeroY           ; left, right, up all failed, try down
+            clc
+            adc #$01
+            beq dropfail        ; down failed too
+            jsr setmapptr
+            lda MapPtrL
+            sta ZPtrA
+            lda MapPtrH
+            sta ZPtrA + 1
+            lda (ZPtrA), y
+            bne dropfail
+dodrop:     lda ZPxScratch      ; get type back
+            ror
+            ror
+            ror                 ; move type to high two bits
+            pha                 ; push for use with score subtraction
+            ora #C_DISK
+            sta (ZPtrA), y      ; and drop it
+            pla                 ; get high bit type back
+            ora #$20
+            lsr
+            jsr subscore        ; subtract type multiplier from the score
+            ldx ZPxScratch      ; get type back
             sed
             lda DisksGot, x
             sec
@@ -465,8 +510,13 @@ dropdisk:   lda DisksGot, x
             adc #$01
             sta DisksLeft, x
             cld
+            lda #$00
+            sta ZFXPtr
+            lda #$1C            ; play the drop sound
+            sta ZFXPtr + 1
+            sta ZFXPlay
             rts
-havenone:   lda #$00
+dropfail:   lda #$00
             sta ZFXPtr
             lda #$1D            ; play the error sound ("d'oh!")
             sta ZFXPtr + 1

@@ -290,7 +290,7 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             dec MFPlaced
             bpl :-
             
-            lda #$0F            ; hoarders to scatter around
+            lda #$20            ; hoarders to scatter around
             sta MFPlaced
             sta NumHoards
 :           jsr mfrndspot

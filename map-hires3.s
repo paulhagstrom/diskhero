@@ -184,7 +184,11 @@ upddone:    lda BankSave        ; put the bank back
             sta R_BANK
             lda PInc            ; advance PNudge to NudgePos (adds one if we were incrementing)
             beq updend
-            inc NudgePos        ; will not bother making it mod 8 because setnudge will not care.
+            lda NudgePos        ; note: critical this is mod 8 or interrupt will spin off to the void
+            clc
+            adc #$01
+            and #$07
+            sta NudgePos
 updend:     rts
 
 ; copylines uses self-modifying code and stack pushing to quickly copy the three graphics lines
