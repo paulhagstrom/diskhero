@@ -125,15 +125,10 @@ hoardseek:  lda #$FF            ; scan disks to find closest highest value one
             ldy NumDisks
             sty CurrDisk
 dcheckdist: ldy CurrDisk
-            lda (ZDiskType), y  ; check value (higher type = higher value)
-            cmp TargV           ; is this one more valuable than what we have seen?
-            bcc dnotmore
-            lda (ZDiskX), y     ; higher value than ones previously seen
-            sta TargX           ; store this as the new target
-            lda (ZDiskY), y     ; higher value than ones previously seen
-            sta TargY
-            jmp dnotbetter
-dnotmore:   ldy CurrDisk        ; disk we found hasn't beat the value, but is it closer?
+            ;lda (ZDiskType), y  ; check value (higher type = higher value)
+            ;cmp TargV           ; is this one more valuable than what we have seen?
+            ;bcs dvaluable
+            ;ldy CurrDisk        ; disk we found hasn't beat the value, but is it closer?
             lda (ZDiskX), y
             ldy CurrHoard
             sec
@@ -155,18 +150,27 @@ dxdpos:     sta TargDTemp       ; stash distance on the X-axis.
 dydpos:     clc                 ; add X and Y distances.  Not very accurate.
             adc TargDTemp       ; also signed. so if disk is very far might appear close.
             cmp TargD           ; is the target we are checking closer than our prior target?
-            bcs dnotbetter      ; this distance is greater than or equal to what we already found
+            bcs dnextdisk       ; this distance is greater than or equal to what we already found
             sta TargD           ; this disk is closer than other same value
             ldy CurrDisk
             lda (ZDiskX), y     ; so make this the new target
             sta TargX
-            lda (ZDiskY), y
+            lda (ZDiskY), y            
             sta TargY
             lda TargDX          ; velocity is just pos/neg/zero anyway, so store
             sta VelX            ; 8-way direction to disk as the new hoarder velocity to try
             lda TargDY
             sta VelY
-dnotbetter: dec CurrDisk        ; move on to next disk.
+            jmp dnextdisk
+dvaluable:  lda (ZDiskX), y     ; higher value than ones previously seen
+            sta TargX           ; store this as the new target
+            lda (ZDiskY), y     ; higher value than ones previously seen
+            sta TargY
+            lda TargDX          ; velocity is just pos/neg/zero anyway, so store
+            sta VelX            ; 8-way direction to disk as the new hoarder velocity to try
+            lda TargDY
+            sta VelY
+dnextdisk:  dec CurrDisk        ; move on to next disk.
             bpl dcheckdist
             jmp hmoving         ; and go
 hranddir:   lda Random, x       ; send it in a random direction.  Which axis?

@@ -7,16 +7,18 @@
 
 ; fill with a pattern
 
-SplashG:    .byte   $00, $00, $00, $00
-SplashL:    .byte   $00, $00, $00, $00
-SplashXG:   .byte   $00, $0C, $15, $21
-SplashXL:   .byte   $05, $11, $1A, $26
+SplashG:    .byte   $00, $00, $00, $00      ; frame for "got" columns
+SplashL:    .byte   $00, $00, $00, $00      ; frame for "left" columns
+SplashXG:   .byte   $00, $0C, $15, $21      ; X-coordinates for "got" columns
+SplashXL:   .byte   $05, $11, $1A, $26      ; X-coordinates for "left" columns
 PatIndex:   .byte   0
 PatRaster:  .byte   0
 SplashCol:  .byte   0
 
-; splash frame: set SplFrames, x to $50 to start an animation
+; splash frame: set SplashG, x or SplashL, x to $50 to start an animation
 ; will draw a frame, tick down by $10 until complete
+; this treats all animations as "got" animations, but when setting the frame
+; to start, it's useful to be able to refer to the "left" ones.
 
 updsplash:  lda #$8F
             sta ZPtrA + XByte
@@ -34,7 +36,7 @@ splashline: ldx PatRaster
             clc
             adc #$20                ; compute HB
             sta ZPtrB + 1
-            ldx #$06
+            ldx #$07
             stx SplashCol
 spfcheck:   ldx SplashCol
             lda SplashG, x
@@ -63,7 +65,7 @@ spfcont:    dec SplashCol
             dec PatIndex
             dec PatIndex
             bpl splashline
-            ldx #$06
+            ldx #$07
 spfupd:     lda SplashG, x
             bmi spfnext
             sec
