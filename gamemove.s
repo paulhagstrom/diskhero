@@ -474,6 +474,7 @@ dropup:     lda HeroY
             sta ZPtrA
             lda MapPtrH
             sta ZPtrA + 1
+            ldy HeroX
             lda (ZPtrA), y
             bne dropdown
             jmp dodrop
@@ -486,6 +487,7 @@ dropdown:   lda HeroY           ; left, right, up all failed, try down
             sta ZPtrA
             lda MapPtrH
             sta ZPtrA + 1
+            ldy HeroX
             lda (ZPtrA), y
             bne dropfail
 dodrop:     lda ZPxScratch      ; get type back

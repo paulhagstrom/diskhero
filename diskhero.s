@@ -232,11 +232,13 @@ addscore:   ldx #$02
             rts
 
 ; subtract from score, remove the number in A from the score
-            
+
 subscore:   ldx #$02
+            sta subop + 1
             sed
+            lda GameScore, x
             sec
-            sbc GameScore, x
+subop:      sbc #$00
             sta GameScore, x
             dex
             lda GameScore, x
