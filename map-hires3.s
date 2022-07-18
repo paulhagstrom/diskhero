@@ -439,7 +439,7 @@ TopNudge:   .byte   0
 MapDiff:    .byte   0
 MapNudge:   .byte   0
 
-; compute where in screen memory a map line would be.
+; compute where in screen memory a map line would be.  Enter with map line in A.
 ; this took a lot of scribbling on paper, but here is an algorithm that seems to work.
 ; if Map > HeroY, bottom field, on screen if 3 < Map-HeroY < 24
 ; if HeroY > Map, top field, on screen if 3 < HeroY-Map < 24
@@ -518,8 +518,12 @@ updsingle:  pha                 ; stash map line while we check if it is onscree
             lda MapEnds, y      ; get the offset of the right edge of map bytes
             sta ZCurrMapX       ; look it up rather than multiplying by seven
             lda MapPixG, y      ; get the offset of the left edge of pixel groups
-            sta ZCurrDrawX
+            pha
             jsr prepdraw        ; relies on raster line being in X
+            pla
+            clc
+            adc ZLineStart      ; from the left edge
+            sta ZCurrDrawX
             lda MapPtrL         ; point ZScrHole at the left side of present line in the map data.
             sta ZScrHole
             lda MapPtrH
@@ -542,7 +546,7 @@ usoff:      pla                 ; toss out the map line we saved
 ; ZCurrMapX = right edge of group of map bytes (i.e. 6 for first group)
 ; ZCurrDrawX = offset of first byte of 4-byte group of graphics memory (i.e. 4 for second group)
 ; ZScrHole should point to the map line (as derived from setmapptr)
-; should have already called prepdraw with x holding the raster line to set up ZPs
+; should have already called prepdraw with x holding the raster line to set up ZPs and ZLineStart
 drawseg:
             ; buffer in the stack the seven map elements we will represent
             ; read them from right to left, then we draw them from left to right
