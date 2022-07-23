@@ -172,6 +172,20 @@ dvaluable:  lda (ZDiskX), y     ; higher value than ones previously seen
             sta VelY
 dnextdisk:  dec CurrDisk        ; move on to next disk.
             bpl dcheckdist
+            lda VelX            ; do not let the hoarders go diagonally
+            beq hmoving         ; if X velocity is zero, this one is not going diagonally
+            lda VelY            ; if X velocity is nonzero, check if Y velocity is too
+            beq hmoving         ; Y velocity is zero, it's moving horizontally
+            ldx Seed            ; randomly pick which velocity to zero out
+            lda Random, x
+            bmi hgohoriz
+            lda #$00
+            sta VelX
+            jmp hgoflat
+hgohoriz:   lda #$00
+            sta VelY
+hgoflat:    inx
+            stx Seed
             jmp hmoving         ; and go
 hranddir:   lda Random, x       ; send it in a random direction.  Which axis?
             bpl sendhoriz       ; horizontal/vertical choice yields: horizontal
@@ -181,7 +195,7 @@ hranddir:   lda Random, x       ; send it in a random direction.  Which axis?
             sta VelY            ; will be either positive or negative (or zero)
             lda #$00
             sta VelX            ; do not move in the horizontal
-            beq hmoving
+            jmp hmoving
 sendhoriz:  inx
             lda Random, x       ; send it horizontally in a random direction
             stx Seed

@@ -31,6 +31,8 @@
 
 ; Notes to self about how much space I am allowed by starting below A000.
 ; Also: it actually seems to start having problems if I get within ~40 bytes of full.
+; But after I compile I can check the size of the resulting binary and see if it still
+; fits, or whether I need to bump it down yet another page.
 ; start leaves  start   leaves  start   leaves
 ; 9F00  6400    9E00    6656    9D00    6912
 ; 9C00  7167    9B00    7423    9A00    7679

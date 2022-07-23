@@ -254,7 +254,7 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             lda #C_HERO
             sta (ZPtrA), y
 
-            lda #$30            ; disks to scatter around
+            lda #$18            ; disks to scatter around
             sta MFPlaced
             sta NumDisks
 :           jsr mfrndspot
@@ -290,7 +290,7 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             dec MFPlaced
             bpl :-
             
-            lda #$20            ; hoarders to scatter around
+            lda #$10            ; hoarders to scatter around
             sta MFPlaced
             sta NumHoards
 :           jsr mfrndspot
