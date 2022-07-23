@@ -6,6 +6,15 @@
 
             .include "diskhero.inc"
 
+; This program is absolutely not playing by the rules.  Partly because I don't really
+; know the rules.  It takes over the machine, so it has almost no interaction with SOS.
+; it invades SOS's reserved space as well.  The area from $A000-B800 is below where
+; SOS actually is, but Apple doesn't want you using it in case a future version of SOS
+; needs it.  But I think I will risk it.  It's an area that is safe from bank switching,
+; so I try to wedge as much of the code up there as I can.  This also does not return to
+; SOS in any sensible way at present, though it does make an attempt to call a SOS
+; "terminate" command at the end.
+;
 ; We have from A000 to B800 before SOS arrives (6144 bytes), anything up there will
 ; be safe from bank switching.  The program and data is too large for that, so I start
 ; lower, but trying to put everything that needs to be bank-switch safe up in the higher
@@ -251,9 +260,11 @@ subop:      sbc #$00
             cld
             rts
 
-; compute map pointer, based on A.  Map data is in bank 2, $2000-5FFF.
+; compute map pointer, based on A upon entry.  Map data is in bank 2, $2000-5FFF.
+; each line is $40 bytes in storage (only 3F bytes used), so take A and multiply by
+; $40.  This is equivalent to rotating A right twice into a zero and swapping the bytes.
 ; If current map pointer is something like 00000101 (5), shift bits to translate to:
-; MapPtrL: 01000000 (40) MapPtrH: 00010001 (11) ($1140 and $40 bytes there)
+; MapPtrL: 01000000 (40) MapPtrH: 00100001 (11) ($2140 and $40 bytes there)
 
 setmapptr:  pha
             lda #$00
@@ -264,7 +275,7 @@ setmapptr:  pha
             lsr                 ; (multiplying by $40, the length of a map line)
             ror MapPtrL
             clc
-            adc #$20            ; map data starts at $2000.
+            adc #$20            ; map data starts at $2000, add this to H.
             sta MapPtrH
             rts
 
@@ -273,55 +284,55 @@ setmapptr:  pha
 seedRandom: lda #$00
             sta R_ZP        ; request smallest RTC byte
             lda IO_CLOCK    ; close enough to random for now
-            sta Seed
-            lda #$1A
+            sta Seed        ; Seed is just used as the index into the "random" number table
+            lda #$1A        ; return the ZP to $1A00
             sta R_ZP
             rts
 
 ; initialize graphics regions and draw static background
-initscreen: bit D_PAGEONE
+initscreen: bit D_PAGEONE       ; be on page 1.  Nothing presently uses page 2 for anything.
             jsr initstatus      ; text lines 02-03: score/status
             jsr initplay        ; text lines 08-11: playfield (draw frame)
             jsr drawplay        ; draw actual playfield
             jsr initshgr        ; mode 6 super hires line 00-0F (doesn't swap in bank 0)
             jsr initmedres      ; med res lines B0-BF (doesn't swap in bank 0)
-            jsr initmap         ; mode 7 a3 hires map regions
+            jsr initmap         ; mode 7 a3 hires map regions - paint whole visible map
             rts
 
 ; initialize initial environment and game variables
 
 init:       sei                 ; no interrupts while we are setting up
-            ;     0------- 2MHz clock (1=1MHz)
-            ;     -1------ C000.CFFF I/O (0=RAM)
-            ;     --1----- video enabled (0=disabled)
-            ;     ---1---- Reset key enabled (0=disabled)
+            ;     0------- 2MHz clock           (1=1MHz)
+            ;     -1------ C000.CFFF I/O        (0=RAM)
+            ;     --1----- video enabled        (0=disabled)
+            ;     ---1---- Reset key enabled    (0=disabled)
             ;     ----0--- C000.CFFF read/write (1=read only)
-            ;     -----1-- True stack ($100) (0=alt stack)
-            ;     ------1- ROM#1 (0=ROM#2)
-            ;     -------1 F000.FFFF RAM (1=ROM)
+            ;     -----1-- True stack ($100)    (0=alt stack)
+            ;     ------1- ROM#1                (0=ROM#2)
+            ;     -------1 F000.FFFF RAM        (1=ROM)
             lda #%01110111      ; 2MHz, video, I/O, reset, r/w, ram, ROM#1, true stack
             sta R_ENVIRON
             lda #$20            ; start playfield kind of in the middle
-            sta HeroX
+            sta HeroX           ; this is the X coordinate of the hero on the map (0-3E)
             lda #$C3            ; Start down near the bottom (note: number mod 8 should be 3)
-            sta HeroY
-            jsr soundinit       ; move and generate sounds (in bank 1)
+            sta HeroY           ; this is the Y coordinate of the hero on the map (0-FF)
+            jsr soundinit       ; generate sounds and move them (in bank 1)
             jsr herofont        ; load game font into character RAM and fill ZFontDats, ZFontCol
-            jsr buildmap        ; set up map data (in bank 2) (includes dropping in the hero)
+            jsr buildmap        ; set up map data (in bank 2) (includes dropping the hero in)
             jsr setupenv        ; arm interrupts
-            lda #$00            ; start at nudge 0
-            sta NudgePos
+            lda #$00            ; start at smooth scroll offset 0
+            sta NudgePos        ; the smooth scroll offset is affectionately called the "nudge"
             sta GameLevel
-            sta GameScore
+            sta GameScore       ; score is stored in decimal format. 000000 to 999999.
             sta GameScore + 1
             sta GameScore + 2
-            sta VelocityX
-            sta VelocityY
-            lda #MoveDelay       ; set how many VBLs go by before movement advances
+            sta VelocityX       ; hero X velocity, can be negative, zero, or positive
+            sta VelocityY       ; hero Y velocity, can be negative, zero, or positive
+            lda #MoveDelay      ; game clock - setting number of VBLs per movement advance
             sta VBLTick
-            bit IO_KEYCLEAR
+            bit IO_KEYCLEAR     ; clear keyboard so we notice any new keypress
             jsr initscreen      ; draw the initial screen
-            cli                 ; all set up now, interrupt away
-            jmp eventloop
+            cli                 ; all set up now, commence interrupting
+            jmp eventloop       ; wait around until it is time to quit
 
 CodeEnd     = *

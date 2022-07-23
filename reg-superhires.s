@@ -3,8 +3,6 @@
 ;
 ; occupies  lines 00-0F (10)
 ;
-; has no present function
-
 ; fill with a pattern
 
 SplashG:    .byte   $00, $00, $00, $00      ; frame for "got" columns

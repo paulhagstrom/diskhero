@@ -9,14 +9,14 @@ BorderChar  = $00       ; C_SPACE
 BorderColA  = $AF       ; grey2 background
 BorderColB  = $5F       ; grey1 background
 
-FrameText:  .byte C_WALL_RUD, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H
-            .byte C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H
-            .byte C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H
-            .byte C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H
-            .byte C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H
-            .byte C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H
-            .byte C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H
-            .byte C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_H, C_WALL_LUD
+FrameText:  .byte C_WALL_RUD,   C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_H
+            .byte C_WALL_H,     C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_H
+            .byte C_WALL_H,     C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_H
+            .byte C_WALL_H,     C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_H
+            .byte C_WALL_H,     C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_H
+            .byte C_WALL_H,     C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_H
+            .byte C_WALL_H,     C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_H
+            .byte C_WALL_H,     C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_LUD
             
 ; the only static stuff needing initialization are top/bottom border characters
 ; use ZP to stuff the frame characters in.
