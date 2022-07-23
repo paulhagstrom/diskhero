@@ -405,6 +405,7 @@ gotdisk:    lda ZMapTemp        ; map (disk) was stored here, includes type
             pha
             ldx IsHero
             beq gotnotsnd
+            eor #$C0            ; invert value for points (type 0 gets most, 3 least)
             ora #$20            ; add to score if hero got the disk
             lsr
             jsr addscore        ; add type multiplier to the score
@@ -502,6 +503,7 @@ dodrop:     lda ZPxScratch      ; get type back
             ora #C_DISK
             sta (ZPtrA), y      ; and drop it
             pla                 ; get high bit type back
+            eor #$C0            ; invert value for points (type 0 gets most, 3 least)
             ora #$20
             lsr
             jsr subscore        ; subtract type multiplier from the score
