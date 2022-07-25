@@ -15,12 +15,6 @@
 ; SOS in any sensible way at present, though it does make an attempt to call a SOS
 ; "terminate" command at the end.
 ;
-; We have from A000 to B800 before SOS arrives (6144 bytes), anything up there will
-; be safe from bank switching.  The program and data is too large for that, so I start
-; lower, but trying to put everything that needs to be bank-switch safe up in the higher
-; end.  Anything that pushes data to the hires graphics pages pretty much needs to be
-; bank-safe, since bank 0 needs to be active in order to use stack/ZP to push pixels.
-
 ; Screen layout:
 ; mode 6 (bw hires)  lines 00-0F (10)        b/w "splash" screen
 ; mode 1 (text)      lines 10-1F (10) 02-03  score/status
@@ -30,7 +24,6 @@
 ; mode 5 (a3 medres) lines B0-BF (18) 15-17  medium res something
 
 ; Notes to self about how much space I am allowed by starting below A000.
-; Also: it actually seems to start having problems if I get within ~40 bytes of full.
 ; But after I compile I can check the size of the resulting binary and see if it still
 ; fits, or whether I need to bump it down yet another page.
 ; start leaves  start   leaves  start   leaves
@@ -61,14 +54,12 @@ CodeStart:  jmp init
             .include "interrupts.s"         ; cannot be in banked memory
             .include "lookups.s"            ; cannot be in banked memory
 
-IRQSave:    .byte   0, 0 , 0        ; saved state
-ZPSave:     .byte   0
-BankSave:   .byte   0
+IRQSave:    .byte   0, 0 , 0                ; IRQ vector before we install ours
 
-ExitFlag:   .byte   0               ; keyboard int makes this nonzero to trigger exit
-KeyCaught:  .byte   0               ; keyboard int pushes a caught key in here
+ExitFlag:   .byte   0                       ; keyboard int makes this nonzero to trigger exit
+KeyCaught:  .byte   0                       ; keyboard int pushes a caught key in here
 
-VoidL:      .byte   0               ; keeping track of "void" around the map while drawing
+VoidL:      .byte   0                       ; keeping track of "void" around the map while drawing
 VoidR:      .byte   0
 VoidU:      .byte   0
 VoidD:      .byte   0
@@ -96,29 +87,29 @@ MapPtrH:    .byte   0                       ; Holds address of left edge of a ma
 
 Seed:       .byte   0                       ; current place in the "random" number table
 
-eventloop:  lda ExitFlag
-            bne alldone
-            lda KeyCaught
+eventloop:  lda ExitFlag                    ; if ExitFlag becomes nonzero (within keyboard processing)
+            bne alldone                     ; exit
+            lda KeyCaught                   ; check if we have recently caught a key (keyboard interrupt)
             beq :+
-            jsr handlekey
+            jsr handlekey                   ; if there was a key, handle it
 :            
-            jsr drawstatus
-            lda VBLTick
-            bpl posttick
-            jsr domove
-            jsr updsplash
-            lda #MoveDelay
+            lda VBLTick                     ; wait for game clock to tick
+            bpl posttick                    ; based on number of VBLs set in MoveDelay
+            jsr domove                      ; game clock has ticked, move everyone around
+            jsr updsplash                   ; update the splash effect at the top
+            jsr drawstatus                  ; redraw score (TODO: do only when there is an update)
+            lda #MoveDelay                  ; reset the game clock
             sta VBLTick
 posttick:   jmp eventloop
 
-alldone:    lda #$7F            ;disable all interrupts
+alldone:    lda #$7F                        ;disable all interrupts
             sta RD_INTENAB
             sta RD_INTFLAG
             lda #$7F
             sta RE_INTENAB
             sta RE_INTFLAG
 
-            brk                  ; SOS TERMINATE
+            brk                             ; SOS TERMINATE
             .byte   TERMINATE
             .word   *-2
 
@@ -284,10 +275,10 @@ setmapptr:  pha
 ; grab a random number seed from the fastest part of the realtime clock.
 ; I don't think this actually works, but something like this would be a good idea.
 seedRandom: lda #$00
-            sta R_ZP        ; request smallest RTC byte
-            lda IO_CLOCK    ; close enough to random for now
-            sta Seed        ; Seed is just used as the index into the "random" number table
-            lda #$1A        ; return the ZP to $1A00
+            sta R_ZP            ; request smallest RTC byte
+            lda IO_CLOCK        ; close enough to random for now
+            sta Seed            ; Seed is just used as the index into the "random" number table
+            lda #$1A            ; return the ZP to $1A00
             sta R_ZP
             rts
 
