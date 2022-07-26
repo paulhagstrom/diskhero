@@ -3,19 +3,19 @@
 ;
 ; includes antagonist movement
 
-VelX:       .byte   0
-VelY:       .byte   0
-OldX:       .byte   0
+VelX:       .byte   0               ; x velocity for movement success check
+VelY:       .byte   0               ; y velocity, these are only pos, neg, zero
+OldX:       .byte   0               ; starting point for movement success check
 OldY:       .byte   0
-NewX:       .byte   0
+NewX:       .byte   0               ; attempted ending point for movement success check
 NewY:       .byte   0
-OldOldX:    .byte   0
-OldOldY:    .byte   0
-IsHero:     .byte   0
-CurrHoard:  .byte   0
-CurrDisk:   .byte   0
-DoScrollUp: .byte   0
-DoScrollDn: .byte   0
+OldOldX:    .byte   0               ; hoarders have two segments, they lead with their
+OldOldY:    .byte   0               ; hands.  this is the pre-move position of their head.
+IsHero:     .byte   0               ; true if checking move for hero (for collection accounting)
+CurrHoard:  .byte   0               ; loop variable as we work through the hoarders' moves
+CurrDisk:   .byte   0               ; loop variable as hoarders decide direction
+DoScrollUp: .byte   0               ; true if we need to scroll screen up (hero down)
+DoScrollDn: .byte   0               ; true if we need to scroll screen down (hero up)
 TargX:      .byte   0
 TargY:      .byte   0
 TargV:      .byte   0
@@ -103,7 +103,7 @@ hnotmoving: lda ZXXTemp         ; recall original second segment (head) X-coordi
             sta ZXXTemp         ; which we also are continuing to save for later use
             pla                 ; recall old head X-coordinate
             sta (ZHoardX), y    ; and put it in old hands x-coordinate
-            lda (ZHoardYY), y    ; then do the same for the Y coordinates
+            lda (ZHoardYY), y   ; then do the same for the Y coordinates
             pha
             lda (ZHoardY), y
             sta (ZHoardYY), y

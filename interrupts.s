@@ -73,6 +73,10 @@ TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 ; since that's unreasonably soon, wait instead to do switch between 65 and 80 cycles
 ; (Which is within the next HBL after the one that triggered it)
 
+; TODO: changing stack strategy, should allow for using stack in here.
+; I intend no longer to shift the stack around to push into graphics, at least not
+; without disabling interrupts first.
+
 nothbljmp:  jmp nothbl          ; 18 once departing from here.  Jump to rest of interrupt handlers.
 
 inthandle:  sta IntAStash       ; 4 save A

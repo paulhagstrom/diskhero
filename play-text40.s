@@ -19,14 +19,10 @@ FrameText:  .byte C_WALL_RUD,   C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_H
             .byte C_WALL_H,     C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_LUD
             
 ; the only static stuff needing initialization are top/bottom border characters
-; use ZP to stuff the frame characters in.
+; use ZP to stuff the frame characters in.  Assume ZP was at $1A00.
 
-IpZPSave:   .byte   0
-
-initplay:   lda R_ZP
-            sta IpZPSave
-            ldy #$08        ; draw line 8
-            sec
+initplay:   ldy #$08            ; draw line 8
+            sec                 ; use carry as "first time through" flag
 iploop:     lda YLoresHA, y
             sta R_ZP
             ldx YLoresS, y
@@ -36,15 +32,15 @@ iploop:     lda YLoresHA, y
             dex
             dey
             bpl :-
-            bcc ipshadow
-            ldy #$10        ; then draw line 10
-            clc
+            bcc ipshadow        ; if we've already drawn line 10, exit
+            ldy #$10            ; otherwise, draw line 10
+            clc                 ; now on the "second time through"
             jmp iploop
-ipshadow:   ldy #$11        ; draw line 11 (space, with shadow color)
+ipshadow:   ldy #$11            ; draw line 11 (space, with shadow color)
             lda YLoresHA, y
             sta R_ZP
             lda YLoresS, y
-            pha             ; save end of line index for later
+            pha                 ; save end of line index for later
             tax
             lda #C_SPACE
             ldy #$27
@@ -54,9 +50,9 @@ ipshadow:   ldy #$11        ; draw line 11 (space, with shadow color)
             bpl :-
             lda R_ZP
             clc
-            adc #$04        ; go to color space
+            adc #$04            ; go to color space
             sta R_ZP
-            pla             ; recall end of line index
+            pla                 ; recall end of line index
             tax
             ldy #$27
             lda #BorderColA
@@ -64,38 +60,37 @@ ipshadow:   ldy #$11        ; draw line 11 (space, with shadow color)
             dex
             dey
             bpl :-
-            lda IpZPSave
+            lda #$1A            ; back to $1A00 for ZP
             sta R_ZP
             rts
             
-; translation table between text column and hires map column, when drawing passes from right
-; scrollbar thumb toggles state.  $80 indicates a fixed (frame) color.
-ThumbXlate: .byte   $80, $80
-            .byte   $01, $03, $05, $07, $08, $0A, $0C, $0E
-            .byte   $0F, $11, $13, $15, $16, $18, $1A, $1C
-            .byte   $1D, $1E, $20, $21, $22, $24, $26, $28
-            .byte   $29, $2B, $2D, $2F, $30, $32, $34, $36
-            .byte   $37, $39, $3B, $3D
-            .byte   $80, $80
+; Map2Thumb is a table showing which lores column corresponds to
+; which map/hires column.  Indexed by map column, this gives lores column.
+Map2Thumb:  .byte   $00, $00, $01, $01, $02, $02, $03
+            .byte   $04, $04, $05, $05, $06, $06, $07
+            .byte   $08, $08, $09, $09, $0A, $0A, $0B
+            .byte   $0C, $0C, $0D, $0D, $0E, $0E, $0F
+            .byte   $10, $10, $11, $11, $12, $12, $13
+            .byte   $14, $14, $15, $15, $16, $16, $17
+            .byte   $18, $18, $19, $19, $1A, $1A, $1B
+            .byte   $1C, $1C, $1D, $1D, $1E, $1E, $1F
+            .byte   $20, $20, $21, $21, $22, $22, $23
 PlayLeft:   .byte   0
 PlayRight:  .byte   0
 PlayTop:    .byte   0
-PlStack:    .byte   0       ; saved stack pointer
-PlEnv:      .byte   0       ; saved environment register
-BorderV:    .byte   0       ; playfield border counter (total vertical border columns)
-BorderR:    .byte   0       ; playfield border counter (total border columns on the right)
-BorderRYet: .byte   0       ; playfield border counter (right border columns yet to draw)
-BorderL:    .byte   0       ; memory index of rightmost playfield column offset from YLoresL after border done
-BorderS:    .byte   0       ; memory index of leftmost playfield column from YLoresS after border done
-BorDataA:   .byte   0       ; character or color inside border on left and right
-BorDataB:   .byte   0       ; character or color on border on left and right
-ThumbTogg:  .byte   0
-ThumbNext:  .byte   0
+PlStack:    .byte   0           ; saved stack pointer
+PlEnv:      .byte   0           ; saved environment register
+BorderV:    .byte   0           ; playfield border counter (total vertical border columns)
+BorderR:    .byte   0           ; playfield border counter (total border columns on the right)
+BorderRYet: .byte   0           ; playfield border counter (right border columns yet to draw)
+BorderL:    .byte   0           ; memory index of rightmost playfield column offset from YLoresL after border done
+BorderS:    .byte   0           ; memory index of leftmost playfield column from YLoresS after border done
+BorDataA:   .byte   0           ; character or color inside border on left and right
+BorDataB:   .byte   0           ; character or color on border on left and right
 
 ; the middle lores field starts at map $42 and draws to $46 (plus NudgePos)
 ; in order to keep hero in the middle, five columns are used by a frame
 ; based on hero position, 5 total, high nibble of HeroX of those are on the right
-; (i.e. if HeroX is 32, there are 3 on the right, 2 on the left)
 
 drawplay:   lda HeroX           ; take high nibble of HeroX - that is BorderR
             lsr                 ; that is, if HeroX is at 10, there are 2 border cols on the right, 3 on left
@@ -143,58 +138,55 @@ pmnovoidu:  sta PlayTop         ; record top map line in playfield (HeroY-3)
             lda #$00            ; and that there is no top void
             sta VoidU
 dppostvoid: ; start drawing with top and bottom borders (for thumb). Just colors, chars will already be there
-            lda R_ENVIRON       ; save evironment register
-            sta PlEnv
-            tsx
-            stx PlStack
-            and #%11111011      ; set stack bit to zero to get alt stack
-            sta R_ENVIRON
+            ldx PlayRight       ; last visible column on the playfield
+            lda Map2Thumb, x    ; corresponds to right edge of thumb
+            pha
+            ldx PlayLeft        ; first visible column on the playfield
+            lda Map2Thumb, x    ; coresponds to left edge of thumb
+            pha
             ldy #$08            ; we are at the top of the playfield box (in the top border)
             sty CurScrLine      ; text line $08
 borderh:    lda YLoresHA, y     ; $800 base (color space) is computed from char space
             clc
             adc #$04
-            eor #$01            ; where the ZP needs to be for the stack to be where we want it
-            sta R_ZP            ; point stack at correct line on color page (ZP now also in there somewhere)
+            sta R_ZP            ; point ZP at correct line on color page
+            pla
+            sta ZThumbL
+            pla
+            sta ZThumbR
             ldx YLoresS, y      ; low byte of the address of the end of this line
-            txs                 ; point stack pointer at end of the line
-            lda PlayRight
-            sta ThumbTogg       ; absolute despite cycle hit, ZP is in a hazardous location
-            lda PlayLeft
-            sta ThumbNext
-            ldy #$27            ; paint 28 characters
-borderhb:   ldx ThumbXlate, y   ; map column approximation for each playfield column
-            bmi bordfixed       ; negative numbers are magic, indicating a fixed edge color
-            cpx ThumbTogg       ; did we just pass the toggle value?
-            bcc bordtogg        ; yes, go change the color (enter, or exit, thumb)
-bordpush:   pha                 ; push the value onto the color page
-            dey                 ; continue back the line
-            bpl borderhb
+            dex
+            dex                 ; back up past the fixed colors at the edge
+            ldy #$23            ; paint $24 characters
+doborder:   cpy ZThumbR
+            bcs thleader        ; we have not passed the right edge of the thumb already
+            cpy ZThumbL         ; we have passed the right edge, have we escpaed the left edge?
+            bcs midthumb        ; we have not yet escaped off the left edge of the thumb
+            lda #$A5            ; border (non-thumb) color (left, after thumb)
+            jmp dothumb
+thleader:   beq midthumb        ; we are ON the right edge of the thumb
+            lda #$A5            ; border (non-thumb) color (right, before thumb)
+            jmp dothumb
+midthumb:   lda #$52            ; thumb color
+dothumb:    sta Zero, x         ; plant the color
+            dex
+            dey
+            bpl doborder
             ldx CurScrLine
             cpx #$09            ; if we have done both top and bottom
             beq innerplay       ; then CurScrLine happens to be 9 (top of playfield) and ready to start
             inc CurScrLine      ; set exit condition for next time (borderh does not use the value)
+            lda ZThumbR         ; push thumb bounds back on the stack for next iteration
+            pha
+            lda ZThumbL
+            pha
             ldy #$10            ; do the bottom line (Y holds the current screen line for borderh)
             jmp borderh
-bordfixed:  lda #$57            ; fixed color is brighter gray
-            jmp bordpush
-bordtogg:   ldx ThumbNext       ; arm new left side toggle
-            stx ThumbTogg
-            ldx #$00            ; disable other toggling
-            stx ThumbNext
-            eor #$A7            ; swap color (turn on, then off, thumb color)
-            jmp bordpush
-innerplay:  lda #$1A            ; return ZP and stack to 1A/true
-            sta R_ZP
-            lda PlEnv
-            sta R_ENVIRON
-            ldx PlStack
-            txs
-burnvoidu:  dec VoidU           ; burn through upper void lines first if there are any
+innerplay:  dec VoidU           ; burn through upper void lines first if there are any
             bmi pfstart         ; branch away if done with upper void
             jsr playvoid        ; draw the void at CurScrLine
             inc CurScrLine
-            jmp burnvoidu
+            jmp innerplay
 pfstart:    lda PlayTop         ; get address of first drawn line (now that top void is passed)
             jsr setmapptr
 pfline:     lda MapPtrH         ; see if we are in the four lines below the map
@@ -213,10 +205,13 @@ pfnext:     lda MapPtrL         ; advance map pointer (even if we are in the voi
             lda CurScrLine
             cmp #$10            ; have we already done the last one ($0F)?
             bne pfline          ; if not (more to draw), go up and do them
+            lda #$1A            ; return ZP to its proper place
+            sta R_ZP
             rts
 
 ; draw the playfield border and compute edges of line/void to draw
 ; after: BorderL, BorderS hold the low bytes of the screen memory addresses for line (left, right)
+; assumes that ZP can be manipulated with abandon, will be returned to $1A00 somewhere else, later
 playbord:   lda #BorderChar
             sta BorDataA        ; outer border character
             sta BorDataB        ; inner border character
@@ -256,11 +251,10 @@ pbdraw:     sta R_ZP            ; point ZP at appropriate space
             clc                 ; and color space is $04 away
             adc #$04            ; so find $800 base color space and do it again
             jmp pbdraw          ; and do it again but with colors to the color space
-:           lda #$1A            ; put ZP back
-            sta R_ZP
-            rts
+:           rts
             
 ; draw a void line in the playfield
+; assumes that ZP can be manipulated with abandon, will be returned to $1A00 somewhere else, later
 playvoid:   jsr playbord        ; draw the border and compute the edges
             ldy CurScrLine
             lda YLoresHA, y     ; $800 base (char space)
@@ -283,13 +277,14 @@ pvchar:     sta Zero, x
 pvcol:      sta Zero, x
             dex
             bpl pvcol
-            lda #$1A            ; put ZP back
-            sta R_ZP
             rts
 
-; draw a lores line in the playfield, assumes ZP is 1A00 and MapPtr is set.
+; draw a lores line in the playfield, assumes MapPtr is set.
+; leaves with the ZP dangling out in graphics space, assumes it will be fixed by someone else
 loresline:  jsr playbord        ; draw the border and compute the edges
-            lda MapPtrL         ; store MapPtrl in 1A00 ZP ZMapPtr
+            lda #$1A            ; we want to be in $1A00 ZP for this part
+            sta R_ZP
+            lda MapPtrL         ; store MapPtr in 1A00 ZP ZMapPtr
             sta ZMapPtr
             lda MapPtrH
             sta ZMapPtr + 1
@@ -369,6 +364,4 @@ pfwchar:    sta Zero, x         ; store it in character space
 pfwcol:     sta Zero, x         ; and put it in the ZP we are pointing at
             dex
             bpl :-
-            lda #$1A
-            sta R_ZP            ; go back to 1A00 ZP
             rts

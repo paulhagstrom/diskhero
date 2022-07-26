@@ -9,6 +9,8 @@
 ; Given that it does not refer to NudgePos, it may only work properly if
 ; (HeroY-3) is an even multiple of 8.
 
+BankSave:   .byte   0
+
 initmap:    lda R_BANK          ; save bank
             sta BankSave        ; (but assume we are already in 1A00 ZP)
             lda #$00
@@ -196,6 +198,10 @@ updend:     rts
 ; exits with x still holding the line that would be the target of new draw (was last source)
 ; trying to squeeze as many cycles as possible out of this, so using the stack for copy target
 ; assumes we are already in bank 0 (video data), and sets ZP to $1A00 on exit 
+; NOTE: This uses pushing to the stack and it might not be truly interrupt safe.
+; TODO: Change it to using ZP instead.  I may lose a few cycles but will probably gain stability.
+; might consider halting interrupts during the most frantic pushing, but I think it might still be
+; too many cycles to risk.  This is the only place I use the stack pushing in this graphics region.
 
 LinesLeft:  .byte   0
 SourceS:    .byte   0

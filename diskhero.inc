@@ -48,7 +48,7 @@ TouchedVoid = $71
 MapOffset   = $72
 PInc        = $73
 
-ZCharTemp  = $74
+ZCharTemp   = $74
 
 ; lookup tables
 ZFontDots   = $80   ; ZP cache for FontDots to speed up drawing (80-A7)
@@ -64,12 +64,15 @@ ZFXPlay     = $DC   ; nonzero if a sound effect is playing
 
 ZBackNext   = $DF   ; page number of first sample of next background segment after this one
 
-; Used when ZP is pointed at a display buffer
+; Addresses are used when ZP is pointed at a display buffer
 ; these are not in conflict with addresses in the 1A00 ZP,
 ; generally limited to screen holes: 78-7F, F8-FF
 
-; playfield
+; playfield (play-text40)
+
 ZMapPtr     = $7A
+ZThumbR     = $FD   
+ZThumbL     = $FE
 
 ZScrHole    = $78
 ZOtherZP    = $7A
