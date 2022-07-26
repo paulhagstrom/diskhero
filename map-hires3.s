@@ -193,15 +193,11 @@ upddone:    lda BankSave        ; put the bank back
             sta NudgePos
 updend:     rts
 
-; copylines uses self-modifying code and stack pushing to quickly copy the three graphics lines
+; copylines uses self-modifying code and ZP repointing to quickly copy the three graphics lines
 ; enter with graphics line (top line plus NudgePos), carry clear for increase nudge, set for decrease nudge
 ; exits with x still holding the line that would be the target of new draw (was last source)
-; trying to squeeze as many cycles as possible out of this, so using the stack for copy target
-; assumes we are already in bank 0 (video data), and sets ZP to $1A00 on exit 
-; NOTE: This uses pushing to the stack and it might not be truly interrupt safe.
-; TODO: Change it to using ZP instead.  I may lose a few cycles but will probably gain stability.
-; might consider halting interrupts during the most frantic pushing, but I think it might still be
-; too many cycles to risk.  This is the only place I use the stack pushing in this graphics region.
+; assumes we are already in bank 0 (video data), and sets ZP to $1A00 on exit
+; interrupts are too tight in this game to use the stack to push
 
 LinesLeft:  .byte   0
 SourceS:    .byte   0
@@ -209,25 +205,18 @@ TargS:      .byte   0
 TargL:      .byte   0
 TargHA:     .byte   0
 TargHB:     .byte   0
-CLStack:    .byte   0
-CLEnv:      .byte   0
 USBank:     .byte   0
 LinesDec:   .byte   0           ; record carry status from entry (1=decrementing, moving map down)
 
 copylines:  tay                 ; move start line into Y
-            tsx                 ; preserve stack state for recall when we are done
-            stx CLStack
-            lda R_ENVIRON
-            sta CLEnv
-            and #%11111011      ; set stack bit to zero to get alt stack
-            sta R_ENVIRON
-            lda #$02            ; move three lines, countdown in LinesLeft
-            sta LinesLeft
+            pha                 ; and remember it 
             lda #$00            ; set LinesDec to 1 if carry was set or 0 if carry was clear
             rol
             sta LinesDec
+            lda #$02            ; move three lines, countdown in LinesLeft
+            sta LinesLeft
             lda YHiresS, y
-            sta TargS           ; target stack (end of line)
+            sta TargS           ; target low
             lda YHiresHA, y
             sta TargHA          ; target A high
             clc
@@ -235,41 +224,40 @@ copylines:  tay                 ; move start line into Y
             sta TargHB          ; target B high
 lmnext:     lda LinesDec        ; restore carry from entry
             ror
-            tya                 ; compute source line relative to target line
+            pla                 ; recall the target line and compute the source line from it
             bcs :+              ; if carry is set we are subtracting
             adc #$08            ; if carry is clear we are adding
-            bcc lmprep          ; carry survives from entry (no chance carry got set)
+            jmp lmprep
 :           sbc #$08            ; carry survives from entry (no chance carry got cleared)
 lmprep:     tay
+            pha                 ; remember source line we computed for the next iteration's target
+            lda YHiresS, y      ; end of line pointer not used in source but passed on to be target after
+            sta SourceS
             lda YHiresL, y
-            sta lmsrca + 1      ; modify code in upcoming loop
-            sta lmsrcb + 1
+            sta lmsrca + 1      ; modify code in upcoming loop (page 1 source)
+            sta lmsrcb + 1      ; modify code in upcoming loop (page 2 source)
             lda YHiresHA, y
             sta lmsrca + 2      ; source A high
             clc
             adc #$20            ; compute HB
             sta lmsrcb + 2      ; source B high
-            lda YHiresS, y      ; stack pointer not used in source but passed on to be target after
-            sta SourceS
-            lda TargHA          ; point stack at target A page
-            eor #$01            ; this is where ZP has to be, in order for stack to be where we want
-            sta R_ZP            ; point ZP (thus stack)
-            ldx TargS           ; start stack at the end of the target line
-            txs
-            ldx #$27
-lmsrca:     lda $2000, x
-            pha
+            lda TargHA          ; point ZP at target A page
+            sta R_ZP
+            ldx TargS           ; start x at the end of the target line
+            ldy #$27
+lmsrca:     lda $2000, y        ; this address is modified to be exactly at the start of the line
+            sta Zero, x         ; this address is at a page boundary, so x may be more than $27
             dex
+            dey
             bpl lmsrca
-            lda TargHB          ; point stack at target B page
-            eor #$01            ; this is where ZP has to be, in order for stack to be where we want
-            sta R_ZP            ; point ZP (thus stack)
-            ldx TargS           ; start stack at the end of the target line
-            txs
-            ldx #$27
-lmsrcb:     lda $4000, x
-            pha
+            lda TargHB          ; point ZP at target B page
+            sta R_ZP
+            ldx TargS           ; start x at the end of the target line
+            ldy #$27
+lmsrcb:     lda $4000, y        ; this address is modified to be exactly at the start of the line
+            sta Zero, x         ; this address is at a page boundary, so x may be more than $27
             dex
+            dey
             bpl lmsrcb
             dec LinesLeft
             bmi lmdone          ; done moving lines
@@ -281,13 +269,10 @@ lmsrcb:     lda $4000, x
             sta TargHA
             lda lmsrcb + 2
             sta TargHB
-            jmp lmnext          ; carry should still be surviving from entry
-lmdone:     lda CLEnv           ; restore environment, ZP, stack
-            sta R_ENVIRON
+            jmp lmnext
+lmdone:     pla                 ; we can now forget the next line we computed
             lda #$1A            ; restore ZP to $1A00
             sta R_ZP
-            ldx CLStack
-            txs
             rts
 
 ; seven magenta pixels for the left and right two bytes in the map region
