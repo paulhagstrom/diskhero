@@ -19,65 +19,80 @@ FrameText:  .byte C_WALL_RUD,   C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_H
             .byte C_WALL_H,     C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_LUD
             
 ; the only static stuff needing initialization are top/bottom border characters
-; use ZP to stuff the frame characters in.  Returns ZP to $1A00.
+; even though it does not require blazing speed, use the stack to push -- just
+; to exemplify the technique.  In the main game code, interrupts come too fast to
+; use the stack (not interrupt-safe, can't disable interrupts for so long).
+; (This code is executed at the beginning, while interrupts have been suspended.)
+; Returns ZP to $1A00.
 
-ipcount:    .byte   0
+IPcount:    .byte   0
+IPeol:      .byte   0           ; end of line pointer
+IPstack:    .byte   0           ; saved stack pointer
+IPenv:      .byte   0           ; saved environment register
 
-initplay:   lda #$01
-            sta ipcount
+initplay:   tsx
+            stx IPstack
+            lda R_ENVIRON
+            sta IPenv
+            and #%11111011      ; set stack bit to zero to get alternate stack
+            sta R_ENVIRON
+            lda #$01
+            sta IPcount
             ldy #$08            ; draw line 8
 iploop:     lda YLoresHA, y
-            sta R_ZP
-            lda YLoresS, y
-            pha
-            tax
+            eor #$01            ; this is where ZP has to be
+            sta R_ZP            ; in order for stack to be where we want it
+            ldx YLoresS, y
+            stx IPeol           ; save the end of line pointer for later
+            txs                 ; point stack pointer at end of line
             ldy #$27
 :           lda FrameText, y
-            sta Zero, x
-            dex
+            pha                 ; push onto the screen
             dey
             bpl :-
             lda R_ZP            ; switch to color page
             adc #$04
             sta R_ZP
-            pla                 ; recall end of line address
-            tax
+            ldx IPeol           ; recall end of line address
+            txs                 ; point stack pointer at end of line
             lda #BorderColB     ; outer border color
             ldy #$27
-:           sta Zero, x
-            dex
+:           pha
             dey
             bpl :-
-            dec ipcount         ; check if we have done the bottom line yet
+            dec IPcount         ; check if we have done the bottom line yet
             bmi ipshadow        ; if we've already drawn line 10, exit
             ldy #$10            ; otherwise, draw line 10
             jmp iploop
 ipshadow:   ldy #$11            ; draw line 11 (space, with shadow color)
             lda YLoresHA, y
-            sta R_ZP
-            lda YLoresS, y
-            pha                 ; save end of line index for later
-            tax
+            eor #$01            ; this is where ZP has to be
+            sta R_ZP            ; in order for stack to be where we want it
+            ldx YLoresS, y
+            stx IPeol           ; save the end of line pointer for later
+            txs                 ; point stack pointer at end of line
             lda #C_SPACE
             ldy #$27
-:           sta Zero, x
-            dex
+:           pha                 ; push onto the screen
             dey
             bpl :-
             lda R_ZP
             clc
             adc #$04            ; go to color space
             sta R_ZP
-            pla                 ; recall end of line index
-            tax
+            ldx IPeol           ; recall end of line address
+            txs                 ; point stack pointer at end of line
             ldy #$27
             lda #BorderColB
-:           sta Zero, x
-            dex
+:           pha
             dey
             bpl :-
             lda #$1A            ; back to $1A00 for ZP
             sta R_ZP
+            lda IPenv           ; back to true stack
+            sta R_ENVIRON
+            ldx IPstack         ; restore stack pointer
+            txs
             rts
             
 ; Map2Thumb is a table showing which lores column corresponds to
