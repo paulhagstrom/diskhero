@@ -1,1 +1,5 @@
 .DS_Store
+old/*
+demo/*
+diskhero.bin
+diskhero.o
