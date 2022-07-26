@@ -6,8 +6,8 @@
 ;           (or, in other words, up 3 and down 3 from the center)
 
 BorderChar  = $00       ; C_SPACE
-BorderColA  = $AF       ; grey2 background
-BorderColB  = $5F       ; grey1 background
+BorderColA  = $5A       ; grey2 background
+BorderColB  = $A5       ; grey1 background
 
 FrameText:  .byte C_WALL_RUD,   C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_H
             .byte C_WALL_H,     C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_H
@@ -19,22 +19,38 @@ FrameText:  .byte C_WALL_RUD,   C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_H
             .byte C_WALL_H,     C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_LUD
             
 ; the only static stuff needing initialization are top/bottom border characters
-; use ZP to stuff the frame characters in.  Assume ZP was at $1A00.
+; use ZP to stuff the frame characters in.  Returns ZP to $1A00.
 
-initplay:   ldy #$08            ; draw line 8
-            sec                 ; use carry as "first time through" flag
+ipcount:    .byte   0
+
+initplay:   lda #$01
+            sta ipcount
+            ldy #$08            ; draw line 8
 iploop:     lda YLoresHA, y
             sta R_ZP
-            ldx YLoresS, y
+            lda YLoresS, y
+            pha
+            tax
             ldy #$27
 :           lda FrameText, y
             sta Zero, x
             dex
             dey
             bpl :-
-            bcc ipshadow        ; if we've already drawn line 10, exit
+            lda R_ZP            ; switch to color page
+            adc #$04
+            sta R_ZP
+            pla                 ; recall end of line address
+            tax
+            lda #BorderColB     ; outer border color
+            ldy #$27
+:           sta Zero, x
+            dex
+            dey
+            bpl :-
+            dec ipcount         ; check if we have done the bottom line yet
+            bmi ipshadow        ; if we've already drawn line 10, exit
             ldy #$10            ; otherwise, draw line 10
-            clc                 ; now on the "second time through"
             jmp iploop
 ipshadow:   ldy #$11            ; draw line 11 (space, with shadow color)
             lda YLoresHA, y
@@ -55,7 +71,7 @@ ipshadow:   ldy #$11            ; draw line 11 (space, with shadow color)
             pla                 ; recall end of line index
             tax
             ldy #$27
-            lda #BorderColA
+            lda #BorderColB
 :           sta Zero, x
             dex
             dey
@@ -78,8 +94,6 @@ Map2Thumb:  .byte   $00, $00, $01, $01, $02, $02, $03
 PlayLeft:   .byte   0
 PlayRight:  .byte   0
 PlayTop:    .byte   0
-PlStack:    .byte   0           ; saved stack pointer
-PlEnv:      .byte   0           ; saved environment register
 BorderV:    .byte   0           ; playfield border counter (total vertical border columns)
 BorderR:    .byte   0           ; playfield border counter (total border columns on the right)
 BorderRYet: .byte   0           ; playfield border counter (right border columns yet to draw)
@@ -167,7 +181,7 @@ doborder:   cpy ZThumbR
 thleader:   beq midthumb        ; we are ON the right edge of the thumb
             lda #$A5            ; border (non-thumb) color (right, before thumb)
             jmp dothumb
-midthumb:   lda #$52            ; thumb color
+midthumb:   lda #$02            ; thumb color
 dothumb:    sta Zero, x         ; plant the color
             dex
             dey
