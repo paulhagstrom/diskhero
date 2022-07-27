@@ -83,3 +83,4 @@ Things I have on the list of things to try to do:
 - Make disks much more evident on the big map
 - Try to install in MAME-in-a-browser on the Internet Archive.
 - Maybe use the medres area (or superhires area) to point toward disks?
+- Maybe use the medres area to illustrate progress (different view on inventory)?
