@@ -75,6 +75,10 @@ TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 ; During drawing, we have a HBL interrupt every 520 cycles.  During VBL the clock jumps up, so
 ; we want the interrupt to be about every 1040 ($410) cycles.  We should be able to fit 7 in.
 
+; processor goes at 1Mhz. 17030 cycles per refresh. Basically 60 refreshes per sec.
+; 8-line HBL group triggers about 32 times per refresh cycle (including those during VBL)
+; so we're looking at max audio sampling around 2KHz.
+
 ; 86 cycles in here, 44 to get here, 130 total.
 
 intvbl:     lda #$06            ;2 reset the HBL counter for top region when it eventually comes

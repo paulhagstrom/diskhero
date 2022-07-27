@@ -31,7 +31,7 @@
 ; 9C00  7167    9B00    7423    9A00    7679
 ; 9900  7935    9800    8191    9700    8447
 
-            .org     $9700 - 14
+            .org     $9600 - 14
             
 ; SOS interpreter header
             .byte    "SOS NTRP"
