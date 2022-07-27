@@ -83,7 +83,7 @@ Bugs I am presently aware of.
 
 - Some drawing glitches in hires area above and below when scrolling
 - Disks left can dip below zero, have seen it go to 98 so isn't simply off-by-one
-- Hoarders to not appear to swarm toward disks.
+- Hoarders do not appear to swarm toward disks.
 - Make quit do something sensible rather than hang
 
 ## Enhancements ##
