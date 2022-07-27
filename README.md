@@ -61,3 +61,25 @@ Q to toggle the sound effects
 
 E allegedly exits, which really means "hang more or less on purpose"
 
+## Bugs ##
+
+Bugs I am presently aware of.
+
+- Some drawing glitches in hires area above and below when scrolling
+- Disks left can dip below zero, have seen it go to 98 so isn't simply off-by-one
+- Hoarders to not appear to swarm toward disks.
+- Make quit do something sensible rather than hang
+
+## Enhancements ##
+
+Things I have on the list of things to try to do:
+
+- Possibly shrink map for lower levels
+- Make level end when no disks are left
+- Add trucks to collect disks
+- Make sounds nicer, longer, quieter?, sequence into a song
+- Add title screen
+- Improve colors on real hardware
+- Make disks much more evident on the big map
+- Try to install in MAME-in-a-browser on the Internet Archive.
+- Maybe use the medres area (or superhires area) to point toward disks?
