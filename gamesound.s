@@ -153,7 +153,8 @@ soundinit:  lda #$81    ; bank 1
             sta fxcopyloop + 2
             jsr fxcopy
             ; background segments
-            ; transpose the sin table from 8 bits to 5, suitable for adding without clipping
+            ; transform the sin table from 8 bits to at most 5, suitable for adding without clipping
+            ; but I continued to reduce the amplitude to make the music quieter
             ldy #$00
 :           lda SinTable, y
             lsr                     ; 7 bits (max $7F)
@@ -177,7 +178,9 @@ soundinit:  lda #$81    ; bank 1
             ; segment 3 (6000-7FFF)
             rts
 
-; music tables for generating samples
+; sequence tables for generating music samples
+; these are set up in units of $100-byte pages, so a duration of 2 burns $200 bytes.
+; TODO allow for faster subdivisions.  $1000 bytes goes by in around 4 seconds.
 
 MusSeqA:    .byte   Note1C, 2, Note2C
             .byte   Note1C, 2, Note2E
@@ -191,24 +194,19 @@ MusSeqA:    .byte   Note1C, 2, Note2C
             .byte   Note1E, 2, Note2E
             .byte   Note1G, 2, Note2G
             .byte   Note1G, 2, Note2E
-            .byte   Note1G, 1, Note2C
-            .byte   Note1G, 1, Note2E
+            .byte   Note1G, 1, Note2C   ; I don't really understand why these
+            .byte   Note1G, 1, Note2E   ; come out sounding like triplets.
             .byte   Note1G, 1, Note2G
             .byte   0, 0, 0
 
-MusSeqB:    .byte   Note2C, 4, Note2C
-            .byte   0, 2, 0
-            .byte   Note1C, 4, Note2E
-            .byte   0, 4, 0
-            .byte   Note1C, 4, Note2E
-            .byte   0, 2, 0
-            .byte   Note1E, 2, Note2G
-            .byte   Note1E, 2, Note2E
-            .byte   Note1G, 2, Note2G
-            .byte   0, 2, Note2E
-            .byte   Note1E, 1, Note2C
-            .byte   Note1G, 1, Note2E
-            .byte   Note1E, 1, Note2G
+MusSeqB:    .byte   Note2C, 8, Note2C + 1
+            .byte   Note1C, 8, Note1C + 1
+            .byte   Note0C, 4, Note1E
+            .byte   Note2C, 2, Note2C + 1
+            .byte   Note2C, 2, Note2C + 2
+            .byte   Note2C, 1, Note2C + 3
+            .byte   Note2C, 1, Note2C + 4
+            .byte   Note1C, 12, Note1C + 1
             .byte   0, 0, 0
 
 ; this is just a constructed sample for the moment
