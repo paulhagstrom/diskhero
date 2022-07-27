@@ -178,15 +178,15 @@ handlekey:
             jmp keydone
 :           cmp #$D3            ; S (soundtrack)
             bne :+
-            lda ZPlaySound
+            lda PlaySound
             eor #$01
-            sta ZPlaySound
+            sta PlaySound
             jmp keydone
 :           cmp #$D1            ; Q (quiet)
             bne :+
-            lda ZPlaySFX
+            lda PlaySFX
             eor #$01
-            sta ZPlaySFX
+            sta PlaySFX
             jmp keydone
 :           cmp #$B1            ; 1 (drop disk type 1)
             bne :+
@@ -313,8 +313,8 @@ init:       sei                 ; no interrupts while we are setting up
             jsr herofont        ; load game font into character RAM and fill ZFontDats, ZFontCol
             jsr buildmap        ; set up map data (in bank 2) (includes dropping the hero in)
             jsr setupenv        ; arm interrupts
-            lda #$00            ; start at smooth scroll offset 0
-            sta NudgePos        ; the smooth scroll offset is affectionately called the "nudge"
+            ldx TwelveBran      ; start at smooth scroll offset 0 (first one in TwelveBran)
+            sta NudgeVal        ; the smooth scroll offset is affectionately called the "nudge"
             sta GameLevel
             sta GameScore       ; score is stored in decimal format. 000000 to 999999.
             sta GameScore + 1

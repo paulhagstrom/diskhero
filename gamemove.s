@@ -427,13 +427,13 @@ gotdisk:    lda ZMapTemp        ; map (disk) was stored here, includes type
             sta ZFXPtr
             lda #$1F            ; play SndHeroGot sound ("hero got disk")
             sta ZFXPtr + 1
-            sta ZFXPlay
+            sta FXPlaying
             jmp gotaccount
 gotnotsnd:  lda #$00
             sta ZFXPtr
             lda #$1E            ; play SndHrdrGot sound ("hoarder got disk")
             sta ZFXPtr + 1
-            sta ZFXPlay
+            sta FXPlaying
 gotaccount: pla                 ; retrieve disk type (bits 7 and 8)
             asl                 ; shift them over to bits 1 and 2
             rol
@@ -536,11 +536,11 @@ dodrop:     lda ZPxScratch      ; get type back
             sta ZFXPtr
             lda #$1C            ; play the drop sound
             sta ZFXPtr + 1
-            sta ZFXPlay
+            sta FXPlaying
             rts
 dropfail:   lda #$00
             sta ZFXPtr
             lda #$1D            ; play the error sound ("d'oh!")
             sta ZFXPtr + 1
-            sta ZFXPlay
+            sta FXPlaying
             rts

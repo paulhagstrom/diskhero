@@ -117,7 +117,6 @@ BorderS:    .byte   0           ; memory index of leftmost playfield column from
 BorDataA:   .byte   0           ; character or color inside border on left and right
 BorDataB:   .byte   0           ; character or color on border on left and right
 
-; the middle lores field starts at map $42 and draws to $46 (plus NudgePos)
 ; in order to keep hero in the middle, five columns are used by a frame
 ; based on hero position, 5 total, high nibble of HeroX of those are on the right
 

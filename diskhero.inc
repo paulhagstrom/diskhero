@@ -55,14 +55,8 @@ ZFontDots   = $80   ; ZP cache for FontDots to speed up drawing (80-A7)
 ZFontCol    = $A8   ; ZP cache for FontCol to speed up drawing (A8-D0)
 
 ; interrupt handler
-ZIntBank    = $D0   ; place to stash the bank register value
-ZPlaySound  = $D1   ; set to zero to silence music
-ZPlaySFX    = $D2   ; set to zero to silence both sfx and music
 ZSoundPtr   = $D8   ; current sample in background music
 ZFXPtr      = $DA   ; current sample in sound effect
-ZFXPlay     = $DC   ; nonzero if a sound effect is playing
-
-ZBackNext   = $DF   ; page number of first sample of next background segment after this one
 
 ; Addresses are used when ZP is pointed at a display buffer
 ; these are not in conflict with addresses in the 1A00 ZP,

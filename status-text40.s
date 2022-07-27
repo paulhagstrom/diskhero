@@ -123,11 +123,6 @@ drawstatus: ldx #$03
             jsr drawnumber
             dex
             bpl :-
-            ; stick a couple of debug indicators on screen
-            ;lda NudgePos
-            ;sta $481
-            ;lda HeroY
-            ;sta $482
             rts
 
 ; put a 2-digit number on screen.

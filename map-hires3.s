@@ -6,7 +6,7 @@
 ; (updates afterwards are incremental, drawing single lines and using smooth scroll)
 ; This is designed to be able to paint under any circumstance, but it turns out that
 ; within the logic of the game it's only called once at the beginning.
-; Given that it does not refer to NudgePos, it may only work properly if
+; Given that it does not refer to nudge, it may only work properly if
 ; (HeroY-3) is an even multiple of 8.
 
 BankSave:   .byte   0
@@ -81,7 +81,7 @@ imdone:     lda BankSave
 ; if you call it with carry clear, it will move the map up (hero downward), increasing nudge
 ; if you call it with carry set, it will move the map down (hero upward), decreasing nudge
 ; it is assumed that the HeroY coordinate has just been changed, triggering this call.
-; it will finish by setting NudgePos correctly so that the interrupt handler will display it right.
+; it will finish by setting NudgeVal correctly so that the interrupt handler will display it right.
 
 ; in general, increasing nudge from oldnudge to oldnudge + 1
 ; copy graphics line 08 + oldnudge to 00 + oldnudge
@@ -102,6 +102,8 @@ imdone:     lda BankSave
 ; playfield goes from HeroY - 3 to HeroY + 3
 ; and bottom field goes from HeroY + 4 to HeroY + 23.
 ;
+Nudge:      .byte   0
+
 updatemap:  bcs umdec           ; if we decrementing nudge, skip past the incrementing parm block
             lda #$20            ; first copy target raster line in top field (then up, copying toward zero)
             sta PTopRastA
@@ -131,7 +133,7 @@ umdec:      lda #$38            ; first copy target raster line in lower field (
 umbegin:    lda HeroY
             adc #$04            ; intentionally not clearing carry before this, using the entry value of carry
             and #$07            ; mod 8
-            sta NudgePos        ; either what NudgePos will be (carry set) or what NudgePos was (carry clear)
+            sta Nudge           ; save the unmultiplied version for doing math in here
             lda R_BANK          ; save bank
             sta BankSave        ; (but assume we are already in 1A00 ZP)
             lda #$00            ; go to bank 0, where (hires) graphics memory lives
@@ -146,14 +148,14 @@ umbegin:    lda HeroY
 umnotvoid:  sta MapOffset       ; store the map offset we will draw top field line from (not used if in void)
             lda PTopRastA       ; first raster line (inc=top, dec=bottom) in copy operation in top field
             clc
-            adc NudgePos        ; newnudge/oldnudge
+            adc Nudge           ; newnudge/oldnudge
             ldy PInc            ; carry should still be clear
             bne :+              ; set carry if we we decrementing
             sec
 :           jsr copylines       ; copy lines that can be copied
             lda PTopRastD       ; raster line that is target for new draw in top field
             clc
-            adc NudgePos        ; plus nudge
+            adc Nudge           ; plus nudge
             tax                 ; move raster line to X for drawline
             ldy TouchedVoid     ; if we are in the void, draw the void
             beq :+              ; branch if we are not in the void
@@ -164,14 +166,14 @@ umnotvoid:  sta MapOffset       ; store the map offset we will draw top field li
             ; do the bottom field
 btmfield:   lda PBotRastA       ; first raster line (inc=top, dec=bottom) in copy operation in bottom field
             clc
-            adc NudgePos        ; newnudge/oldnudge
+            adc Nudge           ; newnudge/oldnudge
             ldy PInc            ; carry should still be clear
             bne :+              ; set carry if we are decrementing
             sec
 :           jsr copylines       ; copy lines that can be copied
             lda PBotRastD       ; raster line that is target for new draw in bottom field
             clc
-            adc NudgePos        ; plus nudge
+            adc Nudge           ; plus nudge
             tax                 ; move raster line to X for drawline
             lda MapOffset       ; find map line for the bottom field
             clc                 ; by adding $27 to the map line from the top field
@@ -185,13 +187,13 @@ btmfield:   lda PBotRastA       ; first raster line (inc=top, dec=bottom) in cop
 upddone:    lda BankSave        ; put the bank back
             sta R_BANK
             lda PInc            ; advance PNudge to NudgePos (adds one if we were incrementing)
-            beq updend
-            lda NudgePos        ; note: critical this is mod 8 or interrupt will spin off to the void
             clc
-            adc #$01
+            adc Nudge           ; note: critical this is mod 8 or interrupt will spin off to the void
             and #$07
-            sta NudgePos
-updend:     rts
+            tay                 ; translate to NudgeVal (multiply by $0C)
+            lda TwelveBran, y
+            sta NudgeVal
+            rts
 
 ; copylines uses self-modifying code and ZP repointing to quickly copy the three graphics lines
 ; enter with graphics line (top line plus NudgePos), carry clear for increase nudge, set for decrease nudge
