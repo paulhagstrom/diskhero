@@ -43,7 +43,7 @@ PBotRastA   = $6D   ; hires map parm: first copy target raster line lower field
 PBotRastD   = $6E   ; hires map parm: raster line for drawing new lower field line
 PTopMapOff  = $6F   ; hires map parm: map offset back from HeroY for new line
 
-PNudge      = $70
+;PNudge      = $70
 TouchedVoid = $71
 MapOffset   = $72
 PInc        = $73

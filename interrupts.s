@@ -1,12 +1,8 @@
 ; Diskhero
 ; Interrupt-related routines
 ;
-; Against convention, the interrupt handlers will use $1A00 as the ZP for two reasons.
-; One is so the interpreter (also using ZP $1A00) can set parameters used (quickly) by
-; the interrupt handler, and two is so that interrupt handler processing audio has the
-; ability to use extended addressing to grab the next audio sample.
-
 ; see diskhero.inc for ZP definitions (generally trying to stay between D0-FF)
+; though I have mostly removed ZP usage except in the audio handler
 
 IntXStash:  .byte   0   ; saved X register from interrupt handler entry
 IntYStash:  .byte   0   ; saved Y register from interrupt handler entry
@@ -16,20 +12,19 @@ VBLTick:    .byte   0   ; ticked down for each VBL, can use to delay things for 
 VBLTickP:   .byte   0   ; playfield ticker, try to draw during VBL
 ClockTick:  .byte   0   ; ticked down for each clock-during-VBL, for playing sound (only) during VBL
 
-
 ; Screen regions: (screen splitting definition)
 ; ScrRegMode is the graphics mode of the region as defined in the table below
 ;   encoded as a multiple of $0C so that it can be used as a branch/jump table.
 ; This is set up to split in blocks of 8 scan lines, to do multiples, repeat the mode
-; Last mode (only) will use the smooth scroll parameter.
+; Last mode (only) will use the smooth scroll parameter, also encoded as a branch offset.
 ; These are in reverse order so that I can quickly detect if it runs off the end somehow
 ; and reset it to the top.  ScrRegModB is used in resetting, it is "NextMode" when resetting.
-ScrRegMode: .byte   $0C, $0C, $24, $24, $24, $24, $00, $00
+ScrRegMode: .byte   $0F, $0F, $2D, $2D, $2D, $2D, $00, $00
             .byte   $00, $00, $00, $00, $00, $00, $00, $00
-            .byte   $24, $24, $24, $24, $00, $00 
-ScrRegModB: .byte   $18, $18
+            .byte   $2D, $2D, $2D, $2D, $00, $00 
+ScrRegModB: .byte   $1E, $1E
 
-; TwelveBran is a jump table used for setting smooth scroll, 8 multiples of $0C
+; TwelveBran is a table of multiples of $0C, used as a branch table when setting NudgeVal
 TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 
 ; modes we are using and their index values above.  xC = branch table value
@@ -46,12 +41,34 @@ TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 ; mode 3 (a3 hires)  lines 90-AF (20)        hires map lower field  map: 28-47
 ; mode 1 (a3 medres) lines B0-BF (10) 15-17  medium res something
 
-; Getting the HBL timer reset is urgent enough that I will do that even before
-; properly stashing the environment.  To dodge an inaccuracy with MAME (which at
-; present does not downshift to 1MHz during video drawing) I need to get this timer
-; reset within the first 32 cycles ideally (MAME running at double speed, and 65
-; cycles before first HBL would be missed).  Next most crucial thing is switching
-; video modes fast because real hardware is already progressing down the screen.
+; a 6502 interrupt takes minimum 7 cycles from IRQ to the first instruction
+; of the handler executing.  The current instruction finishes first, and if
+; it is a long one (like a 6 cycle RTS or something), if might be 13 cycles
+; after the interrupt before we start executing here.
+; The blanking intervals are not going to wait around for us, though.
+; I can reset the timer in 27, putting it 34-40 cycles after the interrupt.
+; That's in time not to miss any HBLs, so it should be able to count to 8.
+; Next interrupt should come around at 65 cycles after the first.
+; Ideally the mode switch should happen then. Takes 22 cycles to switch
+; to modes other than 3, which just barely fits in the HBL space (25).
+; mode 3 has a smooth scroll setting as well, also takes 22 cycles to set.
+; If I'm switching to mode 3, can try doing smooth scroll first.
+; Then for any mode maybe poll for HBL (burns a couple of cycles for
+; mode 3, and around 25 for modes < 3) and then switch in the second one.
+; polling would take 7 cycles to loop, 6 to succeed.
+; One advantage of polling is that it can buy me one more sync point with
+; MAME, since it would burn the 2MHz clock cycles in the second line.
+; However, I can't get polling to work on real hardware.  ?
+;
+; Resetting the HBL timer is considered to be top priority.  This happens within
+; 27 cycles, so no HBLs should be missed before the timer is reset.
+; This means that the timer gets reset just as the drawing resumes on the next
+; line, and it is another 38 cycles before we enter the next HBL.
+; However, we must exit the interrupt handler before 520 cycles have elapsed, or
+; we will miss the timer we set for 8 lines hence.  (65 cycles x 8)
+; 
+; HBL is the longest one, because it handles both graphics mode switching and
+; audio. 
 
 ; the HBL fires, and we have 65 cycles at 1MHz to reset the timer, or 130 cycles at 2MHz.
 ; to avoid tearing, mode switch could be before 25 or between 65 and 80 (1MHz)
@@ -113,32 +130,15 @@ inthandle:  pha                 ;3 stash A because we need it
             lda RE_INTFLAG      ;4 identify the interrupt we got
             and #$20            ;2 [9] is it HBL after all?
             beq nothbl          ;2/3 branch+jump off to the rest of the interrupt handlers if not
-            ; this is the HBL interrupt - reset the timer first, stash X because we need it later
-            sta RE_INTFLAG      ;4 [now 15] clear the HBL interrupt
+            ; this is the HBL interrupt
+            sta RE_INTFLAG      ;4 [now 15] clear the HBL interrupt (A is still $20)
             lda #$07            ;2 reset the timer2 flag for 8 HBLs from now
             sta RE_T2CL         ;4
             lda #0              ;2 and...
-            sta RE_T2CH         ;4 go! [27 to here, will not miss HBLs even on MAME]
-NextMode    =   modebran + 1    ; screen mode to switch into next - modifies the interrupt handler code
-modebran:   beq ismode1         ;3 [30 to here]
-ismode0:    sta D_TEXT          ;mode 0 - +00 - 40 char A3 text [15 cycles]
-            sta D_NOMIX
-            sta D_LORES
-            jmp isddone
-ismode1:    sta D_TEXT          ;mode 1 - +18 - medres [15 cycles]
-            sta D_NOMIX
-            sta D_HIRES
-            jmp isddone
-ismode2:    sta D_GRAPHICS      ;mode 2 - +24 - super hires [15 cycles]
-            sta D_MIX
-            sta D_HIRES
-            jmp isddone
-ismode3:    sta D_TEXT          ;mode 3 - +30 - A3 hires [46* cycles]
-            sta D_MIX           ;^4 4
-            sta D_HIRES         ;4 also will use smooth scroll
-            sta D_SCROLLON      ;4 turn smooth scroll on (nudge)
-NudgeVal    =   nudgebran + 1   ; smooth scroll parameter x $0C - modifies the interrupt handler code
-nudgebran:  beq nudge1          ;3 [19 in mode 3 block to here], then 15 cycles, 12 bytes per block
+            sta RE_T2CH         ;4 go! [27 to here, next line started drawing, 38 to go before next HBL]
+            ; do smooth scroll first while we wait for beam to travel horizontally
+NudgeVal    =   nudgebran + 1   ; smooth scroll parameter x $0C - directly modifies the interrupt handler code
+nudgebran:  beq nudge1          ;3 [30] then 15 cycles, 12 bytes per block
 nudge0:     bit SS_XXN
             bit SS_XNX
             bit SS_NXX
@@ -166,13 +166,37 @@ nudge5:     bit SS_XXY
 nudge6:     bit SS_XXN
             bit SS_XYX
             bit SS_YXX
-            jmp postnudge
+            jmp postnudge       ; at this point (each block but last: 45, last: 42)
 nudge7:     bit SS_XXY
             bit SS_XYX
             bit SS_YXX
-            jmp postnudge       ; at this point (each block) 34 cycles in mode 3, for 64 total
-isddone:    sta D_SCROLLOFF     ;4 [49 for modes < 3] turn smooth scroll off
-postnudge:  stx IntXStash       ;4 [53 for modes < 3, 68 for mode 3] stash X
+            ; polling below doesn't work on real hardware, seems to work fine in MAME.
+            ; though also does not seem to matter whether I wait for bit set or bit clear.
+postnudge:  ;bit R_TONEHBL       ; 4 burn cycles until HBL arrives (expecting 20, about 3 loops)
+            ;bvc postnudge       ; 2/3
+            sec
+NextMode    =   modebran + 1    ; screen mode to switch into next - directly modifies the interrupt handler code
+modebran:   bcs ismode1         ;3 into blank
+ismode0:    sta D_TEXT          ;mode 0 - +00 - 40 char A3 text [19 cycles]
+            sta D_NOMIX
+            sta D_LORES
+            sta D_SCROLLOFF
+            jmp isddone
+ismode1:    sta D_TEXT          ;mode 1 - +0F - medres [19 cycles]
+            sta D_NOMIX
+            sta D_HIRES
+            sta D_SCROLLOFF
+            jmp isddone
+ismode2:    sta D_GRAPHICS      ;mode 2 - +1E - super hires [19 cycles]
+            sta D_MIX
+            sta D_HIRES
+            sta D_SCROLLOFF
+            jmp isddone
+ismode3:    sta D_TEXT          ;mode 3 - +2D - A3 hires [46* cycles]
+            sta D_MIX           ;^4 4
+            sta D_HIRES         ;4
+            sta D_SCROLLON      ;4 [16 for this block, 19 for the others, so 19/22 into second blank]
+isddone:    stx IntXStash       ;4 [53 for modes < 3, 68 for mode 3] stash X
 ScrRegion   =   nextregion + 1  ; upcoming region, counts down from $17 - modifies the interrupt handler code
 nextregion: ldx #$17            ;2 [55 for modes < 3, 70 for mode 3] prepare for next mode switch
             dex                 ;2
@@ -199,6 +223,8 @@ snextmode:  stx ScrRegion       ;4 [64, 79 depending on mode -- or 65, 80 if rol
 
 intvbl:     lda #$06            ;2 reset the HBL counter for top region when it eventually comes
             sta RE_T2CL         ;4
+            lda #$0             ;2
+            sta RE_T2CH         ;4 [70 skipping RTC part]
             sta D_GRAPHICS      ;4 assume that the screen starts (after VBL)
             sta D_MIX           ;4 in mode 2 (Apple III bw hires)
             sta D_HIRES         ;4
@@ -220,8 +246,8 @@ vblfstnext: lda #$00            ;2 the first "next" region
             ;sta RE_INTENAB      ; 4
             ;lda #$04            ; 2
             ;sta RE_T1CH         ; 4 [68 to here] start the clock for $208 cycles
-            lda #$0             ;2
-            sta RE_T2CH         ;4 [70 skipping RTC part]
+            ;lda #$0             ;2
+            ;sta RE_T2CH         ;4 [70 skipping RTC part]
             pla                 ;4
             rti                 ;6
 
@@ -238,7 +264,7 @@ intaudio:   stx IntXStash       ;4 stash X if we didn't already do that in HBL
 intaudiob:  sty IntYStash       ;4 stash Y because we will use it - cycle counts start from here
             lda R_ZP            ;4 stash ZP because we will use it
             pha                 ;3
-            ;jmp timerout - debug skip audio
+            ;jmp timerout        ; debug skip audio
             lda #$1A            ;2 move ZP to $1A00 (so extended addressing works and for access to pointers)
             sta R_ZP            ;4
             ldy #$00            ;2 [19]
