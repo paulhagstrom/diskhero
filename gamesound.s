@@ -159,6 +159,8 @@ soundinit:  lda #$81    ; bank 1
             lsr                     ; 7 bits (max $7F)
             lsr                     ; 6 bits (max $3F)
             lsr                     ; 5 bits (max $1F) suitable for adding
+            lsr                     ; 4 bits (max $0F) make it quieter
+            lsr                     ; 3 bits (max $07) like a lot quieter
             sta SinTable, y
             iny
             bne :-
