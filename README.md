@@ -61,6 +61,22 @@ Q to toggle the sound effects
 
 E allegedly exits, which really means "hang more or less on purpose"
 
+## Development notes ##
+
+This is pretty liberally commented.  Some comments may be out of date.
+Some cycle counts may be out of date.  Some things of interest:
+
+- Font uploading: gamefont.s implements defining and uploading a custom character set
+- Repointing ZP into graphics: play-text40.s and map-hires3.s both use this technique.
+- Repointing stack into graphics: play-text40.s uses this when setting up playfield initially.
+- Interrupt handling: interrupts.s has this
+- Sound generation: gamesound.s defines sounds, interrupts.s plays them
+- Color text mode: used in play-text40.s and status-text40.s
+- Medium resolution mode: reg-medres.s
+- Super hires graphics mode: reg-superhires.s
+- Keyboard handling: diskhero.s
+- Extended addressing: all over, see buildmap.s or play-text40.s
+
 ## Bugs ##
 
 Bugs I am presently aware of.
