@@ -86,128 +86,6 @@ TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 ; If you are storing into NudgeVal (held directly in the interrupt code), use the smooth
 ; scroll parameter to look up the multiple of $0C in TwelveBran.
 
-; keyboard interrupt handler - just pass it on to the event loop
-; 30 (or 27) cycles in here, 21 to get here - 51 (or 48) total
-intkey:     lda IO_KEY          ;4 load keyboard register
-            bpl keyreturn       ;2/3 no key pressed, return (could that even happen? modifier only?)
-            sta KeyCaught       ;4 tell event loop to process this
-keyreturn:  bit IO_KEYCLEAR     ;4 [14 or 11] clear keyboard register
-            lda #$01            ;2 clear the keyboard (CA2) interrupt
-            sta RE_INTFLAG      ;4 [20 or 17]
-            pla                 ;4
-            rti                 ;6 [30 or 27]
-
-; timer1 (clock during VBL) interrupt handler
-; 29 in here (if clearing timer); 17+intaudio in here (if not), 37 to get here.  Total 66, 54+intaudio
-intclock:   lda #$02            ;2 clear the timer1 interrupt
-            sta RE_INTFLAG      ;4
-            dec ClockTick       ;6 countdown number of interrupts we are doing
-            bmi tickdone        ;2/3 if we are done all we expect during VBL, stop the clock interrupts
-jmpaudio:   jmp intaudio        ;3 [17] go do the sound
-tickdone:   sta RE_INTENAB      ;4 [19] disable clock interrupt (we're done) by writing $02 here
-            pla                 ;4
-            rti                 ;6 [29]
-
-; check for interrupts other than HBL after we have established that it is not HBL
-; 12 to get here.
-nothbl:     lda RE_INTFLAG      ;4 check for other interrupts
-            and #$01            ;2 [18] was it the keyboard?
-            bne intkey          ;2/3 if yes, go handle it [after 21]
-            lda RE_INTFLAG      ;4
-            and #$10            ;2 [26] was it VBL?
-            bne intvbljmp       ;2/3 if yes, go handle it [after 29, 32 with the jmp]
-            lda RE_INTFLAG      ;4
-            and #$02            ;2 [34] was it the clock?
-            bne intclock        ;2/3 if so, go handle it [after 37]
-            pla                 ;4
-            rti                 ;6 [46 if we did not recognize an interrupt]
-intvbljmp:  jmp intvbl          ;3
-
-; main interrupt handler entry point - first thing is to check for HBL and handle it
-; non-HBL branches to up above.
-
-inthandle:  pha                 ;3 stash A because we need it
-            lda RE_INTFLAG      ;4 identify the interrupt we got
-            and #$20            ;2 [9] is it HBL after all?
-            beq nothbl          ;2/3 branch+jump off to the rest of the interrupt handlers if not
-            ; this is the HBL interrupt
-            sta RE_INTFLAG      ;4 [now 15] clear the HBL interrupt (A is still $20)
-            lda #$07            ;2 reset the timer2 flag for 8 HBLs from now
-            sta RE_T2CL         ;4
-            lda #0              ;2 and...
-            sta RE_T2CH         ;4 go! [27 to here, next line started drawing, 38 to go before next HBL]
-            ; do smooth scroll first while we wait for beam to travel horizontally
-NudgeVal    =   nudgebran + 1   ; smooth scroll parameter x $0C - directly modifies the interrupt handler code
-nudgebran:  beq nudge1          ;3 [30] then 15 cycles, 12 bytes per block
-nudge0:     bit SS_XXN
-            bit SS_XNX
-            bit SS_NXX
-            jmp postnudge
-nudge1:     bit SS_XXY
-            bit SS_XNX
-            bit SS_NXX
-            jmp postnudge
-nudge2:     bit SS_XXN
-            bit SS_XYX
-            bit SS_NXX
-            jmp postnudge
-nudge3:     bit SS_XXY
-            bit SS_XYX
-            bit SS_NXX
-            jmp postnudge
-nudge4:     bit SS_XXN
-            bit SS_XNX
-            bit SS_YXX
-            jmp postnudge
-nudge5:     bit SS_XXY
-            bit SS_XNX
-            bit SS_YXX
-            jmp postnudge
-nudge6:     bit SS_XXN
-            bit SS_XYX
-            bit SS_YXX
-            jmp postnudge       ; at this point (each block but last: 45, last: 42)
-nudge7:     bit SS_XXY
-            bit SS_XYX
-            bit SS_YXX
-            ; polling below doesn't work on real hardware, seems to work fine in MAME.
-            ; though also does not seem to matter whether I wait for bit set or bit clear.
-postnudge:  ;bit R_TONEHBL       ; 4 burn cycles until HBL arrives (expecting 20, about 3 loops)
-            ;bvc postnudge       ; 2/3
-            sec
-NextMode    =   modebran + 1    ; screen mode to switch into next - directly modifies the interrupt handler code
-modebran:   bcs ismode1         ;3 into blank
-ismode0:    sta D_TEXT          ;mode 0 - +00 - 40 char A3 text [19 cycles]
-            sta D_NOMIX
-            sta D_LORES
-            sta D_SCROLLOFF
-            jmp isddone
-ismode1:    sta D_TEXT          ;mode 1 - +0F - medres [19 cycles]
-            sta D_NOMIX
-            sta D_HIRES
-            sta D_SCROLLOFF
-            jmp isddone
-ismode2:    sta D_GRAPHICS      ;mode 2 - +1E - super hires [19 cycles]
-            sta D_MIX
-            sta D_HIRES
-            sta D_SCROLLOFF
-            jmp isddone
-ismode3:    sta D_TEXT          ;mode 3 - +2D - A3 hires [46* cycles]
-            sta D_MIX           ;^4 4
-            sta D_HIRES         ;4
-            sta D_SCROLLON      ;4 [16 for this block, 19 for the others, so 19/22 into second blank]
-isddone:    stx IntXStash       ;4 [53 for modes < 3, 68 for mode 3] stash X
-ScrRegion   =   nextregion + 1  ; upcoming region, counts down from $17 - modifies the interrupt handler code
-nextregion: ldx #$17            ;2 [55 for modes < 3, 70 for mode 3] prepare for next mode switch
-            dex                 ;2
-            bpl snextmode       ;2/3 we MUST reset this if somehow we roll off the bottom
-            ldx #$16            ;2 [61, 76 depending on mode] this is the topmost region
-snextmode:  stx ScrRegion       ;4 [64, 79 depending on mode -- or 65, 80 if rolled]
-            lda ScrRegMode, x   ;4*
-            sta NextMode        ;4 [72*, 87* -- 73*, 88*]
-            jmp intaudiob       ;3 [75*, 90* -- 76*, 91*] go do the audio, we already stashed X
-            ; +65 HBL went by for sure, +130 HBL coming up
-
 ; VBL interrupt handler
 ; screen timing: 65 1MHz cycles per scan line, 192 lines, should be painting for 12480 cycles.
 ; then 70 lines' worth of VBL.  Would be 4550 cycles at 1MHz, but we are running at 2MHz, so ~9000
@@ -242,15 +120,149 @@ vblfstnext: lda #$00            ;2 the first "next" region
             sta ClockTick       ;4 [58]
             lda #$10            ;2
             sta RE_T1CL         ;4 [64] interval is $410, this is the $10 part.
-            ;lda #%10000010      ; 2 enable CA1 (RTC)
-            ;sta RE_INTENAB      ; 4
-            ;lda #$04            ; 2
-            ;sta RE_T1CH         ; 4 [68 to here] start the clock for $208 cycles
+            lda #%10000010      ; 2 enable CA1 (RTC)
+            sta RE_INTENAB      ; 4
+            lda #$04            ; 2
+            sta RE_T1CH         ; 4 [68 to here] start the clock for $208 cycles
             ;lda #$0             ;2
             ;sta RE_T2CH         ;4 [70 skipping RTC part]
             pla                 ;4
             rti                 ;6
 
+; keyboard interrupt handler - just pass it on to the event loop
+; 30 (or 27) cycles in here, 21 to get here - 51 (or 48) total
+intkey:     lda IO_KEY          ;4 load keyboard register
+            bpl keyreturn       ;2/3 no key pressed, return (could that even happen? modifier only?)
+            sta KeyCaught       ;4 tell event loop to process this
+keyreturn:  bit IO_KEYCLEAR     ;4 [14 or 11] clear keyboard register
+            lda #$01            ;2 clear the keyboard (CA2) interrupt
+            sta RE_INTFLAG      ;4 [20 or 17]
+            pla                 ;4
+            rti                 ;6 [30 or 27]
+
+; timer1 (clock during VBL) interrupt handler
+; 29 in here (if clearing timer); 34 in here (if sound is off); 34+intaudio in here (if not), 37 to get here.
+; Total 66, 71, or 71+intaudio
+intclock:   lda #$02            ;2 clear the timer1 interrupt
+            sta RE_INTFLAG      ;4
+            dec ClockTick       ;6 [12] countdown number of interrupts we are doing
+            bmi tickdone        ;2/3 if we are done all we expect during VBL, stop the clock interrupts
+jmpaudio:   sty IntYStash       ;3 [17]
+            lda PlaySound       ;4 [21] check to see if we are supposed to be playing sound
+            beq clockout        ;2/3 if we are not playing sound, head to exit [after 24]
+            lda SampleOut       ;4 [27] load the sample we prepared
+            sta R_TONEHBL       ;4 [31] send it to the DAC
+            jmp intaudio        ;3 [34] go do the sound
+tickdone:   sta RE_INTENAB      ;4 [19] disable clock interrupt (we're done) by writing $02 here
+clockout:   pla                 ;4 [23 or 28]
+            rti                 ;6 [29 or 34]
+
+; check for interrupts other than HBL after we have established that it is not HBL
+; 12 to get here.
+nothbl:     lda RE_INTFLAG      ;4 check for other interrupts
+            and #$01            ;2 [18] was it the keyboard?
+            bne intkey          ;2/3 if yes, go handle it [after 21]
+            lda RE_INTFLAG      ;4
+            and #$10            ;2 [26] was it VBL?
+            bne intvbljmp       ;2/3 if yes, go handle it [after 29, 32 with the jmp]
+            lda RE_INTFLAG      ;4
+            and #$02            ;2 [34] was it the clock?
+            bne intclock        ;2/3 if so, go handle it [after 37]
+            pla                 ;4
+            rti                 ;6 [46 if we did not recognize an interrupt]
+intvbljmp:  jmp intvbl          ;3
+
+; main interrupt handler entry point - first thing is to check for HBL and handle it
+; non-HBL branches to up above.
+
+inthandle:  pha                 ;3 stash A because we need it
+            lda RE_INTFLAG      ;4 identify the interrupt we got
+            and #$20            ;2 [9] is it HBL?
+            beq nothbl          ;2/3 branch+jump off to the rest of the interrupt handlers if not
+            ; this is the HBL interrupt
+            sta RE_INTFLAG      ;4 [now 15] clear the HBL interrupt (A is still $20)
+            lda #$07            ;2 reset the timer2 flag for 8 HBLs from now
+            sta RE_T2CL         ;4
+            lda #0              ;2 and...
+            sta RE_T2CH         ;4 go! [27 to here, next line has started drawing, 38 to go before next HBL]
+            ; do smooth scroll first while we wait for beam to travel horizontally
+NudgeVal    =   nudgebran + 1   ; smooth scroll parameter x $0C - directly modifies the interrupt handler code
+nudgebran:  beq nudge1          ;3 [30] then 15 cycles, 12 bytes per block
+nudge0:     bit SS_XXN
+            bit SS_XNX
+            bit SS_NXX
+            jmp postnudge
+nudge1:     bit SS_XXY
+            bit SS_XNX
+            bit SS_NXX
+            jmp postnudge
+nudge2:     bit SS_XXN
+            bit SS_XYX
+            bit SS_NXX
+            jmp postnudge
+nudge3:     bit SS_XXY
+            bit SS_XYX
+            bit SS_NXX
+            jmp postnudge
+nudge4:     bit SS_XXN
+            bit SS_XNX
+            bit SS_YXX
+            jmp postnudge
+nudge5:     bit SS_XXY
+            bit SS_XNX
+            bit SS_YXX
+            jmp postnudge
+nudge6:     bit SS_XXN
+            bit SS_XYX
+            bit SS_YXX
+            jmp postnudge       ; at this point (each block but last: 45, last: 42)
+nudge7:     bit SS_XXY
+            bit SS_XYX
+            bit SS_YXX
+PlaySound   =   postnudge + 1   ; play sound effects switch (user controlled)
+postnudge:  lda #$00            ;2 [47/44] check sfx switch (user controlled)
+            beq hblhold         ;2/3 if no sound should be played, skip over [after 50/47]
+SampleOut   =   emitaudio + 1
+emitaudio:  lda #$00            ;2 [51/48]  sample we prepared earlier
+            sta R_TONEHBL       ;4 [55/52] try to get it out as evenly as possible
+            ; polling below doesn't work on real hardware, seems to work fine in MAME.
+            ; though also does not seem to matter whether I wait for bit set or bit clear.
+hblhold:    ;bit R_TONEHBL       ; 4 burn cycles until HBL arrives (expecting 15, about 2-3 loops)
+            ;bvc hblhold         ; 2/3
+            sec
+NextMode    =   modebran + 1    ; screen mode to switch into next - directly modifies the interrupt handler code
+modebran:   bcs ismode1         ;3 into blank
+ismode0:    sta D_TEXT          ;mode 0 - +00 - 40 char A3 text [19 cycles]
+            sta D_NOMIX
+            sta D_LORES
+            sta D_SCROLLOFF
+            jmp isddone
+ismode1:    sta D_TEXT          ;mode 1 - +0F - medres [19 cycles]
+            sta D_NOMIX
+            sta D_HIRES
+            sta D_SCROLLOFF
+            jmp isddone
+ismode2:    sta D_GRAPHICS      ;mode 2 - +1E - super hires [19 cycles]
+            sta D_MIX
+            sta D_HIRES
+            sta D_SCROLLOFF
+            jmp isddone
+ismode3:    sta D_TEXT          ;mode 3 - +2D - A3 hires [46* cycles]
+            sta D_MIX           ;^4 4
+            sta D_HIRES         ;4
+            sta D_SCROLLON      ;4 [16 for this block, 19 for the others, so 19/22 into second blank]
+isddone:    sty IntYStash       ;4 [53 for modes < 3, 68 for mode 3] stash X
+ScrRegion   =   nextregion + 1  ; upcoming region, counts down from $17 - modifies the interrupt handler code
+nextregion: ldy #$17            ;2 [55 for modes < 3, 70 for mode 3] prepare for next mode switch
+            dey                 ;2
+            bpl snextmode       ;2/3 we MUST reset this if somehow we roll off the bottom
+            ldy #$16            ;2 [61, 76 depending on mode] this is the topmost region
+snextmode:  sty ScrRegion       ;4 [64, 79 depending on mode -- or 65, 80 if rolled]
+            lda ScrRegMode, y   ;4*
+            sta NextMode        ;4 [72*, 87* -- 73*, 88*]
+            ; fall through to audio
+            ; +65 HBL went by for sure, +130 HBL coming up
+            
 ; timer2 (HBL) interrupt handler
 ; the graphics mode switching stuff was all handled in the primary interrupt handler.
 ; what is left here is the audio processing (also used by the clock timer during VBL)
@@ -260,73 +272,44 @@ vblfstnext: lda #$00            ;2 the first "next" region
 ; unless something changes it, it will just keep cycling back to the one at $2000.
 ; this switches into ZP $1A00 to allow for extended addressing.
 
-intaudio:   stx IntXStash       ;4 stash X if we didn't already do that in HBL
-intaudiob:  sty IntYStash       ;4 stash Y because we will use it - cycle counts start from here
-            lda R_ZP            ;4 stash ZP because we will use it
+intaudio:   lda R_ZP            ;4 stash ZP because we will use it
             pha                 ;3
             ;jmp timerout        ; debug skip audio
             lda #$1A            ;2 move ZP to $1A00 (so extended addressing works and for access to pointers)
             sta R_ZP            ;4
-            ldy #$00            ;2 [19]
-PlaySFX     =   toggsfx + 1     ; play sound effects switch (user controlled)
-toggsfx:    lda #$00            ;2 [21] check sfx switch (user controlled)
-            beq doback          ;2/3 if no sound effects should be played, skip to background [after 24]
+            ldy #$00            ;2 [15]
 FXPlaying   =   runsfx + 1      ; nonzero if a sound effect is playing
-runsfx:     lda #$00            ;2 [25] see if a sound effect is playing
-            beq doback          ;2/3 if no sound effect is playing, down to background [after 28]
-            lda (ZFXPtr), y     ;5* [32*] load next sfx sample
-            bpl playfx          ;2/3 if we have not hit the end of the sample go play it [after 35*]
-            sty FXPlaying       ;4 stop playing sfx
-            jmp doback          ;3 do background sound instead [after 41*]
-playfx:     sta R_TONEHBL       ;4 [39*] send out the sfx sample
-            inc ZFXPtr          ;5 [44*] move to the next sample
-            bne backnext        ;2/3 if not over page break skip ahead [after 47*]
-            inc ZFXPtr + 1      ;4
-            jmp backnext        ;3 [53*] go advance the background sound even though it did not play
-            ; cycle counting
-            ; soundtrack playing but ends gets us here after +12*
+runsfx:     lda #$00            ;2 [17] see if a sound effect is playing
+            beq doback          ;2/3 if no sound effect is playing, down to background [after 20]
+            lda (ZFXPtr), y     ;5* [24*] load next sfx sample
+            bpl playsound       ;2/3 if we have our sample, queue it up [after 27*]
+            sty FXPlaying       ;4 [30*] halt sfx playback
+            ; could reach here after 20 (no sfx) or 30* (sfx finished)
+doback:     lda (ZSoundPtr), y  ;5* load next background sample
+            bpl playsound       ;2/3 if we have out sample, queue it up [after 8*]
 BackNext    =   backdone + 1    ; page number of first sample of next background segment after this one
-backdone:   lda #$00            ; 2 move to next background sound segment
-            sta ZSoundPtr + 1   ; 3 put sample start address into the pointer
-            sty ZSoundPtr       ; 3
-            ; sfx shut off by user gets us here after 24
-            ; no sfx playing gets us here after 28
-            ; sfx playing but ends gets us here after 41*
-            ; if soundtrack playing but ends, add +20* cycles to get back here
-PlaySound   =   doback + 1      ; play soundtrack switch (user controlled)
-doback:     ldx #$00            ;2 check sound switch (user controlled)
-            beq backnext        ;2/3 if background sound should not play, skip play (but still advance)
-            lda (ZSoundPtr), y  ;5* load next background sample
-            bmi backdone        ;2/3 if we hit the end of the sample block, move to next sample block
-            sta R_TONEHBL       ; 4
-            ; sfx plays, gets us here after 47* or 53* if pointer rolls over
-            ; via doback, soundtrack shut off by user gets us here after +5
-            ; via doback, soundtrack playing gets us here after +15*
-backnext:   inc ZSoundPtr       ; 5 move to the next background sound sample
-            bne timerout        ; 2/3 branch if the byte didn't roll over
-            inc ZSoundPtr + 1   ; 5 update high byte of the sample pointer
-            ; above adds 8 if no rollover, 12 if rollover.
-            ; cycle count by condition.  Add four if we got here via HBL.  Conceivable there are errors.
-            ; if sfx is playing, 55* (61* if sfx pointer rolls, 59* if strk pointer rolls, 65* if both do)
-            ; sfx off 24 - strk off 5 - 8 = 37 or 41 if strk pointer rolls
-            ; sfx off 24 - strk plays 15* - 8 = 47* or 51* if strk pointer rolls
-            ; sfx off 24 - strk skips 35** - 8 = 67**
-            ; sfx none 28 - strk off 5 - 8 = 41 or 45 if strk pointer rolls
-            ; sfx none 28 - strk plays 15* - 8 = 51* or 55* if strk pointer rolls
-            ; sfx none 28 - strk skips 35** - 8 = 71**
-            ; sfx ends 41* - strk off 5 - 8 = 54* or 58* if strk pointer rolls
-            ; sfx ends 41* - strk plays 15* - 8 = 64** or 68** if strk pointer rolls
-            ; sfx ends 41* - strk skips 35** - 8 = 84***
-            ; so range of possible cycle counts is 37 (both off) to 84*** (sfx ends, strk skips)
-timerout:   ldx IntXStash       ;4 [26 cycles to get out from here]
-            ldy IntYStash       ;4
+backdone:   lda #$00            ;2 [9*] move to next background sound segment
+            sta ZSoundPtr + 1   ;3 put sample start address into the pointer
+            sty ZSoundPtr       ;3 [15*]
+            lda (ZSoundPtr), y  ;5* [20**] load next background sample (assume it exists)
+            ; could reach here after 27* (sfx playing)
+            ; 28* (no sfx, sound playing), 38* (sfx finished, sound playing)
+            ; 40** (no sfx, sound skipped), 50*** (sfx finished, sound skipped)
+playsound:  sta SampleOut       ;4
+            inc ZFXPtr          ;5 [9] move to the next sample (sfx cannot exceed $100 samples)
+            inc ZSoundPtr       ;5 [14] move pointer to next background sound sample
+            bne timerout        ;2/3 if background sound rolled, inc high byte
+            inc ZSoundPtr + 1   ;5
+            ; add to cycles in comment above:
+            ; 17, or 21 if sound rolled
+            ; so to get out from here, add 39 or 43 if sound rolled
+            ; minimum time in audio: 66* (sfx playing)
+            ; maximum time in audio: 93*** (sfx finished, sound skipped and rolled)
+timerout:   ldy IntYStash       ;4 [22 cycles to get out from here]
             pla                 ;4
             sta R_ZP            ;4
             pla                 ;4
             rti                 ;6
-            ; total possible cycle counts is 63 (both off) to 110*** (sfx ends, strk skips)
-            ; if coming from HBL, that is after 75*, 90* -- 76*, 91*
-            ; so best case 138*, worst case 201****
 
 ; arm interrupts and setup interrupt handler environment
 
@@ -349,7 +332,6 @@ setupenv:   ; save IRQ vector and then install ours
             lda #$16
             sta ScrRegion       ; first next region is $16
             lda #$01
-            sta PlaySFX         ; start by assuming we will play sound effects
             sta PlaySound       ; start by assuming we will play background sound
             lda #$00
             sta FXPlaying       ; no sound effect currently playing

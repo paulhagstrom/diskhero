@@ -55,9 +55,7 @@ M , .
 
 1234 drop a disk of type 1, 2, 3, 4 if you have one
 
-S to toggle the terrible background soundtrack
-
-Q to toggle the sound effects
+S to toggle sound on/off
 
 E allegedly exits, which really means "hang more or less on purpose"
 

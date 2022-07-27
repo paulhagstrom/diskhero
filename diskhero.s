@@ -176,17 +176,11 @@ handlekey:
             sta VelocityX
             sta VelocityY
             jmp keydone
-:           cmp #$D3            ; S (soundtrack)
+:           cmp #$D3            ; S (sound)
             bne :+
             lda PlaySound
             eor #$01
             sta PlaySound
-            jmp keydone
-:           cmp #$D1            ; Q (quiet)
-            bne :+
-            lda PlaySFX
-            eor #$01
-            sta PlaySFX
             jmp keydone
 :           cmp #$B1            ; 1 (drop disk type 1)
             bne :+
