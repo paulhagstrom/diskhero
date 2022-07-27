@@ -82,6 +82,7 @@ Some cycle counts may be out of date.  Some things of interest:
 Bugs I am presently aware of.
 
 - Some drawing glitches in hires area above and below when scrolling
+- Some tearing in playfield when scrolling horizontally (Maybe sense HBL when drawing? Squeeze more cycles out? Stage then blit?)
 - Disks left can dip below zero, have seen it go to 98 so isn't simply off-by-one
 - Hoarders do not appear to swarm toward disks.
 - Make quit do something sensible rather than hang
