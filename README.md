@@ -79,7 +79,7 @@ Some cycle counts may be out of date.  Some things of interest:
 
 Bugs I am presently aware of.
 
-- Background music does not move to the next sample
+- Occasionally with sound on, motion stops (but not music) on real hardware until sound is toggled off and on
 - Some drawing glitches in hires area above and below when scrolling
 - Some tearing in playfield when scrolling horizontally (Maybe sense HBL when drawing? Squeeze more cycles out? Stage then blit?)
 - Disks left can dip below zero, have seen it go to 98 so isn't simply off-by-one
