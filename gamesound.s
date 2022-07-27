@@ -23,6 +23,7 @@ BarCount:   .byte   0
 HarmAdvA:   .byte   0
 HarmAdvB:   .byte   0
 
+Note0C  = $10
 Note1C  = $20
 Note1D  = $24
 Note1E  = $29   ; 28.5
@@ -55,9 +56,14 @@ twosin:     sta BarCount
             sty HarmAdvB
             ldx #$00
             ldy #$00
-twosinb:    lda SinTable, y
-            sta ZPxScratch
+twosinb:    lda HarmAdvA
+            beq :+                  ; note a is silent
+            lda SinTable, y
+:           sta ZPxScratch
+            lda HarmAdvB
+            beq :+                  ; note b is silent
             lda SinTable, x
+:           clc
             adc ZPxScratch          ; should be max $3E
             sty ZPxScratch
             ldy #$00
@@ -77,6 +83,38 @@ twosinb:    lda SinTable, y
             dec BarCount
             bpl twosinb
             rts
+
+SeqIndex:   .byte   0
+
+; enter seqsin with X and Y holding L and H pointer to sequence
+; and A holding page for sample destination
+seqsin:     stx seqloop + 1
+            stx seqdur + 1
+            stx seqb + 1
+            sty seqloop + 2
+            sty seqdur + 2
+            sty seqb + 2
+            sta ZPtrA + 1
+            ldx #$00
+            stx ZPtrA
+            stx SeqIndex
+seqloop:    ldy MusSeqA, x
+            inx
+seqdur:     lda MusSeqA, x
+            beq seqdone
+            pha
+            inx
+seqb:       lda MusSeqA, x
+            tax
+            pla
+            jsr twosin
+            lda SeqIndex
+            clc
+            adc #$03
+            sta SeqIndex
+            tax
+            jmp seqloop
+seqdone:    rts
 
 soundinit:  lda #$81    ; bank 1
             sta ZPtrA + XByte
@@ -115,7 +153,7 @@ soundinit:  lda #$81    ; bank 1
             sta fxcopyloop + 2
             jsr fxcopy
             ; background segments
-            ; transpose the sin table
+            ; transpose the sin table from 8 bits to 5, suitable for adding without clipping
             ldy #$00
 :           lda SinTable, y
             lsr                     ; 7 bits (max $7F)
@@ -126,75 +164,51 @@ soundinit:  lda #$81    ; bank 1
             bne :-
             ; segment 1 (2000-3FFF)
             lda #$20
-            sta ZPtrA + 1
-            lda #$02    ;
-            ldy #Note1C
-            ldx #Note2C
-            jsr twosin
-            lda #$02
-            ldy #Note1C
-            ldx #Note2E
-            jsr twosin
-            lda #$02
-            ldy #Note1C
-            ldx #Note2G
-            jsr twosin
-            lda #$04    ;.
-            ldy #Note1C
-            ldx #Note2E
-            jsr twosin
-            lda #$02
-            ldy #Note1C
-            ldx #Note2C
-            jsr twosin
-            lda #$02
-            ldy #Note1C
-            ldx #Note2G
-            jsr twosin
-            lda #$04    ;.
-            ldy #Note1C
-            ldx #Note2E
-            jsr twosin
-            lda #$02
-            ldy #Note1C
-            ldx #Note2C
-            jsr twosin
-            lda #$02
-            ldy #Note1E
-            ldx #Note2G
-            jsr twosin
-            lda #$02    
-            ldy #Note1E
-            ldx #Note2E
-            jsr twosin
-            lda #$02    ;
-            ldy #Note1G
-            ldx #Note2G
-            jsr twosin
-            lda #$02
-            ldy #Note1G
-            ldx #Note2E
-            jsr twosin
-            lda #$01
-            ldy #Note1G
-            ldx #Note2C
-            jsr twosin
-            lda #$01
-            ldy #Note1G
-            ldx #Note2E
-            jsr twosin
-            lda #$01
-            ldy #Note1G
-            ldx #Note2G
-            jsr twosin
-            ; done
-            lda #$80
-            ldy #$00
-            sta (ZPtrA), y       ; done with segment 1
-            ; segment 2 (4000-5FFF)
+            ldx #<MusSeqA
+            ldy #>MusSeqA
+            jsr seqsin
+            ; segment 2 (5000-?)
+            lda #$50
+            ldx #<MusSeqB
+            ldy #>MusSeqB
+            jsr seqsin
             ; segment 3 (6000-7FFF)
             rts
-            
+
+; music tables for generating samples
+
+MusSeqA:    .byte   Note1C, 2, Note2C
+            .byte   Note1C, 2, Note2E
+            .byte   Note1C, 2, Note2G
+            .byte   Note1C, 4, Note2E
+            .byte   Note1C, 2, Note2C
+            .byte   Note1C, 2, Note2G
+            .byte   Note1C, 4, Note2E
+            .byte   Note1C, 2, Note2C
+            .byte   Note1E, 2, Note2G
+            .byte   Note1E, 2, Note2E
+            .byte   Note1G, 2, Note2G
+            .byte   Note1G, 2, Note2E
+            .byte   Note1G, 1, Note2C
+            .byte   Note1G, 1, Note2E
+            .byte   Note1G, 1, Note2G
+            .byte   0, 0, 0
+
+MusSeqB:    .byte   Note2C, 4, Note2C
+            .byte   0, 2, 0
+            .byte   Note1C, 4, Note2E
+            .byte   0, 4, 0
+            .byte   Note1C, 4, Note2E
+            .byte   0, 2, 0
+            .byte   Note1E, 2, Note2G
+            .byte   Note1E, 2, Note2E
+            .byte   Note1G, 2, Note2G
+            .byte   0, 2, Note2E
+            .byte   Note1E, 1, Note2C
+            .byte   Note1G, 1, Note2E
+            .byte   Note1E, 1, Note2G
+            .byte   0, 0, 0
+
 ; this is just a constructed sample for the moment
 ; sample is over when reaches a number with hi bit set
 ; samples here cannot be very long, a single byte indexes where we are.

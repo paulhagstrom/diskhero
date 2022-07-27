@@ -79,11 +79,12 @@ Some cycle counts may be out of date.  Some things of interest:
 
 Bugs I am presently aware of.
 
+- Background music does not move to the next sample
 - Some drawing glitches in hires area above and below when scrolling
 - Some tearing in playfield when scrolling horizontally (Maybe sense HBL when drawing? Squeeze more cycles out? Stage then blit?)
 - Disks left can dip below zero, have seen it go to 98 so isn't simply off-by-one
 - Hoarders do not appear to swarm toward disks.
-- Make quit do something sensible rather than hang
+- Quit just hangs
 
 ## Enhancements ##
 
@@ -93,6 +94,7 @@ Things I have on the list of things to try to do:
 - Make level end when no disks are left
 - Add trucks to collect disks
 - Make sounds nicer, longer, quieter?, sequence into a song
+- Generate sound buffers during other game computations for longer music sequences
 - Add title screen
 - Improve colors on real hardware
 - Make disks much more evident on the big map

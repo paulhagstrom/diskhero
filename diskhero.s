@@ -80,6 +80,7 @@ VelocityX:  .byte   0                       ; X-velocity of player (neg, 0, pos)
 VelocityY:  .byte   0                       ; Y-velocity of player (neg, 0, pos)
 MoveDelay   = 1                             ; VBL tick delay between moves
 
+NowPlaying: .byte   0                       ; currently playing sound segment
 CurScrLine: .byte   0
 CurMapLine: .byte   0
 MapPtrL:    .byte   0                       ; Holds address of left edge of a map line (low)
@@ -98,7 +99,13 @@ eventloop:  lda ExitFlag                    ; if ExitFlag becomes nonzero (withi
             jsr domove                      ; game clock has ticked, move everyone around
             jsr updsplash                   ; update the splash effect at the top
             jsr drawstatus                  ; redraw score (TODO: do only when there is an update)
-            lda #MoveDelay                  ; reset the game clock
+            lda BackNext                    ; is there a background sample queued up?
+            bne :+                          ; yep we're all good
+            lda NowPlaying                  ; next up is sample we were not just playing
+            eor #$B0                        ; switch between 20 (0010) and 50 (1001) (eor 1011)
+            sta NowPlaying
+            sta BackNext
+:           lda #MoveDelay                  ; reset the game clock
             sta VBLTick
 posttick:   jmp eventloop
 
@@ -318,6 +325,11 @@ init:       sei                 ; no interrupts while we are setting up
             lda #MoveDelay      ; game clock - setting number of VBLs per movement advance
             sta VBLTick
             bit IO_KEYCLEAR     ; clear keyboard so we notice any new keypress
+            lda #$20            ; start with sound segment at $2000
+            sta NowPlaying
+            sta ZSoundPtr + 1   ; segment we are currently playing
+            lda #$00            ; let event loop queue the next one
+            sta BackNext        ; segment we will play next after this one
             jsr initscreen      ; draw the initial screen
             cli                 ; all set up now, commence interrupting
             jmp eventloop       ; wait around until it is time to quit
