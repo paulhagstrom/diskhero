@@ -9,10 +9,8 @@
 ; Given that it does not refer to nudge, it may only work properly if
 ; (HeroY-3) is an even multiple of 8.
 
-BankSave:   .byte   0
-
 paintmap:   lda R_BANK          ; save bank
-            sta BankSave        ; (but assume we are already in 1A00 ZP)
+            sta PMBankSave      ; (but assume we are already in 1A00 ZP)
             lda #$00
             sta R_BANK          ; move to bank zero for the graphics
             lda #$20            ; top field starts at absolute raster line $20
@@ -64,16 +62,17 @@ novoiddown: ldx CurScrLine
             lda HeroY           ; set up map starting point for the top of the lower field
             clc                 ; which is 4 lines past HeroY.
             adc #$04
-            bcs :+              ; are we already in a lower void? If so, the whole field is in the void.
+            bcs pmonlyvoid      ; are we already in a lower void? If so, the whole field is in the void.
             jsr setmapptr       ; not in the void, set up MapPtr for the data
             jmp hiresline       ; proceed to draw
-:           ldx CurScrLine      ; there is nothing left but void, so just void the bottom field
+pmonlyvoid: ldx CurScrLine      ; there is nothing left but void, so just void the bottom field
             jsr drawvoid
             inc CurScrLine
             lda CurScrLine
             cmp #$B0            ; last line of bottom field complete? ($90-$AF)
-            bne :-              ; nope, keep drawing void lines
-imdone:     lda BankSave
+            bne pmonlyvoid      ; nope, keep drawing void lines
+PMBankSave = *+1
+imdone:     lda #INLINEVAR
             sta R_BANK
             rts
             
@@ -101,8 +100,6 @@ imdone:     lda BankSave
 ; the last visible line in the upper field is HeroY - 4
 ; playfield goes from HeroY - 3 to HeroY + 3
 ; and bottom field goes from HeroY + 4 to HeroY + 23.
-;
-Nudge:      .byte   0
 
 updatemap:  bcs umdec           ; if we decrementing nudge, skip past the incrementing parm block
             lda #$20            ; first copy target raster line in top field (then up, copying toward zero)
@@ -114,10 +111,10 @@ updatemap:  bcs umdec           ; if we decrementing nudge, skip past the increm
             lda #$A8            ; raster offset for drawing new lower field line ($90 + $18)
             sta PBotRastD
             lda #$04            ; map offset back from HeroY for newly drawn line in top field.
-            sta PTopMapOff
+            sta ZTopMapOff
             lda #$01            ; remember that we are incrementing (will later be added to PNudge for NudgePos)
-            sta PInc
-            bne umbegin         ; skip past the decrementing parm block
+            sta ZPInc
+            jmp umbegin         ; skip past the decrementing parm block
 umdec:      lda #$38            ; first copy target raster line in lower field (then down, copying away from zero)
             sta PTopRastA
             lda #$20            ; raster offset for drawing new upper field line ($20 + 0)
@@ -127,68 +124,73 @@ umdec:      lda #$38            ; first copy target raster line in lower field (
             lda #$90            ; raster offset for drawing new lower field line ($90 + 0)
             sta PBotRastD
             lda #$23            ; map offset back from HeroY for newly drawn line in top field.
-            sta PTopMapOff
+            sta ZTopMapOff
             lda #$00            ; remember that we are decrementing (will later be added to PNudge for NudgePos)
-            sta PInc
+            sta ZPInc
 umbegin:    lda HeroY
             adc #$04            ; intentionally not clearing carry before this, using the entry value of carry
             and #$07            ; mod 8
-            sta Nudge           ; save the unmultiplied version for doing math in here
+            sta ZNudge          ; save the unmultiplied version for doing math in here
             lda R_BANK          ; save bank
-            sta BankSave        ; (but assume we are already in 1A00 ZP)
+            sta UMBankSave      ; (but assume we are already in 1A00 ZP)
             lda #$00            ; go to bank 0, where (hires) graphics memory lives
             sta R_BANK
-            sta TouchedVoid     ; reset "touched the void" flag            
+            sta ZTouchVoid      ; reset "touched the void" flag            
             ; do the top field
             lda HeroY           ; find the new data line for the top field
             sec
-            sbc PTopMapOff      ; counting back from HeroY to either top or bottom of top field
+            sbc ZTopMapOff      ; counting back from HeroY to either top or bottom of top field
             bcs umnotvoid
-            inc TouchedVoid     ; we have touched the void in the top field
-umnotvoid:  sta MapOffset       ; store the map offset we will draw top field line from (not used if in void)
-            lda PTopRastA       ; first raster line (inc=top, dec=bottom) in copy operation in top field
+            inc ZTouchVoid      ; we have touched the void in the top field
+umnotvoid:  sta ZMapOffset      ; store the map offset we will draw top field line from (not used if in void)
+PTopRastA = *+1
+            lda #INLINEVAR      ; first raster line (inc=top, dec=bottom) in copy operation in top field
             clc
-            adc Nudge           ; newnudge/oldnudge
-            ldy PInc            ; carry should still be clear
+            adc ZNudge          ; newnudge/oldnudge
+            ldy ZPInc           ; carry should still be clear
             bne :+              ; set carry if we we decrementing
             sec
 :           jsr copylines       ; copy lines that can be copied
-            lda PTopRastD       ; raster line that is target for new draw in top field
+PTopRastD = *+1
+            lda #INLINEVAR      ; raster line that is target for new draw in top field
             clc
-            adc Nudge           ; plus nudge
+            adc ZNudge          ; plus nudge
             tax                 ; move raster line to X for drawline
-            ldy TouchedVoid     ; if we are in the void, draw the void
+            ldy ZTouchVoid      ; if we are in the void, draw the void
             beq :+              ; branch if we are not in the void
             jsr drawvoid
             jmp btmfield
-:           lda MapOffset
-            jsr drawline        ; draw line (map pointer is still in A, raster pointer is in X)
+:           lda ZMapOffset
+            jsr drawline        ; draw line (map pointer is in A, raster pointer is in X)
             ; do the bottom field
-btmfield:   lda PBotRastA       ; first raster line (inc=top, dec=bottom) in copy operation in bottom field
+PBotRastA = *+1
+btmfield:   lda #INLINEVAR      ; first raster line (inc=top, dec=bottom) in copy operation in bottom field
             clc
-            adc Nudge           ; newnudge/oldnudge
-            ldy PInc            ; carry should still be clear
+            adc ZNudge          ; newnudge/oldnudge
+            ldy ZPInc           ; carry should still be clear
             bne :+              ; set carry if we are decrementing
             sec
 :           jsr copylines       ; copy lines that can be copied
-            lda PBotRastD       ; raster line that is target for new draw in bottom field
+PBotRastD = *+1
+            lda #INLINEVAR      ; raster line that is target for new draw in bottom field
             clc
-            adc Nudge           ; plus nudge
+            adc ZNudge          ; plus nudge
             tax                 ; move raster line to X for drawline
-            lda MapOffset       ; find map line for the bottom field
+            lda ZMapOffset      ; find map line for the bottom field
             clc                 ; by adding $27 to the map line from the top field
             adc #$27
             bcc :+              ; we didn't cross a page boundary, we are not in the void
-            dec TouchedVoid     ; if we were in the void before, we're not now.  Else we are.
+            dec ZTouchVoid      ; if we were in the void before, we're not now.  Else we are.
             beq :+              ; if we're not in the void skip to drawing the line
             jsr drawvoid
             jmp upddone
 :           jsr drawline        ; draw line (map pointer is still in A, raster pointer is in X)
-upddone:    lda BankSave        ; put the bank back
+UMBankSave = *+1
+upddone:    lda #INLINEVAR      ; put the bank back
             sta R_BANK
-            lda PInc            ; advance PNudge to NudgePos (adds one if we were incrementing)
+            lda ZPInc           ; advance PNudge to NudgePos (adds one if we were incrementing)
             clc
-            adc Nudge           ; note: critical this is mod 8 or interrupt will spin off to the void
+            adc ZNudge          ; note: critical this is mod 8 or interrupt will spin off to the void
             and #$07
             tay                 ; translate to NudgeVal (multiply by $0C)
             lda TwelveBran, y

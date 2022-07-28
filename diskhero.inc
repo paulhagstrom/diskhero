@@ -38,16 +38,12 @@ ZOldPtr     = $50   ; original position of element moving
 ZNewPtr     = $52   ; new position of element moving
 ZTailPtr    = $54   ; original position of second segment of element moving (hoarder)
 
-PTopRastA   = $6B   ; hires map parm: first copy target raster line upper field
-PTopRastD   = $6C   ; hires map parm: raster line for drawing new upper field line
-PBotRastA   = $6D   ; hires map parm: first copy target raster line lower field
-PBotRastD   = $6E   ; hires map parm: raster line for drawing new lower field line
-PTopMapOff  = $6F   ; hires map parm: map offset back from HeroY for new line
+ZTopMapOff  = $6F   ; hires map parm: map offset back from HeroY for new line
 
-TouchedVoid = $71
-MapOffset   = $72
-PInc        = $73
-
+ZNudge      = $70
+ZTouchVoid  = $71
+ZMapOffset  = $72
+ZPInc       = $73
 ZCharTemp   = $74
 
 ; lookup tables
