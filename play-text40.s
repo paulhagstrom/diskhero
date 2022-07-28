@@ -186,11 +186,11 @@ borderh:    lda YLoresHA, y     ; $800 base (color space) is computed from char 
             ldx #$23            ; paint $24 characters
 doborder:   lda #$A5            ; border (non-thumb) color by default
 ThumbR      =   thchkright + 1
-thchkright: cpx #$00
+thchkright: cpx #INLINEVAR
             beq midthumb        ; we are on the right edge of the thumb, do thumb color
             bcs dothumb         ; we have not passed the right edge of the thumb already
 ThumbL      =   thtrailer + 1
-thtrailer:  cpx #$00            ; we have passed the right edge, have we escaped the left edge?
+thtrailer:  cpx #INLINEVAR      ; we have passed the right edge, have we escaped the left edge?
             bcc dothumb         ; we have not escaped off the left edge of the thumb
 midthumb:   lda #$02            ; thumb color
 dothumb:    sta Zero, x         ; plant the color (address modified to be start of line + 2)

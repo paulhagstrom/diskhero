@@ -80,10 +80,9 @@ Some cycle counts may be out of date.  Some things of interest:
 Bugs I am presently aware of.
 
 - Occasionally with sound on, motion stops (but not music) on real hardware until sound is toggled off and on
-- Some drawing glitches in hires area above and below when scrolling
+- Some drawing glitches in hires area above and below when scrolling, particularly down, or when the top void is visible
 - Some tearing in playfield when scrolling horizontally (Maybe sense HBL when drawing? Squeeze more cycles out? Stage then blit?)
-- Disks left can dip below zero, have seen it go to 98 so isn't simply off-by-one
-- Hoarders do not appear to swarm toward disks.
+- Hoarders do not appear to swarm toward disks, but do seem to pile up somewhere
 - Quit just hangs
 
 ## Enhancements ##
@@ -92,6 +91,8 @@ Things I have on the list of things to try to do:
 
 - Possibly shrink map for lower levels
 - Make level end when no disks are left
+- Make hoarders turn if they cross the plane of a disk?
+- Allow player to push hoarders (so as not to be trapped)?
 - Add trucks to collect disks
 - Make sounds nicer, longer, quieter?, sequence into a song
 - Generate sound buffers during other game computations for longer music sequences

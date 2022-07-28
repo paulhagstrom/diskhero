@@ -93,15 +93,15 @@ MusicSeq:   .byte   $20, $50, $50, $20, $00
 ; main game event loop
 
 ExitFlag    =   eventloop + 1               ; keyboard int makes this nonzero to trigger exit
-eventloop:  lda #$00                        ; if ExitFlag becomes nonzero (within keyboard processing)
+eventloop:  lda #INLINEVAR                  ; if ExitFlag becomes nonzero (within keyboard processing)
             bne alldone                     ; then exit
 KeyCaught   =   elchkkey + 1                ; keyboard int pushes a caught key in here
-elchkkey:   lda #$00                        ; check if we have recently caught a key (keyboard interrupt)
+elchkkey:   lda #INLINEVAR                  ; check if we have recently caught a key (keyboard interrupt)
             beq :+
             jsr handlekey                   ; if there was a key, handle it
 :            
 VBLTick     =   elvbltick + 1               ; ticked down for each VBL, can use to delay things for several refreshes
-elvbltick:  lda #$00                        ; wait for game clock to tick
+elvbltick:  lda #INLINEVAR                  ; wait for game clock to tick
             bpl posttick                    ; based on number of VBLs set in MoveDelay
             jsr domove                      ; game clock has ticked, move everyone around
             jsr updsplash                   ; update the splash effect at the top
@@ -109,7 +109,7 @@ elvbltick:  lda #$00                        ; wait for game clock to tick
             lda BackNext                    ; is there a background sample already queued up?
             bne elmusicok                   ; yep we're all good
 NowPlaying  =   elnowplay + 1               ; current position on the MusicSeq list
-elnowplay:  ldx #$00                        ; find the next segment
+elnowplay:  ldx #INLINEVAR                  ; find the next segment
             inx
             lda MusicSeq, x
             bne elsetnext                   ; got the next segment

@@ -22,7 +22,7 @@ updsplash:  lda #$8F
             lda #$0F                ; draw splashes on lines 08-0F
             sta PatRaster
 PatRaster   =   splashline + 1
-splashline: ldx #$00
+splashline: ldx #INLINEVAR
             lda YHiresL, x
             sta ZPtrA
             sta ZPtrB
@@ -34,7 +34,7 @@ splashline: ldx #$00
             ldx #$07
             stx SplashCol
 SplashCol   =   spfcheck + 1
-spfcheck:   ldx #$00
+spfcheck:   ldx #INLINEVAR
             lda SplashG, x
             bmi spfcont
             ldy SplashXG, x
@@ -48,7 +48,7 @@ spfcheck:   ldx #$00
             jmp spfcont
 spfreal:    clc
 PatIndex    =   spfrealadd + 1
-spfrealadd: adc #$00
+spfrealadd: adc #INLINEVAR
             tax
             lda HR_Splash, x
             sta (ZPtrB), y

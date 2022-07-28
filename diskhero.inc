@@ -5,6 +5,7 @@
 
 XByte       = $1601     ; Interp extended address offset (for ZP 1A)
 Zero1A      = $1A00     ; for those times you want to write to ZP without using ZP
+INLINEVAR   = $33       ; mneumonic to remind me where variable is inline in code
 
 ; Used in interpreter (1A00) ZP.
 
