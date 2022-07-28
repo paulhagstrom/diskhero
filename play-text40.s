@@ -118,14 +118,16 @@ BorDataA:   .byte   0           ; character or color inside border on left and r
 BorDataB:   .byte   0           ; character or color on border on left and right
 
 ; in order to keep hero in the middle, five columns are used by a frame
-; based on hero position, 5 total, high nibble of HeroX of those are on the right
+; based on hero position, 5 total, high-nibble-of-HeroX of those are on the right side
 
+; first step, compute boundaries of playfield, void extents
 drawplay:   lda HeroX           ; take high nibble of HeroX - that is BorderR
             lsr                 ; that is, if HeroX is at 10, there are 2 border cols on the right, 3 on left
             lsr                 ; and if HeroX is at 3F, there are 4 borders on the right, 1 on left
             lsr
             lsr
             sta BorderR         ; BorderR is how many columns (0-based) of border are on the right
+            ldy #$00            ; use Y to store zeros where we need them
             lda HeroX           ; HeroX + $11 is the last drawn column inside the border
             clc
             adc #$11
@@ -136,37 +138,32 @@ drawplay:   lda HeroX           ; take high nibble of HeroX - that is BorderR
             eor #$FF            ; inverse of the number is the left void
             adc #$01
             sta VoidL
-            lda #$00            ; leftmost playfield map column is zero
-            sta PlayLeft
-            beq :+
+            sty PlayLeft        ; leftmost playfield map column is zero
+            jmp pmcheckr
 pmnovoidl:  sta PlayLeft        ; store leftmost playfield map column
-            lda #$00            ; and record the fact that there is no left void
-            sta VoidL
-:           lda PlayRight       ; if PlayRight - #$3E (last map column) is positive, that is VoidR
+            sty VoidL           ; and record the fact that there is no left void
+pmcheckr:   lda PlayRight       ; if PlayRight - #$3E (last map column) is positive, that is VoidR
             sec
             sbc #$3E
             bmi pmnovoidr       ; branch away if there is no VoidR
             sta VoidR           ; store the right void
             lda #$3E            ; and adjust rightmost map column in playfield to be 3E.
             sta PlayRight
-            bne :+
-pmnovoidr:  lda #$00            ; record that there is no right void
-            sta VoidR
-:           lda HeroY           ; check for top void
+            jmp pmcheckt
+pmnovoidr:  sty VoidR           ; record that there is no right void
+pmcheckt:   lda HeroY           ; check for top void
             sec
             sbc #$03
             bcs pmnovoidu       ; branch away if there is no top void
             eor #$ff
             adc #$01
             sta VoidU           ; top void is the negative of HeroY - 3.
-            lda #$00
-            sta PlayTop         ; top map line is 0
+            sty PlayTop         ; top map line is 0
             jmp dppostvoid
 pmnovoidu:  sta PlayTop         ; record top map line in playfield (HeroY-3)
-            lda #$00            ; and that there is no top void
-            sta VoidU
-dppostvoid: ; start drawing with top and bottom borders (for thumb). Just colors, chars will already be there
-            ldx PlayRight       ; last visible column on the playfield
+            sty VoidU           ; and that there is no top void
+; draw the top and bottom borders (containing thumb). Just colors, chars will already be there
+dppostvoid: ldx PlayRight       ; last visible column on the playfield
             lda Map2Thumb, x    ; corresponds to right edge of thumb
             pha
             ldx PlayLeft        ; first visible column on the playfield
@@ -178,38 +175,38 @@ borderh:    lda YLoresHA, y     ; $800 base (color space) is computed from char 
             clc
             adc #$04
             sta R_ZP            ; point ZP at correct line on color page
+            ldx YLoresL, y      ; get the left edge index
+            inx                 ; skip past the first two columns
+            inx                 
+            stx dothumb + 1     ; store as the zero base in the upcoming loop
             pla
-            sta ZThumbL
+            sta ThumbL
             pla
-            sta ZThumbR
-            ldx YLoresS, y      ; low byte of the address of the end of this line
-            dex
-            dex                 ; back up past the fixed colors at the edge
-            ldy #$23            ; paint $24 characters
-doborder:   cpy ZThumbR
-            bcs thleader        ; we have not passed the right edge of the thumb already
-            cpy ZThumbL         ; we have passed the right edge, have we escpaed the left edge?
-            bcs midthumb        ; we have not yet escaped off the left edge of the thumb
-            lda #$A5            ; border (non-thumb) color (left, after thumb)
-            jmp dothumb
-thleader:   beq midthumb        ; we are ON the right edge of the thumb
-            lda #$A5            ; border (non-thumb) color (right, before thumb)
-            jmp dothumb
+            sta ThumbR
+            ldx #$23            ; paint $24 characters
+doborder:   lda #$A5            ; border (non-thumb) color by default
+ThumbR      =   thchkright + 1
+thchkright: cpx #$00
+            beq midthumb        ; we are on the right edge of the thumb, do thumb color
+            bcs dothumb         ; we have not passed the right edge of the thumb already
+ThumbL      =   thtrailer + 1
+thtrailer:  cpx #$00            ; we have passed the right edge, have we escaped the left edge?
+            bcc dothumb         ; we have not escaped off the left edge of the thumb
 midthumb:   lda #$02            ; thumb color
-dothumb:    sta Zero, x         ; plant the color
+dothumb:    sta Zero, x         ; plant the color (address modified to be start of line + 2)
             dex
-            dey
             bpl doborder
             ldx CurScrLine
             cpx #$09            ; if we have done both top and bottom
             beq innerplay       ; then CurScrLine happens to be 9 (top of playfield) and ready to start
             inc CurScrLine      ; set exit condition for next time (borderh does not use the value)
-            lda ZThumbR         ; push thumb bounds back on the stack for next iteration
+            lda ThumbR          ; push thumb bounds back on the stack for next iteration
             pha
-            lda ZThumbL
+            lda ThumbL
             pha
             ldy #$10            ; do the bottom line (Y holds the current screen line for borderh)
             jmp borderh
+; now draw the inner playfield
 innerplay:  dec VoidU           ; burn through upper void lines first if there are any
             bmi pfstart         ; branch away if done with upper void
             jsr playvoid        ; draw the void at CurScrLine
@@ -237,9 +234,9 @@ pfnext:     lda MapPtrL         ; advance map pointer (even if we are in the voi
             sta R_ZP
             rts
 
-; draw the playfield border and compute edges of line/void to draw
+; draw the playfield left/right border and compute edges of line/void to draw
 ; after: BorderL, BorderS hold the low bytes of the screen memory addresses for line (left, right)
-; assumes that ZP can be manipulated with abandon, will be returned to $1A00 somewhere else, later
+; assumes that ZP register can be manipulated with abandon, will be returned to $1A00 somewhere else, later
 playbord:   lda #BorderChar
             sta BorDataA        ; outer border character
             sta BorDataB        ; inner border character
@@ -252,25 +249,34 @@ pbdraw:     sta R_ZP            ; point ZP at appropriate space
             sta BorderRYet
             ldx YLoresS, y      ; address of the right edge of the line
             lda BorDataB        ; draw right border outer value first
-:           sta Zero, x
+            sta Zero, x         ; do this outside the loop
             lda BorDataA        ; switch to inside value
             dex
             dec BorderV         ; we have done one of the five
             dec BorderRYet      ; and we have done one of the right side ones
+            bmi pbrdone         ; skip loop if that was the only right side one
+:           sta Zero, x
+            dex
+            dec BorderV         ; we have done one of the five
+            dec BorderRYet      ; and we have done one of the right side ones
             bpl :-              ; if more right side ones remain, do them
-            stx BorderS         ; this is where line or void will start (right edge)
+pbrdone:    stx BorderS         ; this is where line or void will start (right edge)
             ldx YLoresL, y      ; address of the left edge of the line
             lda BorDataB        ; draw left border outer value first
-:           sta Zero, x
+            sta Zero, x         ; do this outside the loop
             lda BorDataA        ; switch to inside value
             inx
             dec BorderV         ; we have done one of the five
+            bmi pbldone         ; skip loop if that was the only left side one
+:           sta Zero, x
+            inx
+            dec BorderV         ; we have done one of the five
             bpl :-              ; if more remain (all on the left now), do them
-            stx BorderL         ; this is where line of void will start (left edge)
+pbldone:    stx BorderL         ; this is where line of void will start (left edge)
             ; if we didn't just do border colors, do border colors
             lda BorDataA        ; first time through used #BorderChar
             cmp #BorderColA     ; if we already switched it to colors
-            beq :+              ; we are finished and can leave
+            beq pbdone          ; we are finished and can leave
             lda #BorderColB     ; otherwise, change the data to colors
             sta BorDataB
             lda #BorderColA
@@ -279,10 +285,10 @@ pbdraw:     sta R_ZP            ; point ZP at appropriate space
             clc                 ; and color space is $04 away
             adc #$04            ; so find $800 base color space and do it again
             jmp pbdraw          ; and do it again but with colors to the color space
-:           rts
+pbdone:     rts
             
 ; draw a void line in the playfield
-; assumes that ZP can be manipulated with abandon, will be returned to $1A00 somewhere else, later
+; assumes that ZP register can be manipulated with abandon, will be returned to $1A00 somewhere else, later
 playvoid:   jsr playbord        ; draw the border and compute the edges
             ldy CurScrLine
             lda YLoresHA, y     ; $800 base (char space)
@@ -291,7 +297,7 @@ playvoid:   jsr playbord        ; draw the border and compute the edges
             sta pvchar + 1      ; store it in the upcoming instruction as the 0-base
             lda #C_SPACE        ; void character is C_SPACE
             ldx #$22            ; drawing 35 columns between borders (0 to $22)
-pvchar:     sta Zero, x
+pvchar:     sta Zero, x         ; address modified to be based at start of current line
             dex
             bpl pvchar
             lda R_ZP            ; find $800 base (col space)
@@ -302,13 +308,13 @@ pvchar:     sta Zero, x
             sta pvcol + 1       ; store it in the upcoming instruction as the 0-base
             lda #$10            ; magenta background, black foreground
             ldx #$22            ; drawing 35 columns between borders
-pvcol:      sta Zero, x
+pvcol:      sta Zero, x         ; address modified to be based at start of current line
             dex
             bpl pvcol
             rts
 
 ; draw a lores line in the playfield, assumes MapPtr is set.
-; leaves with the ZP dangling out in graphics space, assumes it will be fixed by someone else
+; leaves with the ZP register dangling out in graphics space, assumes it will be fixed by someone else
 loresline:  jsr playbord        ; draw the border and compute the edges
             lda #$1A            ; we want to be in $1A00 ZP for this part
             sta R_ZP
@@ -358,9 +364,8 @@ gotcolorb:  ldx ZPxScratch      ; current X column
             lda ZCharTemp
             pha                 ; push character to stack
             dey                 ; decrement map index
-            bmi leftvoid        ; oops, we have reached the left void
+            bmi leftvoid        ; branch away if we have reached the left void
             dec ZPxScratch      ; decrement saved copy of map column
-            dex                 ; as well as the active one we were using
             bpl pfmapdraw       ; if there are still columns left, keep going
             jmp pfdone
 leftvoid:   dex                 ; we touched the void, any left to draw?
@@ -377,7 +382,7 @@ pfdone:     ldy CurScrLine      ; now, send what we collected to the screen
             sta pfwchar + 1     ; store it in the upcoming instruction as 0-base
             ldx #$00            ; start drawing from the left (we pushed into stack l-to-r)
 :           pla                 ; pull the character
-pfwchar:    sta Zero, x         ; store it in character space
+pfwchar:    sta Zero, x         ; store it in character space (base modified to point to line's left edge)
             inx
             cpx #$23            ; 0-22 are all there are
             bne :-
@@ -389,7 +394,7 @@ pfwchar:    sta Zero, x         ; store it in character space
             sta pfwcol + 1      ; store it in the upcoming instruction as 0-base
             ldx #$22            ; this time we don't use the stack so draw in reverse
 :           lda Zero1A, x       ; sneakily extract from the ZP we stored it in
-pfwcol:     sta Zero, x         ; and put it in the ZP we are pointing at
+pfwcol:     sta Zero, x         ; and put it in the ZP we point at (modified to point to line's left edge)
             dex
             bpl :-
             rts

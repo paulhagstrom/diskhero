@@ -64,8 +64,6 @@ ZFXPtr      = $DA   ; current sample in sound effect
 ; playfield (play-text40)
 
 ZMapPtr     = $7A
-ZThumbR     = $FD   
-ZThumbL     = $FE
 
 ZScrHole    = $78
 ZOtherZP    = $7A
