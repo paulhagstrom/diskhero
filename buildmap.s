@@ -80,6 +80,7 @@ MFY:        .byte 0
 MFColor:    .byte 0
 MFBoxIndex: .byte 0
 MFPlaced:   .byte 0
+MFDiskType: .byte 0
     
 mapinit:   
             ; Start by initializing memory pointers for location tracking.
@@ -254,25 +255,20 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             lda #C_HERO
             sta (ZPtrA), y
 
-            lda #$18            ; disks to scatter around
-            sta MFPlaced
+            lda #$03            ; start with disk type 3 and move down
+            sta MFDiskType
+            lda #$00
             sta NumDisks
-:           jsr mfrndspot
+mfplacetyp: lda #$08            ; disks of each type to scatter around
+            sta MFPlaced
+mfplacedsk: jsr mfrndspot
             sty ZPxScratch      ; stash the x-coordinate
-            txa
-            pha                 ; stash the y-coordinate
-            ldx Seed
-            lda Random, x
-            inx
-            stx Seed
-            and #$03            ; pick a random type
-            tax                 ; stash type in X
-            tya                 ; store the x-coordinate
-            ldy MFPlaced
+            ldy NumDisks
+            txa                 ; store the x-coordinate
             sta (ZDiskX), y
-            pla                 ; store the y-coordinate
+            lda ZPxScratch      ; store the y-coordinate
             sta (ZDiskY), y
-            txa                 ; store the type
+            lda MFDiskType      ; store the type
             sta (ZDiskType), y
             tax
             sed
@@ -287,8 +283,11 @@ mfpattrow:  lda MFBoxIndex      ; x points to the row of the box pattern
             ora #C_DISK         ; use disk shape
             ldy ZPxScratch      ; recall the x-coordinate
             sta (ZPtrA), y      ; place a disk
+            inc NumDisks
             dec MFPlaced
-            bpl :-
+            bne mfplacedsk
+            dec MFDiskType
+            bpl mfplacetyp
             
             lda #$10            ; hoarders to scatter around
             sta MFPlaced
