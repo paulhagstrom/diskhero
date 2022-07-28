@@ -43,7 +43,6 @@ PBotRastA   = $6D   ; hires map parm: first copy target raster line lower field
 PBotRastD   = $6E   ; hires map parm: raster line for drawing new lower field line
 PTopMapOff  = $6F   ; hires map parm: map offset back from HeroY for new line
 
-;PNudge      = $70
 TouchedVoid = $71
 MapOffset   = $72
 PInc        = $73
@@ -128,12 +127,9 @@ RD_PERCTL   = $FFDC     ; ffdx peripheral control register
 RE_PERCTL   = $FFEC     ; ffex peripheral control register
 RD_INTFLAG  = $FFDD     ; ffdx interrupt flag register
 RE_INTFLAG  = $FFED     ; ffex interrupt flag register
-    ; bit 0=kbd, 1=CA1, 2=shift, 3=CB2 (vblx8), 4=CB1 (vblx1), 5=timer 2, 6=timer 1, 7=IRQ
+    ; bit 7=IRQ, 6=timer 1, 5=timer 2, 4=CB1 (vblx1), 3=CB2 (vblx8), 2=shift, 1=CA1, 0=kbd
 RD_INTENAB  = $FFDE     ; ffdx interrupt enable register
 RE_INTENAB  = $FFEE     ; ffex interrupt enable register
-; In III's Company Programming Q&A it was said
-; that writing 01 here will disable the keyboard interrupt, 81 re-enables.
-; that looks like the reverse of what I wrote above for E_IFR.  Is bit 0 the MSB?
 
 R_ENVIRON   = $FFDF     ; Environment register
 R_BANK      = $FFEF     ; Bank register

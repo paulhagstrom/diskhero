@@ -42,7 +42,7 @@
 CodeStart:  jmp init
 
             .include "buildmap.s"           ; should be safe in banked memory
-            .include "gamesound.s"          ; should be safe in banked memory
+            .include "buildsound.s"         ; should be safe in banked memory
             .include "status-text40.s"      ; should be safe in banked memory
             .include "gamemove.s"           ; probably ok in banked memory
             .include "play-text40.s"        ; should be safe in banked memory
@@ -55,9 +55,6 @@ CodeStart:  jmp init
             .include "lookups.s"            ; cannot be in banked memory
 
 IRQSave:    .byte   0, 0 , 0                ; IRQ vector before we install ours
-
-ExitFlag:   .byte   0                       ; keyboard int makes this nonzero to trigger exit
-KeyCaught:  .byte   0                       ; keyboard int pushes a caught key in here
 
 VoidL:      .byte   0                       ; keeping track of "void" around the map while drawing
 VoidR:      .byte   0
@@ -89,22 +86,27 @@ Seed:       .byte   0                       ; current place in the "random" numb
 
 ; schedule of background music samples
 MusicSeq:   .byte   $20, $50, $50, $20, $00
-NowPlaying: .byte   0                       ; current position on the MusicSeq list
 
-eventloop:  lda ExitFlag                    ; if ExitFlag becomes nonzero (within keyboard processing)
-            bne alldone                     ; exit
-            lda KeyCaught                   ; check if we have recently caught a key (keyboard interrupt)
+; main game event loop
+
+ExitFlag    =   eventloop + 1               ; keyboard int makes this nonzero to trigger exit
+eventloop:  lda #$00                        ; if ExitFlag becomes nonzero (within keyboard processing)
+            bne alldone                     ; then exit
+KeyCaught   =   elchkkey + 1                ; keyboard int pushes a caught key in here
+elchkkey:   lda #$00                        ; check if we have recently caught a key (keyboard interrupt)
             beq :+
             jsr handlekey                   ; if there was a key, handle it
 :            
-            lda VBLTick                     ; wait for game clock to tick
+VBLTick     =   elvbltick + 1               ; ticked down for each VBL, can use to delay things for several refreshes
+elvbltick:  lda #$00                        ; wait for game clock to tick
             bpl posttick                    ; based on number of VBLs set in MoveDelay
             jsr domove                      ; game clock has ticked, move everyone around
             jsr updsplash                   ; update the splash effect at the top
             jsr drawstatus                  ; redraw score (TODO: do only when there is an update)
             lda BackNext                    ; is there a background sample already queued up?
             bne elmusicok                   ; yep we're all good
-            ldx NowPlaying                  ; find the next segment
+NowPlaying  =   elnowplay + 1               ; current position on the MusicSeq list
+elnowplay:  ldx NowPlaying                  ; find the next segment
             inx
             lda MusicSeq, x
             bne elsetnext                   ; got the next segment

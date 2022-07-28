@@ -1,15 +1,36 @@
 ; DISKHERO
-; sound
+; sound effect initialization
 
-; copy or create the sounds in bank 1
-; plan is:
-; 2000-3FFF: background segment 1
-; 4000-5FFF: background segment 2
-; 6000-7FFF: background segment 3
+; This is called early and fills in static sound data in bank 1.
+; It does not switch the banks, and does not present any externally-accessible
+; variables.  So it should be ok in bank switched memory.
+
+; Sound effects live in the lower pages, and are copied in by these routines.
+; There is room for 29 sound effects, that should be good enough.
+; The player does not handle sound effects with more than $100 samples.
+; And probably best to steer clear of the lower $300 in the bank.
+; One sound effect can be played at a time, and it takes priority over the
+; background music.  The way it is set up, a new sound effect triggered will
+; immediately supersede any that might currently be playing.
+;
 ; 1F00-1FFF: sound effect 1F
 ; 1E00-1EFF: sound effect 1E
 ; ...
 ; 0300-03FF: sound effect 03
+;
+; background music segments live in upper part of the bank.
+; The code at present generates them and copies them in.  A background sound
+; can be arbitrarily long, so long as it fits in the bank.  We're have $6000
+; available for these.  That seems to be about 24 seconds' worth if we used it
+; all.  Planning to add a sound generator that will keep creating the soundtrack
+; dynamically in this space instead, but the technology is the same.
+;
+; 2000-3FFF: background segment 1
+; 4000-5FFF: background segment 2
+; 6000-7FFF: background segment 3
+;
+; Sounds (both effects and background segments) are finished when they hit a
+; negative (high bit set) number.
 
 fxcopy:     ldy #$00
 fxcopyloop: lda $4000, y

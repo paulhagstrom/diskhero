@@ -8,7 +8,6 @@ IntXStash:  .byte   0   ; saved X register from interrupt handler entry
 IntYStash:  .byte   0   ; saved Y register from interrupt handler entry
 
 ; variables for sound and speed management
-VBLTick:    .byte   0   ; ticked down for each VBL, can use to delay things for several refreshes
 VBLTickP:   .byte   0   ; playfield ticker, try to draw during VBL
 ClockTick:  .byte   0   ; ticked down for each clock-during-VBL, for playing sound (only) during VBL
 
@@ -96,7 +95,7 @@ intvbl:     lda #$06            ;2 reset the HBL counter for top region when it 
 SRegFstNxt  =   vblfstnext + 1  ; the first "next" region, set up by setupenv.
 vblfstnext: lda #$00            ;2 the first "next" region
             sta NextMode        ;4 [40]
-            dec VBLTick         ;6 bump VBL countdown
+            dec VBLTick         ;6 bump VBL countdown - in event loop code
             dec VBLTickP        ;6 bump VBL countdown
             lda #$06            ;2 fire the clock interrupt 7 times during VBL
             sta ClockTick       ;4 [58]
@@ -113,7 +112,7 @@ vblfstnext: lda #$00            ;2 the first "next" region
 ; 30 (or 27) cycles in here, 21 to get here - 51 (or 48) total
 intkey:     lda IO_KEY          ;4 load keyboard register
             bpl keyreturn       ;2/3 no key pressed, return (could that even happen? modifier only?)
-            sta KeyCaught       ;4 tell event loop to process this
+            sta KeyCaught       ;4 tell event loop to process this - in event loop code
 keyreturn:  bit IO_KEYCLEAR     ;4 [14 or 11] clear keyboard register
             lda #$01            ;2 clear the keyboard (CA2) interrupt
             sta RE_INTFLAG      ;4 [20 or 17]
