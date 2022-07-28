@@ -60,9 +60,7 @@ ZFXPtr      = $DA   ; current sample in sound effect
 
 ; playfield (play-text40)
 
-ZMapPtr     = $7A
-
-ZScrHole    = $78
+ZMapPtr     = $78
 ZOtherZP    = $7A
 ZCurrDrawX  = $7B
 ZLineStart  = $7C

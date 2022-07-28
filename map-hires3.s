@@ -204,13 +204,6 @@ upddone:    lda #INLINEVAR      ; put the bank back
 ; interrupts are too tight in this game to use the stack to push
 
 LinesLeft:  .byte   0
-SourceS:    .byte   0
-TargS:      .byte   0
-TargL:      .byte   0
-TargHA:     .byte   0
-TargHB:     .byte   0
-USBank:     .byte   0
-LinesDec:   .byte   0           ; record carry status from entry (1=decrementing, moving map down)
 
 copylines:  tay                 ; move start line into Y
             pha                 ; and remember it 
@@ -220,13 +213,14 @@ copylines:  tay                 ; move start line into Y
             lda #$02            ; move three lines, countdown in LinesLeft
             sta LinesLeft
             lda YHiresS, y
-            sta TargS           ; target low
+            sta TargS           ; target low, end of the line
             lda YHiresHA, y
             sta TargHA          ; target A high
             clc
             adc #$20            ; compute HB
             sta TargHB          ; target B high
-lmnext:     lda LinesDec        ; restore carry from entry
+LinesDec = *+1
+lmnext:     lda #INLINEVAR      ; restore carry from entry
             ror
             pla                 ; recall the target line and compute the source line from it
             bcs :+              ; if carry is set we are subtracting
@@ -245,16 +239,19 @@ lmprep:     tay
             clc
             adc #$20            ; compute HB
             sta lmsrcb + 2      ; source B high
-            lda TargHA          ; point ZP at target A page
+TargHA = *+1
+            lda #INLINEVAR      ; point ZP at target A page
             sta R_ZP
-            ldx TargS           ; start x at the end of the target line
+TargS = *+1
+            ldx #INLINEVAR      ; start x at the end of the target line
             ldy #$27
 lmsrca:     lda $2000, y        ; this address is modified to be exactly at the start of the line
             sta Zero, x         ; this address is at a page boundary, so x may be more than $27
             dex
             dey
             bpl lmsrca
-            lda TargHB          ; point ZP at target B page
+TargHB = *+1
+            lda #INLINEVAR      ; point ZP at target B page
             sta R_ZP
             ldx TargS           ; start x at the end of the target line
             ldy #$27
@@ -265,9 +262,8 @@ lmsrcb:     lda $4000, y        ; this address is modified to be exactly at the 
             bpl lmsrcb
             dec LinesLeft
             bmi lmdone          ; done moving lines
-            lda lmsrca + 1      ; prior source becomes new target
-            sta TargL
-            lda SourceS
+SourceS = *+1
+            lda #INLINEVAR
             sta TargS
             lda lmsrca + 2
             sta TargHA
@@ -281,10 +277,10 @@ lmdone:     pla                 ; we can now forget the next line we computed
 
 ; seven magenta pixels for the left and right two bytes in the map region
 ; and for the void lines
-BorderBits: .byte %00010001
-            .byte %00100010
-            .byte %01000100
-            .byte %00001000
+BorderBitA = %00010001
+BorderBitB = %00100010
+BorderBitC = %01000100
+BorderBitD = %00001000
 
 ; do the hires page lookup and ZP setup, common to drawvoid and drawline
 ; enter with X holding the target line on the graphics page, assumes we are in 1A00 ZP
@@ -314,7 +310,7 @@ prepdraw:   lda YHiresHA, x     ; get 2000-based address of current line on scre
 drawvoid:   jsr prepdraw
             lda ZOtherZP        ; HGR1
             sta R_ZP
-            lda BorderBits      ; write first byte to even bytes on HGR1
+            lda #BorderBitA     ; write first byte to even bytes on HGR1
             ldy #$13            ; fill $14 of them from left to right
 :           sta Zero, x
             inx
@@ -323,7 +319,7 @@ drawvoid:   jsr prepdraw
             bpl :-
             inx                 ; skip pointer ahead 1 to get to odd bytes, starting with $27
             ldy #$13            ; fill $14 of them as we pass back from right to left
-            lda BorderBits + 2  ; write third byte to odd bytes on HGR1
+            lda #BorderBitC     ; write third byte to odd bytes on HGR1
 :           sta Zero, x
             dex
             dex
@@ -331,7 +327,7 @@ drawvoid:   jsr prepdraw
             bpl :-
             lda ZOtherZP        ; HGR2
             sta R_ZP
-            lda BorderBits + 3  ; write fourth byte to odd bytes on HGR2
+            lda #BorderBitD     ; write fourth byte to odd bytes on HGR2
             ldy #$13            ; fill $14 of them
 :           sta Zero, x
             inx
@@ -340,7 +336,7 @@ drawvoid:   jsr prepdraw
             bpl :-
             dex                 ; skip back 1 to get to even bytes
             ldy #$13            ; fill $14 of them
-            lda BorderBits + 1  ; write second byte to odd bytes on HGR2
+            lda #BorderBitB    ; write second byte to odd bytes on HGR2
 :           sta Zero, x
             dex
             dex
@@ -359,9 +355,9 @@ drawlineb:  jsr prepdraw
             ; draw border bits
             lda ZOtherZP        ; HGR1
             sta R_ZP
-            lda BorderBits + 2
+            lda #BorderBitC
             tay
-            lda BorderBits
+            lda #BorderBitA
             pha                 ; store first byte on HGR1 line byte 0
             sta Zero, x
             inx
@@ -378,9 +374,9 @@ drawlineb:  jsr prepdraw
             sta Zero, x         ; store first byte on HGR1 line byte $26
             lda ZOtherZP        ; HGR2
             sta R_ZP
-            lda BorderBits + 3
+            lda #BorderBitD
             tay
-            lda BorderBits + 1
+            lda #BorderBitB
             pha
             sta Zero, x         ; store second byte on HGR2 line byte $26
             inx
@@ -400,29 +396,29 @@ drawlineb:  jsr prepdraw
             ; push left edge to the right 7 pixels to center the map fields
             inc ZLineStart
             inc ZLineStart
-            ; point ZScrHole at the left side of present line in the map data.
+            ; point ZMapPtr at the left side of present line in the map data.
             lda MapPtrL
-            sta ZScrHole
+            sta ZMapPtr
             lda MapPtrH
-            sta ZScrHole + 1
-            lda #$82
-            sta ZScrHole + XByte
+            sta ZMapPtr + 1
+            lda #$82            ; map stuff is in bank 2
+            sta ZMapPtr + XByte
             ; we have 64 map data bytes, will draw them over 128 pixels.
             ; which really means drawing 63 bytes over 126 pixels.
             ; using 4 bytes to represent 14 pixels and 7 map data bytes.
             ; mapbytes: 0  7  14  21  28  35  42  49  56  (63) (ZCurrMapX)
             ; pixbytes: 0  4   8  12  16  20  24  28  32  (36) (ZCurrDrawX)
             lda #62
-            sta ZCurrMapX        ; right edge of last group of map bytes
-            lda ZLineStart       ; add 32 to left edge of graphics memory for line
+            sta ZCurrMapX       ; right edge of last group of map bytes
+            lda ZLineStart      ; add 32 to left edge of graphics memory for line
             clc
-            adc #32              ; to get left edge of last group of graphics memory for line
+            adc #32             ; to get left edge of last group of graphics memory for line
             sta ZCurrDrawX
 toplineseg: jsr drawseg         ; draw a single 14-pixel segment
             ; drawseg will move ZCurrMapX back 7 units while buffering map
             ; if that didn't run off the edge of the map, then back up the pixel pointer too
             lda ZCurrMapX
-            bmi :+          ; we had run off the left edge of the line, so now we are done
+            bmi :+              ; we had run off the left edge of the line, so now we are done
             lda ZCurrDrawX
             sec
             sbc #$04
@@ -523,18 +519,19 @@ updsingle:  pha                 ; stash map line while we check if it is onscree
             clc
             adc ZLineStart      ; from the left edge
             sta ZCurrDrawX
-            lda MapPtrL         ; point ZScrHole at the left side of present line in the map data.
-            sta ZScrHole
+            lda MapPtrL         ; point ZMapPtr at the left side of present line in the map data.
+            sta ZMapPtr
             lda MapPtrH
-            sta ZScrHole + 1
+            sta ZMapPtr + 1
             lda #$82
-            sta ZScrHole + XByte
+            sta ZMapPtr + XByte
             lda R_BANK
             sta USBank
             lda #$00            ; switch to bank 0 so we can address graphics memory
             sta R_BANK
             jsr drawseg         ; draw the segment
-            lda USBank
+USBank = *+1
+            lda #INLINEVAR
             sta R_BANK
             rts
 usoff:      pla                 ; toss out the map line we saved
@@ -544,7 +541,7 @@ usoff:      pla                 ; toss out the map line we saved
 ; enter with:
 ; ZCurrMapX = right edge of group of map bytes (i.e. 6 for first group)
 ; ZCurrDrawX = offset of first byte of 4-byte group of graphics memory (i.e. 4 for second group)
-; ZScrHole should point to the map line (as derived from setmapptr)
+; ZMapPtr should point to the map line (as derived from setmapptr)
 ; should have already called prepdraw with x holding the raster line to set up ZPs and ZLineStart
 drawseg:
             ; buffer in the stack the seven map elements we will represent
@@ -552,7 +549,7 @@ drawseg:
             lda #$06            ; we will buffer seven map elements
             sta ZBufCount
 bufmap:     ldy ZCurrMapX
-            lda (ZScrHole), y
+            lda (ZMapPtr), y
             ; now that we have the byte from the map, we can translate this into
             ; the two pixels it will be displaying.
             ; this information comes from FontDots, which we cached into ZFontDots (1A ZP)
