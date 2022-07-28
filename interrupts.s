@@ -4,9 +4,6 @@
 ; see diskhero.inc for ZP definitions (generally trying to stay between D0-FF)
 ; though I have mostly removed ZP usage except in the audio handler
 
-IntXStash:  .byte   0   ; saved X register from interrupt handler entry
-IntYStash:  .byte   0   ; saved Y register from interrupt handler entry
-
 ; variables for sound and speed management
 VBLTickP:   .byte   0   ; playfield ticker, try to draw during VBL
 ClockTick:  .byte   0   ; ticked down for each clock-during-VBL, for playing sound (only) during VBL
@@ -283,7 +280,8 @@ playsound:  sta SampleOut       ;4
             ; so to get out from here, add 39 or 43 if sound rolled
             ; minimum time in audio: 66* (sfx playing)
             ; maximum time in audio: 96*** (sfx finished, sound skipped and rolled)
-timerout:   ldy IntYStash       ;4 [22 cycles to get out from here]
+IntYStash = *+1
+timerout:   ldy #INLINEVAR      ;2 [20 cycles to get out from here]
             pla                 ;4
             sta R_ZP            ;4
             pla                 ;4
@@ -293,11 +291,11 @@ timerout:   ldy IntYStash       ;4 [22 cycles to get out from here]
 
 setupenv:   ; save IRQ vector and then install ours
             lda IRQVECT
-            sta IRQSave
+            sta IRQSaveA
             lda IRQVECT + 1
-            sta IRQSave + 1
+            sta IRQSaveB
             lda IRQVECT + 2
-            sta IRQSave + 2
+            sta IRQSaveC
             lda #$4C             ; jmp
             sta IRQVECT
             lda #<inthandle

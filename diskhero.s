@@ -57,8 +57,6 @@ CodeStart:  jmp gameinit
             .include "interrupts.s"         ; cannot be in banked memory
             .include "lookups.s"            ; cannot be in banked memory
 
-IRQSave:    .byte   0, 0 , 0                ; IRQ vector before we install ours
-
 VoidL:      .byte   0                       ; keeping track of "void" around the map while drawing
 VoidR:      .byte   0
 VoidU:      .byte   0
@@ -126,7 +124,15 @@ alldone:    lda #$7F                        ;disable all interrupts
             lda #$7F
             sta RE_INTENAB
             sta RE_INTFLAG
-
+IRQSaveA = *+1
+            lda #INLINEVAR                  ; restore the IRQ vector
+            sta IRQVECT
+IRQSaveB = *+1
+            lda #INLINEVAR
+            sta IRQVECT + 1
+IRQSaveC = *+1
+            lda #INLINEVAR
+            sta IRQVECT + 2
             brk                             ; SOS TERMINATE
             .byte   TERMINATE
             .word   *-2
