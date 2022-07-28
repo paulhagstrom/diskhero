@@ -426,14 +426,6 @@ toplineseg: jsr drawseg         ; draw a single 14-pixel segment
             jmp toplineseg
 :           rts
 
-MapTemp:    .byte   0
-TopLine:    .byte   0
-TopLine4N:  .byte   0
-TopLineZ:   .byte   0
-TopNudge:   .byte   0
-MapDiff:    .byte   0
-MapNudge:   .byte   0
-
 ; compute where in screen memory a map line would be.  Enter with map line in A.
 ; this took a lot of scribbling on paper, but here is an algorithm that seems to work.
 ; if Map > HeroY, bottom field, on screen if 3 < Map-HeroY < 24
@@ -444,58 +436,61 @@ MapNudge:   .byte   0
 ; MD = Map - TLZ, M8 = MD & 07 (map difference, distance to top of field, and the mod 8 value)
 ; base = 8 * ( M8 < T8 ) (whether the line has already been nudged into the prior group of 8)
 ; raster = MD - base + 20 (top field) or + 90 (bottom field)
-findraster: sta MapTemp
-            ldx #$90        ; default assumption is video base of lower field
+findraster: ldx #$90        ; raster base - default assumption is video base of lower field
+            sta MapTemp     ; entered with the map line we are locating in A
             sec             ; is it actually on screen?
             sbc HeroY       ; compute map line minus HeroY (to see if it in bounds)
             bcs belowhero   ; branch if result is positive, map line is below hero (lower field)
             bpl froff       ; this wrapped but remained positive (< -7F), very far away
             eor #$FF        ; map line is above HeroY (upper field), so this was negative
             adc #$01        ; make it positive to see if it is within screen bounds
-            ldx #$20        ; we are in upper field so change video base
-            pha             ; stash while we compute TL
+            ldx #$20        ; we are in upper field so change raster base to upper field
+            pha             ; stash while we compute TL (top line)
             lda HeroY
             sec
             sbc #$23
             sta TopLine
             sta TopLine4N   ; preparing to work out T8, mod 8 step still remains
-            pla
+            pla             ; restore distance map line is above hero
             jmp chbound
 belowhero:  bmi froff       ; this did not wrap but is nevertheless negative (> 7F), very far away
-            pha             ; stash while we compute TL
+            pha             ; stash while we compute TL (top line)
             lda HeroY
             clc
             adc #$04
             sta TopLine
             sta TopLine4N   ; preparing to work out T8
             inc TopLine4N   ; T8 is based on TL+1 when in the lower field (only 7 lines in playfield)
-            pla
+            pla             ; restore distance map line is below hero
 chbound:    cmp #$04        ; if the distance to hero is less than 4
             bcc froff       ; it is off screen (in the playfield)
             cmp #$23        ; or more than 23
             bcs froff       ; it is off screen (beyond borders)
-            lda TopLine4N   ; T8 = TL mod 8 (or TL+1 mod 8 in lower field), on-screen nudge progress
+TopLine4N = *+1
+            lda #INLINEVAR  ; T8 = TL mod 8 (or TL+1 mod 8 in lower field), on-screen nudge progress
             and #$07
             sta TopNudge
-            lda TopLine     ; TLZ = TL - T8, the top line when nudge was zero
+TopLine = *+1
+            lda #INLINEVAR  ; TLZ = TL - T8, the top line when nudge was zero
             sec
-            sbc TopNudge
+TopNudge = *+1
+            sbc #INLINEVAR
             sta TopLineZ
-            lda MapTemp     ; MD = TLZ - map, distance between map line and top of its field, when nudge was zero
+MapTemp = *+1
+            lda #INLINEVAR  ; MD = Map - TLZ, distance between map line and top of its field, when nudge was zero
             sec
-            sbc TopLineZ
+TopLineZ = *+1
+            sbc #INLINEVAR
             sta MapDiff
-            and #$07
-            sta MapNudge    ; M8 = nudge value at which point this line moves to prior 8-line group
+            and #$07        ; M8 = nudge value at which point this line moves to prior 8-line group
             cmp TopNudge
+            txa
             bcs :+          ; M8 >= T8, keep base where it is, nudge has not reached point where this line moves
-            txa             ; M8 < T8, so back up the base by 8 lines, it is drawn in prior group
-            sec
+            sec             ; M8 < T8, so back up the base by 8 lines, it is drawn in prior group
             sbc #$08
-            tax
-:           txa             ; raster = base line (from X) + MD, which factors out smooth scroll nudge
-            clc
-            adc MapDiff
+:           clc             ; raster = base line (from X) + MD, which factors out smooth scroll nudge
+MapDiff = *+1
+            adc #INLINEVAR
             ; A should now hold the line in video memory corresponding to the map
             rts
 froff:      lda #$00        ; return zero (which is clearly not a valid line)
@@ -511,7 +506,7 @@ updsingle:  pha                 ; stash map line while we check if it is onscree
             pla                 ; get the map line back and set up the pointer
             jsr setmapptr
             lda MapEnds, y      ; get the offset of the right edge of map bytes
-            sta ZCurrMapX       ; look it up rather than multiplying by seven
+            sta ZCurrMapX
             lda MapPixG, y      ; get the offset of the left edge of pixel groups
             pha
             jsr prepdraw        ; relies on raster line being in X
