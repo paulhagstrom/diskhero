@@ -92,24 +92,23 @@ MusicSeq:   .byte   $20, $50, $50, $20, $00
 
 ; main game event loop
 
-ExitFlag    =   eventloop + 1               ; keyboard int makes this nonzero to trigger exit
+ExitFlag = *+1                              ; keyboard int makes this nonzero to trigger exit
 eventloop:  lda #INLINEVAR                  ; if ExitFlag becomes nonzero (within keyboard processing)
             bne alldone                     ; then exit
-KeyCaught   =   elchkkey + 1                ; keyboard int pushes a caught key in here
-elchkkey:   lda #INLINEVAR                  ; check if we have recently caught a key (keyboard interrupt)
+KeyCaught = *+1                             ; keyboard int pushes a caught key in here
+            lda #INLINEVAR                  ; check if we have recently caught a key (keyboard interrupt)
             beq :+
             jsr handlekey                   ; if there was a key, handle it
-:            
-VBLTick     =   elvbltick + 1               ; ticked down for each VBL, can use to delay things for several refreshes
-elvbltick:  lda #INLINEVAR                  ; wait for game clock to tick
+VBLTick = *+1                               ; ticked down for each VBL, can use to delay things for several refreshes
+:           lda #INLINEVAR                  ; wait for game clock to tick
             bpl posttick                    ; based on number of VBLs set in MoveDelay
             jsr domove                      ; game clock has ticked, move everyone around
             jsr updsplash                   ; update the splash effect at the top
             jsr drawstatus                  ; redraw score (TODO: do only when there is an update)
             lda BackNext                    ; is there a background sample already queued up?
             bne elmusicok                   ; yep we're all good
-NowPlaying  =   elnowplay + 1               ; current position on the MusicSeq list
-elnowplay:  ldx #INLINEVAR                  ; find the next segment
+NowPlaying = *+1                            ; current position on the MusicSeq list
+            ldx #INLINEVAR                  ; find the next segment
             inx
             lda MusicSeq, x
             bne elsetnext                   ; got the next segment
@@ -317,6 +316,8 @@ gameinit:   sei                 ; no interrupts while we are setting up
             jsr mapinit         ; set up map data (in bank 2) (includes dropping the hero in)
             jsr setupenv        ; arm interrupts
             lda #$00
+            sta ExitFlag
+            sta KeyCaught
             sta GameLevel
             sta GameScore       ; score is stored in decimal format. 000000 to 999999.
             sta GameScore + 1

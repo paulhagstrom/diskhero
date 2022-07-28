@@ -92,8 +92,8 @@ intvbl:     lda #$06            ;2 reset the HBL counter for top region when it 
             sta RE_INTFLAG      ;4
             lda #$16            ;2 [30]
             sta ScrRegion       ;4 reset next region number to $16 (counts down from $17)
-SRegFstNxt  =   vblfstnext + 1  ; the first "next" region, set up by setupenv.
-vblfstnext: lda #INLINEVAR      ;2 the first "next" region
+SRegFstNxt = *+1                ; the first "next" region, set up by setupenv.
+            lda #INLINEVAR      ;2 the first "next" region
             sta NextMode        ;4 [40]
             dec VBLTick         ;6 bump VBL countdown - in event loop code
             dec VBLTickP        ;6 bump VBL countdown
@@ -163,8 +163,8 @@ inthandle:  pha                 ;3 stash A because we need it
             lda #$07            ;2 reset the timer2 flag for 8 HBLs from now
             sta RE_T2CL         ;4 [21] prepares to reset, but won't fully reset until we do H below
             ; do smooth scroll first while we wait for beam to travel horizontally
-NudgeVal    =   nudgebran + 1   ; smooth scroll parameter x $0C - directly modifies the interrupt handler code
-nudgebran:  bne nudgebran       ;3 [24] then 15 cycles, 12 bytes per block -- INLINEVAR
+NudgeVal = *+1                  ; smooth scroll parameter x $0C - directly modifies the interrupt handler code
+            bne nudge0          ;3 [24] then 15 cycles, 12 bytes per block -- INLINEVAR
 nudge0:     bit SS_XXN
             bit SS_XNX
             bit SS_NXX
@@ -202,8 +202,8 @@ postnudge:  ;bit R_TONEHBL       ; 4 burn cycles until HBL arrives (expecting 15
             ;bvc postnudge       ; 2/3
             lda #0              ;2 leverage the zero here to trigger branch always for mode
             sta RE_T2CH         ;4 go! [45 to here, next line is drawing, next HBL not here yet]
-NextMode    =   modebran + 1    ; screen mode to switch into next - directly modifies the interrupt handler code
-modebran:   beq modebran        ;3 [48] into blank - INLINEVAR
+NextMode = *+1                  ; screen mode to switch into next - directly modifies the interrupt handler code
+            beq ismode0         ;3 [48] into blank - INLINEVAR
 ismode0:    sta D_TEXT          ;mode 0 - +00 - 40 char A3 text [19 cycles]
             sta D_NOMIX
             sta D_LORES
@@ -224,13 +224,13 @@ ismode3:    sta D_TEXT          ;mode 3 - +2D - A3 hires [46* cycles]
             sta D_HIRES         ;4
             sta D_SCROLLON      ;4 [each block but last: 67, last (mode 3): 64]
 isddone:    sty IntYStash       ;4 [71] stash X
-PlaySound   =   checkplay + 1   ; play sound effects switch (user controlled)
-checkplay:  lda #INLINEVAR      ;2 [73] check sfx switch (user controlled)
+PlaySound = *+1                 ; play sound effects switch (user controlled)
+            lda #INLINEVAR      ;2 [73] check sfx switch (user controlled)
             beq nextregion      ;2/3 if no sound should be played, skip over [after 76]
-SampleOut   =   emitaudio + 1
-emitaudio:  lda #INLINEVAR      ;2 [77]  sample we prepared earlier
+SampleOut = *+1
+            lda #INLINEVAR      ;2 [77]  sample we prepared earlier
             sta R_TONEHBL       ;4 [81] try to get it out as evenly as possible
-ScrRegion   =   nextregion + 1  ; upcoming region, counts down from $17 - modifies the interrupt handler code
+ScrRegion = *+1                 ; upcoming region, counts down from $17 - modifies the interrupt handler code
 nextregion: ldy #INLINEVAR      ;2 [83] prepare for next mode switch
             dey                 ;2 [85]
             bpl snextmode       ;2/3 we MUST reset this if somehow we roll off the bottom
@@ -255,8 +255,8 @@ intaudio:   lda R_ZP            ;4 stash ZP because we will use it
             lda #$1A            ;2 move ZP to $1A00 (so extended addressing works and for access to pointers)
             sta R_ZP            ;4
             ldy #$00            ;2 [15]
-FXPlaying   =   runsfx + 1      ; nonzero if a sound effect is playing
-runsfx:     lda #INLINEVAR      ;2 [17] see if a sound effect is playing
+FXPlaying = *+1                 ; nonzero if a sound effect is playing
+            lda #INLINEVAR      ;2 [17] see if a sound effect is playing
             beq doback          ;2/3 if no sound effect is playing, down to background [after 20]
             lda (ZFXPtr), y     ;5* [24*] load next sfx sample
             bpl playsound       ;2/3 if we have our sample, queue it up [after 27*]
@@ -264,8 +264,8 @@ runsfx:     lda #INLINEVAR      ;2 [17] see if a sound effect is playing
             ; could reach here after 20 (no sfx) or 30* (sfx finished)
 doback:     lda (ZSoundPtr), y  ;5* load next background sample
             bpl playsound       ;2/3 if we have our sample, queue it up [after 8*]
-BackNext    =   backdone + 1    ; page number of first sample of next background segment after this one
-backdone:   lda #INLINEVAR      ;2 [9*] move to next background sound segment
+BackNext = *+1                  ; page number of first sample of next background segment after this one
+            lda #INLINEVAR      ;2 [9*] move to next background sound segment
             sta ZSoundPtr + 1   ;3 put sample start address into the pointer
             sty ZSoundPtr       ;3 [15*]
             sty BackNext        ;3 [18*] signal that we can queue up the next one
