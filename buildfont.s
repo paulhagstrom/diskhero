@@ -1,8 +1,13 @@
 ; DISKHERO
 ; Upload special font characters for the diskhero game
 ;
-; called once at the beginning to move the data, not again
-; so it can be in lower memory that gets switched out
+; This is called early and uploads the font into the character set RAM,
+; and moves the pixel and color data into the $1A00 ZP for access outside.
+; It does not switch the banks, and does not present any externally-accessible
+; variables.  So it should be ok in bank switched memory.
+
+; HOWEVER IT IS NOT.  Something goes wrong if I move this too far down,
+; but this should be basically safe, so fix whatever is going wrong.
 
 BlockCount: .byte $0    ; countdown of 8-character blocks to send
 CurrChar:   .byte $0    ; index to table with current ASCII value

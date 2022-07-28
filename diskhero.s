@@ -48,7 +48,7 @@ CodeStart:  jmp init
             .include "play-text40.s"        ; should be safe in banked memory
             .include "reg-superhires.s"     ; should be safe in banked memory
             .include "reg-medres.s"         ; should be safe in banked memory
-            .include "gamefont.s"           ; should be safe in banked memory
+            .include "buildfont.s"          ; should be safe in banked memory
             .include "map-hires3-data.s"    ; cannot be in banked memory
             .include "map-hires3.s"         ; cannot be in banked memory
             .include "interrupts.s"         ; cannot be in banked memory
@@ -106,7 +106,7 @@ elvbltick:  lda #$00                        ; wait for game clock to tick
             lda BackNext                    ; is there a background sample already queued up?
             bne elmusicok                   ; yep we're all good
 NowPlaying  =   elnowplay + 1               ; current position on the MusicSeq list
-elnowplay:  ldx NowPlaying                  ; find the next segment
+elnowplay:  ldx #$00                        ; find the next segment
             inx
             lda MusicSeq, x
             bne elsetnext                   ; got the next segment
