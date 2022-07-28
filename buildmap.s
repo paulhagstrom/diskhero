@@ -81,7 +81,7 @@ MFColor:    .byte 0
 MFBoxIndex: .byte 0
 MFPlaced:   .byte 0
     
-buildmap:   
+mapinit:   
             ; Start by initializing memory pointers for location tracking.
             ; All of this is in bank 2.
             ; DiskX = 300, DiskY = 340, DiskType = 380

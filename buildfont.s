@@ -6,9 +6,6 @@
 ; It does not switch the banks, and does not present any externally-accessible
 ; variables.  So it should be ok in bank switched memory.
 
-; HOWEVER IT IS NOT.  Something goes wrong if I move this too far down,
-; but this should be basically safe, so fix whatever is going wrong.
-
 BlockCount: .byte $0    ; countdown of 8-character blocks to send
 CurrChar:   .byte $0    ; index to table with current ASCII value
 FDataPtr:   .byte $0    ; offset into font data of the last line of character
@@ -24,20 +21,20 @@ HiholesH:   .byte   $08, $08, $09, $09, $0A, $0A, $0B, $0B
 ; and first high hole needs: c0 c1 c2 c3 c0 c1 c2 c3
 ; then fifth holes move on to c4-c7.
 ; 8 characters are transmitted at a time, 8 bytes/lines per character, so $40 bytes per block.
-; assume we are in $1A00 ZP (allowing for extended addressing, though we 8F-disable it)
+; assume we are in $1A00 ZP
 
-herofont:   ldx #$27            ; pull the FontDots and FontCol info into ZP for fast/durable access
+fontinit:   ldx #$27            ; pull the FontDots and FontCol info into ZP for fast/durable access
 :           lda FontDots, x
             sta ZFontDots, x
             lda FontCol, x
             sta ZFontCol, x
             dex
             bpl :-
-            lda #$8F                ; stay in s-bank
+            lda #$00                ; turn off extended addressing
             sta ZDataHole + XByte
             sta ZAsciiHole + XByte
             sta ZFontPtr + XByte
-            lda #$04                ; sending 5 blocks of characters
+            lda #$04                ; sending 5 blocks of characters (8 per block, 40 [$28] total)
             sta BlockCount
             lda #<FontData
             sta ZFontPtr

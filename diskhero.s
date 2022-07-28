@@ -26,12 +26,15 @@
 ; Notes to self about how much space I am allowed by starting below A000.
 ; But after I compile I can check the size of the resulting binary and see if it still
 ; fits, or whether I need to bump it down yet another page.
+; Does need to stay about as high as it can be to ensure that things that must stay
+; in bank-safe memory are up high enough.
 ; start leaves  start   leaves  start   leaves
 ; 9F00  6400    9E00    6656    9D00    6912
 ; 9C00  7167    9B00    7423    9A00    7679
 ; 9900  7935    9800    8191    9700    8447
+; 9600  8703
 
-            .org     $9600 - 14
+            .org     $9700 - 14
             
 ; SOS interpreter header
             .byte    "SOS NTRP"
@@ -39,16 +42,16 @@
             .word    CodeStart
             .word    (CodeEnd-CodeStart)
 
-CodeStart:  jmp init
+CodeStart:  jmp gameinit
 
             .include "buildmap.s"           ; should be safe in banked memory
             .include "buildsound.s"         ; should be safe in banked memory
+            .include "buildfont.s"          ; should be safe in banked memory
             .include "status-text40.s"      ; should be safe in banked memory
             .include "gamemove.s"           ; probably ok in banked memory
             .include "play-text40.s"        ; should be safe in banked memory
             .include "reg-superhires.s"     ; should be safe in banked memory
             .include "reg-medres.s"         ; should be safe in banked memory
-            .include "buildfont.s"          ; should be safe in banked memory
             .include "map-hires3-data.s"    ; cannot be in banked memory
             .include "map-hires3.s"         ; cannot be in banked memory
             .include "interrupts.s"         ; cannot be in banked memory
@@ -292,19 +295,9 @@ seedRandom: lda #$00
             sta R_ZP
             rts
 
-; initialize graphics regions and draw static background
-initscreen: bit D_PAGEONE       ; be on page 1.  Nothing presently uses page 2 for anything.
-            jsr initstatus      ; text lines 02-03: score/status
-            jsr initplay        ; text lines 08-11: playfield (draw frame)
-            jsr drawplay        ; draw actual playfield
-            jsr initshgr        ; mode 6 super hires line 00-0F (doesn't swap in bank 0)
-            jsr initmedres      ; med res lines B0-BF (doesn't swap in bank 0)
-            jsr initmap         ; mode 7 a3 hires map regions - paint whole visible map
-            rts
-
 ; initialize initial environment and game variables
 
-init:       sei                 ; no interrupts while we are setting up
+gameinit:   sei                 ; no interrupts while we are setting up
             ;     0------- 2MHz clock           (1=1MHz)
             ;     -1------ C000.CFFF I/O        (0=RAM)
             ;     --1----- video enabled        (0=disabled)
@@ -320,27 +313,33 @@ init:       sei                 ; no interrupts while we are setting up
             lda #$C3            ; Start down near the bottom (note: number mod 8 should be 3)
             sta HeroY           ; this is the Y coordinate of the hero on the map (0-FF)
             jsr soundinit       ; generate sounds and move them (in bank 1)
-            jsr herofont        ; load game font into character RAM and fill ZFontDats, ZFontCol
-            jsr buildmap        ; set up map data (in bank 2) (includes dropping the hero in)
+            jsr fontinit        ; load game font into character RAM and fill ZFontDats, ZFontCol
+            jsr mapinit         ; set up map data (in bank 2) (includes dropping the hero in)
             jsr setupenv        ; arm interrupts
-            ldx TwelveBran      ; start at smooth scroll offset 0 (first one in TwelveBran)
-            sta NudgeVal        ; the smooth scroll offset is affectionately called the "nudge"
+            lda #$00
             sta GameLevel
             sta GameScore       ; score is stored in decimal format. 000000 to 999999.
             sta GameScore + 1
             sta GameScore + 2
             sta VelocityX       ; hero X velocity, can be negative, zero, or positive
             sta VelocityY       ; hero Y velocity, can be negative, zero, or positive
-            lda #MoveDelay      ; game clock - setting number of VBLs per movement advance
-            sta VBLTick
-            bit IO_KEYCLEAR     ; clear keyboard so we notice any new keypress
-            lda MusicSeq        ; start with first sound segment in the sequence
-            sta ZSoundPtr + 1   ; background music segment we are currently playing, high byte
-            lda #$00            ; 
             sta BackNext        ; let event loop queue the next segment
             sta NowPlaying      ; currently at first step of MusicSeq
             sta ZSoundPtr       ; background music segment we are currently playing, low byte
-            jsr initscreen      ; draw the initial screen
+            lda #MoveDelay      ; game clock - setting number of VBLs per movement advance
+            sta VBLTick
+            lda TwelveBran      ; start at smooth scroll offset 0 (first one in TwelveBran)
+            sta NudgeVal        ; the smooth scroll offset is affectionately called the "nudge"
+            lda MusicSeq        ; start with first sound segment in the sequence
+            sta ZSoundPtr + 1   ; background music segment we are currently playing, high byte
+            bit IO_KEYCLEAR     ; clear keyboard so we notice any new keypress
+            bit D_PAGEONE       ; be on page 1.  Nothing presently uses page 2 for anything.
+            jsr initstatus      ; text lines 02-03: score/status
+            jsr initplay        ; text lines 08-11: playfield (draw frame)
+            jsr drawplay        ; draw actual playfield
+            jsr initshgr        ; mode 6 super hires line 00-0F (doesn't swap in bank 0)
+            jsr initmedres      ; med res lines B0-BF (doesn't swap in bank 0)
+            jsr paintmap        ; mode 7 a3 hires map regions - paint whole visible map
             cli                 ; all set up now, commence interrupting
             jmp eventloop       ; wait around until it is time to quit
 

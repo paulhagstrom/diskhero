@@ -11,7 +11,7 @@
 
 BankSave:   .byte   0
 
-initmap:    lda R_BANK          ; save bank
+paintmap:   lda R_BANK          ; save bank
             sta BankSave        ; (but assume we are already in 1A00 ZP)
             lda #$00
             sta R_BANK          ; move to bank zero for the graphics
