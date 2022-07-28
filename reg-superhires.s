@@ -2,16 +2,12 @@
 ; Apple III super-hires region
 ;
 ; occupies  lines 00-0F (10)
-;
-; fill with a pattern
+; displays an animation above the inventory numbers when they change
 
 SplashG:    .byte   $00, $00, $00, $00      ; frame for "got" columns
 SplashL:    .byte   $00, $00, $00, $00      ; frame for "left" columns
 SplashXG:   .byte   $00, $0C, $15, $21      ; X-coordinates for "got" columns
 SplashXL:   .byte   $05, $11, $1A, $26      ; X-coordinates for "left" columns
-PatIndex:   .byte   0
-PatRaster:  .byte   0
-SplashCol:  .byte   0
 
 ; splash frame: set SplashG, x or SplashL, x to $50 to start an animation
 ; will draw a frame, tick down by $10 until complete
@@ -25,7 +21,8 @@ updsplash:  lda #$8F
             sta PatIndex
             lda #$0F                ; draw splashes on lines 08-0F
             sta PatRaster
-splashline: ldx PatRaster 
+PatRaster   =   splashline + 1
+splashline: ldx #$00
             lda YHiresL, x
             sta ZPtrA
             sta ZPtrB
@@ -36,7 +33,8 @@ splashline: ldx PatRaster
             sta ZPtrB + 1
             ldx #$07
             stx SplashCol
-spfcheck:   ldx SplashCol
+SplashCol   =   spfcheck + 1
+spfcheck:   ldx #$00
             lda SplashG, x
             bmi spfcont
             ldy SplashXG, x
@@ -49,7 +47,8 @@ spfcheck:   ldx SplashCol
             sta (ZPtrA), y
             jmp spfcont
 spfreal:    clc
-            adc PatIndex
+PatIndex    =   spfrealadd + 1
+spfrealadd: adc #$00
             tax
             lda HR_Splash, x
             sta (ZPtrB), y
@@ -73,7 +72,9 @@ spfnext:    dex
             bpl spfupd
             rts
 
-initshgr:   ldx #$0F                ; clear SHGR area
+; clear the super hires lines 00-0F
+
+initshgr:   ldx #$0F                ; clear from lines 0F to line 00
 shgrclear:  lda YHiresL, x
             sta ZPtrA
             sta ZPtrB
