@@ -33,6 +33,22 @@ posthero:   lda ZVelX
             sta VelocityX       ; record new X velocity (might have been stopped by a wall)
             lda ZVelY
             sta VelocityY       ; record new Y velocity (might have been stopped by a wall)
+            ; find closest of each value of disk for display
+            ; (and, honestly, also to help debug my searching algorithm, but may help game play too)
+            ldx #$03
+heroseek:   txa
+            ora #$80
+            jsr scandisks       ; look for target disk just of the value currently benig checked
+            bcc heroseeky       ; success, record it
+            lda #$80
+            sta TargDX, x       ; record failure as 80 in the X direction.
+            jmp heroseekn
+heroseeky:  lda ZTargDX
+            sta TargDX, x
+            lda ZTargDY
+            sta TargDY, x
+heroseekn:  dex
+            bpl heroseek
             lda #$00            ; hero finished, now move hoarders
             sta ZIsHero         ; not hero - determines sound and score effects of hitting a disk
             ldy NumHoards
@@ -58,63 +74,17 @@ ticksdone:  lda (ZHoardSp), y   ; this one can move now, reset ticks for next mo
             sta ZOldXX
             lda (ZHoardYY), y
             sta ZOldYY
-            ; scan disks for the most valuable closest one
-            lda #$FF
-            sta ZTargD          ; smallest distance found so far is 255.
-            lda #$00            ; reset target X, Y, and value
-            sta ZTargV
-            ldy NumDisks
-dcheckdisk: lda (ZDiskX), y
-            bmi dtoofar         ; if the disk is off the board, skip it
-            sec
-            sbc ZOldX           ; how X-far is this disk? Negative if disk is to the left
-            sta ZTargDXTemp
-            bcs dxdpos          ; branch away if already positive, else take absolute value
-            eor #$FF
-            adc #$01
-dxdpos:     sta ZTargDTemp      ; save X distance for combining later
-            lda (ZDiskY), y
-            sec
-            sbc ZOldY           ; how Y-far is this disk? Negative if disk is above
-            bcc dydflip
-            bmi dtoofar         ; did not cross zero but is now negative, too far to consider
-            sta ZTargDYTemp
-            jmp dcombdist
-dydflip:    bpl dtoofar         ; crossed zero but remained positive, too far to consider
-            sta ZTargDYTemp
-            eor #$FF            ; take absolute value for distance
-            adc #$01
-dcombdist:  clc
-            adc ZTargDTemp      ; combine Y diatnce with X distance (path distance)
-            sta ZTargDTemp      ; stash distance while we check value
-            lda (ZDiskType), y  ; check value (higher type = higher value)
-            cmp ZTargV          ; is this one more valuable than what we have seen so far?
-            bcc dtoofar         ; if it is strictly lower value, hoarder no longer cares
-            bne dhigherval      ; if is strictly higher value, skip distance check
-            pha                 ; stash value while we check distance
-            lda ZTargDTemp
-            cmp ZTargD          ; is this closer than the last one we've seen at this value?
-            pla                 ; recall value, this disk is the new target if we don't branch away
-            bcs dtoofar         ; branch if not strictly closer
-dhigherval: sta ZTargV          ; it's higher value, or same value but closer; the new target
-            lda (ZDiskX), y
-            sta ZTargX
-            lda (ZDiskY), y
-            sta ZTargY
-            lda ZTargDTemp
-            sta ZTargD
-            lda ZTargDXTemp     ; direction toward the disk
-            lda ZTargDX
-            lda ZTargDYTemp     ; direction toward the disk
-            lda ZTargDY
-dtoofar:    dey
-            bpl dcheckdisk
-            ; at this point the target should contain the closest highest-value disk
-            ldx Seed            ; random chance that a hoarder will stop spontaneously
+            lda #$00            ; hoarders seek high-value
+            jsr scandisks       ; get the closest highest value disk to ZOldX/Y in ZTargX/Y and Z
+            bcs hranddir        ; branch to go a random direction if we did not find one
+            ; there is a target
+            ; hoarder will preferentially head toward it if it is exactly on target's X or Y
+            ; but retains a chance of moving a different way so it does not get stuck forever by a wall
+            ldx Seed            ; random chance that a hoarder will go a random direction
             inc Seed
             lda Random, x
-            and #$0F            ; one in 16 chance hoarder stops and changes direction
-            beq hnotmoving
+            and #$0F            ; one in 16 chance that the hoader changes to a random direction
+            beq hranddir
             ; if the hoarder is in the same row or column as target, head toward it
 hoardseek:  lda ZOldX
             cmp ZTargX
@@ -122,24 +92,14 @@ hoardseek:  lda ZOldX
             lda ZOldY
             cmp ZTargY
             beq hgohoriz
+            ; if it is not a straight line to the target, then prefer to keep moving the same
+            ; direction until stopped, and re-evaluate then
             lda ZVelY
             beq hnovely         ; is hoarder stopped? Y Velocity has not answered this.
             jmp hmoving         ; if there was Y velocity, hoarder is moving
 hnovely:    lda ZVelX           ; Y velocity was 0, is X velocity 0 also?
             bne hmoving         ; if there is X velocity, hoarder is moving
-            ; swap head and hands if hoarder was stopped, so it does not corner itself
-hnotmoving: lda ZOldXX          ; recall original second segment (head) X-coordinate
-            pha                 ; stash it as we swap
-            lda ZOldX           ; get the old hands x-coordinate
-            sta ZOldXX          ; and put it in old head x-coordinate
-            pla                 ; recall old head X-coordinate
-            sta ZOldX           ; and put it in old hands x-coordinate
-            lda ZOldYY          ; then do the same for the Y coordinates
-            pha
-            lda ZOldY
-            sta ZOldYY
-            pla
-            sta ZOldY
+            ; when stopped, head toward the target on one of the available dimensions.
             lda ZTargD          ; check to see if we found a target disk to seek
             cmp #$FF
             beq hranddir        ; there is no target, so random direction it is
@@ -162,7 +122,7 @@ hgohoriz:   lda ZTargDX         ; send it horizontally toward the target
             lda #$00
             sta ZVelY
             jmp hmoving
-hranddir:   inx
+hranddir:   ldx Seed
             lda Random, x       ; send it in a random direction.  Which axis?
             bpl randhoriz       ; horizontal/vertical choice yields: horizontal
             inx
@@ -171,13 +131,27 @@ hranddir:   inx
             sta ZVelY           ; will be either positive or negative (or zero)
             lda #$00
             sta ZVelX           ; do not move in the horizontal
-            jmp hmoving
+            jmp randmoving
 randhoriz:  inx
             lda Random, x       ; send it horizontally in a random direction
             stx Seed
             sta ZVelX           ; will be either positive or negative (or zero)
             lda #$00
             sta ZVelY           ; do not move in the vertical
+            ; if we are changing to a random direction, swap head and hands
+            ; so the hoarder does not corner itself
+randmoving: lda ZOldXX          ; recall original second segment (head) X-coordinate
+            pha                 ; stash it as we swap
+            lda ZOldX           ; get the old hands x-coordinate
+            sta ZOldXX          ; and put it in old head x-coordinate
+            pla                 ; recall old head X-coordinate
+            sta ZOldX           ; and put it in old hands x-coordinate
+            lda ZOldYY          ; then do the same for the Y coordinates
+            pha
+            lda ZOldY
+            sta ZOldYY
+            pla
+            sta ZOldY
 hmoving:    jsr trymove         ; attempt to follow the trajectory
             bcc hmoved          ; the move succeded
             ldy ZCurrHoard      ; the move failed, zero out the velocity
@@ -263,6 +237,66 @@ gmupdscr:   lda ZOldYY      ; where the head was (segment 2)
             ldy ZNewX
             jmp updsingle   ; rts from there
 
+; scan disks for the most valuable closest one to ZOldX, ZOldY
+; enter with A being $8x to search only for value x, else anything positive to find most hoarder-valuable
+scandisks:  sta ZTargV
+            lda #$FF
+            sta ZTargD          ; smallest distance found so far is 255.
+            ldy NumDisks
+dcheckdisk: lda (ZDiskX), y
+            bmi dtoofar         ; if the disk is off the board, skip it
+            sec
+            sbc ZOldX           ; how X-far is this disk? Negative if disk is to the left
+            sta ZTargDXTemp
+            bcs dxdpos          ; branch away if already positive, else take absolute value
+            eor #$FF
+            adc #$01
+dxdpos:     sta ZTargDTemp      ; save X distance for combining later
+            lda (ZDiskY), y
+            sec
+            sbc ZOldY           ; how Y-far is this disk? Negative if disk is above
+            bcc dydflip
+            bmi dtoofar         ; did not cross zero but is now negative, too far to consider
+            sta ZTargDYTemp
+            jmp dcombdist
+dydflip:    bpl dtoofar         ; crossed zero but remained positive, too far to consider
+            sta ZTargDYTemp
+            eor #$FF            ; take absolute value for distance
+            adc #$01
+dcombdist:  clc
+            adc ZTargDTemp      ; combine Y distance with X distance (path distance)
+            sta ZTargDTemp      ; stash distance while we check value
+            lda ZTargV
+            bpl dfindval        ; branch if we are looking for most valuable
+            and #$7F            ; otherwise we are looking for exactly this valuable
+            cmp (ZDiskType), y  ; check value (higher type = higher value)
+            bne dtoofar         ; wrong value, we no longer care
+            jmp dcheckdist      ; right value, compare distance
+dfindval:   cmp (ZDiskType), y  ; check value (higher type = higher value)
+            bcc dtoofar         ; if it is strictly lower value, we no longer care
+            beq dcheckdist      ; if is the same as best value we've seen, check distance
+            sta ZTargV          ; this is the best one yet, skip distance check
+            jmp dnewtarget
+dcheckdist: lda ZTargDTemp
+            cmp ZTargD          ; is this closer than the last one we've seen at this value?
+            bcs dtoofar         ; branch away if not strictly closer
+dnewtarget: lda (ZDiskX), y     ; this is the new target
+            sta ZTargX
+            lda (ZDiskY), y
+            sta ZTargY
+            lda ZTargDTemp
+            sta ZTargD
+            lda ZTargDXTemp     ; direction toward the disk
+            lda ZTargDX
+            lda ZTargDYTemp     ; direction toward the disk
+            lda ZTargDY
+dtoofar:    dey
+            bpl dcheckdisk
+            ; at this point the target should contain the closest highest-value disk
+            lda ZTargD
+            cmp #$FF            ; sets carry if we didn't actually find one
+            rts
+            
 ; do moving (called maximally once per MoveDelay VBLs)
 ; (since otherwise it can be too fast, though speeding up might be a way to make the game harder)
 

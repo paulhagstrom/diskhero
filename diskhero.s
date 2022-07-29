@@ -34,7 +34,7 @@
 ; 9900  7935    9800    8191    9700    8447
 ; 9600  8703
 
-            .org     $9800 - 14
+            .org     $9700 - 14
             
 ; SOS interpreter header
             .byte    "SOS NTRP"
@@ -66,6 +66,8 @@ GameLevel:  .byte   0
 GameScore:  .byte   0, 0, 0
 DisksGot:   .byte   0, 0, 0, 0
 DisksLeft:  .byte   0, 0, 0, 0
+TargDX:     .byte   0, 0, 0, 0              ; direction to closest target disk
+TargDY:     .byte   0, 0, 0, 0              ; direction to closest target disk
 
 NumHoards:  .byte   0
 NumDisks:   .byte   0
