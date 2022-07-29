@@ -46,7 +46,7 @@ movehoard:  ldy ZCurrHoard
             jmp nexthoard
 ticksdone:  lda (ZHoardSp), y   ; this one can move now, reset ticks for next move after this one
             sta (ZHoardTick), y
-            lda (ZHoardY), y    ; load up the currest state (segment coords, velocity)
+            lda (ZHoardY), y    ; load up the current hoarder's state (segment coords, velocity)
             sta ZOldY
             lda (ZHoardX), y
             sta ZOldX
@@ -58,15 +58,12 @@ ticksdone:  lda (ZHoardSp), y   ; this one can move now, reset ticks for next mo
             sta ZOldXX
             lda (ZHoardYY), y
             sta ZOldYY
-            ;lda (ZHoardXX), y   ; while we are here, stash second segment (head) X-coordinate
-            ;sta ZXXTemp         ; in ZXXTemp for easy retrieval later
             ; scan disks for the most valuable closest one
             lda #$FF
             sta ZTargD          ; smallest distance found so far is 255.
             lda #$00            ; reset target X, Y, and value
             sta ZTargV
             ldy NumDisks
-            sty ZCurrDisk
 dcheckdisk: lda (ZDiskX), y
             bmi dtoofar         ; if the disk is off the board, skip it
             sec
@@ -86,10 +83,9 @@ dxdpos:     sta ZTargDTemp      ; save X distance for combining later
 dydflip:    bpl dtoofar         ; crossed zero but remained positive, too far to consider
             sta ZTargDYTemp
             eor #$FF            ; take absolute value for distance
-            clc
             adc #$01
 dcombdist:  clc
-            adc ZTargDTemp      ; combine Y diatnce with X distance (just add)
+            adc ZTargDTemp      ; combine Y diatnce with X distance (path distance)
             sta ZTargDTemp      ; stash distance while we check value
             lda (ZDiskType), y  ; check value (higher type = higher value)
             cmp ZTargV          ; is this one more valuable than what we have seen so far?
@@ -148,12 +144,10 @@ hnotmoving: lda ZOldXX          ; recall original second segment (head) X-coordi
             cmp #$FF
             beq hranddir        ; there is no target, so random direction it is
             ldx Seed            ; hoarder was not moving. so send it in a new direction
+            inc Seed
             lda Random, x
-            inx
-            stx Seed
             and #$07            ; one out of 8 chance it goes in a random direction
-            bne hoardtarg       ; otherwise seeks high value disk
-            jmp hranddir        ; hoader will go forth randomly
+            beq hranddir        ; otherwise seeks high value disk
 hoardtarg:  ldx Seed            ; randomly pick which axis to head for the disk in
             inc Seed
             lda Random, x
@@ -168,7 +162,8 @@ hgohoriz:   lda ZTargDX         ; send it horizontally toward the target
             lda #$00
             sta ZVelY
             jmp hmoving
-hranddir:   lda Random, x       ; send it in a random direction.  Which axis?
+hranddir:   inx
+            lda Random, x       ; send it in a random direction.  Which axis?
             bpl randhoriz       ; horizontal/vertical choice yields: horizontal
             inx
             lda Random, x       ; send it vertically in a random direction
