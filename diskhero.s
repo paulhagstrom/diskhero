@@ -34,7 +34,7 @@
 ; 9900  7935    9800    8191    9700    8447
 ; 9600  8703
 
-            .org     $9700 - 14
+            .org     $9800 - 14
             
 ; SOS interpreter header
             .byte    "SOS NTRP"

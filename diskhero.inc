@@ -37,6 +37,27 @@ ZFrame      = $4F   ; temporary storage for current animation frame
 ZOldPtr     = $50   ; original position of element moving
 ZNewPtr     = $52   ; new position of element moving
 ZTailPtr    = $54   ; original position of second segment of element moving (hoarder)
+; variables used during movement processing
+ZCurrHoard  = $56   ; current hoarder being processed
+ZOldXX      = $57   ; original premovement X of trailing segement
+ZOldYY      = $58   ; original premovement Y of trailing segment
+ZOldX       = $59   ; original premovement X
+ZOldY       = $5A   ; original premovement Y
+ZNewX       = $5B   ; postmomvement X
+ZNewY       = $5C   ; postmomvement X
+ZVelX       = $5D   ; velocity X
+ZVelY       = $5E   ; velocity Y
+ZTargX      = $5F   ; target X
+ZTargY      = $60   ; target Y
+ZTargD      = $61   ; target distance
+ZTargV      = $62   ; target value
+ZTargDX     = $63   ; target vector X
+ZTargDY     = $64   ; target vector Y
+ZTargDTemp  = $65   ; target distance temporary variable
+ZTargDXTemp = $66   ; target vector X temporary variable
+ZTargDYTemp = $67   ; target vector Y temporary variable
+ZIsHero     = $68   ; nonzero if the hero is being processed, 0 otherwise
+ZCurrDisk   = $69   ; current disk while scanning for targets
 
 ZTopMapOff  = $6F   ; hires map parm: map offset back from HeroY for new line
 

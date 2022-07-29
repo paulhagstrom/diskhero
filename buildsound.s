@@ -137,12 +137,17 @@ seqb:       lda MusSeqA, x
             jmp seqloop
 seqdone:    rts
 
+SFXHeroGot  = $1F       ; 1F - FXHeroGot - hero got a disk
+SFXHrdrGot  = $1E       ; 1E - FXHrdrGot - hoarder got a disk
+SFXDoh      = $1D       ; 1D - FXDoh - error sound (drop something you do not have)
+SFXDrop     = $1C       ; 1C - FXDrop - drop disk
+
 soundinit:  lda #$81    ; bank 1
             sta ZPtrA + XByte
             lda #$00
             sta ZPtrA
-            ; 1F  - FXHeroGot - hero got a disk
-            lda #$1F
+            ; 1F - FXHeroGot - hero got a disk
+            lda #SFXHeroGot
             sta ZPtrA + 1
             lda #<FXHeroGot
             sta fxcopyloop + 1
@@ -150,7 +155,7 @@ soundinit:  lda #$81    ; bank 1
             sta fxcopyloop + 2
             jsr fxcopy
             ; 1E - FXHrdrGot - hoarder got a disk
-            lda #$1E
+            lda #SFXHrdrGot
             sta ZPtrA + 1
             lda #<FXHrdrGot
             sta fxcopyloop + 1
@@ -158,15 +163,15 @@ soundinit:  lda #$81    ; bank 1
             sta fxcopyloop + 2
             jsr fxcopy
             ; 1D - FXDoh - error sound (drop something you do not have)
-            lda #$1D
+            lda #SFXDoh
             sta ZPtrA + 1
             lda #<FXDoh
             sta fxcopyloop + 1
             lda #>FXDoh
             sta fxcopyloop + 2
             jsr fxcopy
-            ; 1C - FXDrtop - drop disk
-            lda #$1C
+            ; 1C - FXDrop - drop disk
+            lda #SFXDrop
             sta ZPtrA + 1
             lda #<FXDrop
             sta fxcopyloop + 1
