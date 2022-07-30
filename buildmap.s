@@ -24,9 +24,9 @@ BoxPatt:
             ; box open leftward
             .byte   C_WALL_R,   C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_LD
             .byte   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_V
-            .byte   C_SPACE,    C_SPACE,    C_WALL_R,   C_WALL_H,   C_WALL_LUD
-            .byte   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_V
-            .byte   C_WALL_R,   C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_LU
+            .byte   C_SPACE,    C_SPACE,    C_WALL_RD,  C_WALL_H,   C_WALL_LU
+            .byte   C_SPACE,    C_SPACE,    C_WALL_V,   C_SPACE,    C_SPACE
+            .byte   C_WALL_R,   C_WALL_H,   C_WALL_LU,  C_SPACE,    C_SPACE
             ; box open leftward
             .byte   C_WALL_R,   C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_LD
             .byte   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_V
@@ -57,18 +57,18 @@ BoxPatt:
             .byte   C_SPACE,    C_SPACE,    C_WALL_V,   C_SPACE,    C_SPACE
             .byte   C_SPACE,    C_SPACE,    C_WALL_V,   C_SPACE,    C_SPACE
             .byte   C_WALL_R,   C_WALL_H,   C_WALL_LRU, C_WALL_H,   C_WALL_L
-            ; box open up and down
-            .byte   C_WALL_D,   C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_D
-            .byte   C_WALL_V,   C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_V
-            .byte   C_WALL_RUD, C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_LUD
-            .byte   C_WALL_V,   C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_V
-            .byte   C_WALL_U,   C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_U
-            ; box open up and right
-            .byte   C_WALL_D,   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE
+            ; box zigzag
+            .byte   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_D
+            .byte   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_V
+            .byte   C_WALL_RD,  C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_LU
             .byte   C_WALL_V,   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE
-            .byte   C_WALL_V,   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE
-            .byte   C_WALL_V,   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE
-            .byte   C_WALL_RU,  C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_L
+            .byte   C_WALL_U,   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE
+            ; box open down and right
+            .byte   C_WALL_R,   C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_LD
+            .byte   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_V
+            .byte   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_V
+            .byte   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_V
+            .byte   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE,    C_WALL_U
             ; box open down and left
             .byte   C_WALL_RD,  C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_L
             .byte   C_WALL_D,   C_SPACE,    C_SPACE,    C_SPACE,    C_SPACE
