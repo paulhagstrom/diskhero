@@ -127,7 +127,7 @@ drawstatus: ldx #$03
             ldx #$03 
             lda YLoresL, x
             clc
-            adc #$08            ; screen location of level
+            adc #$00            ; screen location of level
             sta ZNumPtr
             lda YLoresHA, x
             sta ZNumPtr + 1

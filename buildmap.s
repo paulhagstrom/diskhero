@@ -264,10 +264,10 @@ mfplacetyp: lda #$08            ; disks of each type to scatter around
 mfplacedsk: jsr mfrndspot
             sty ZPxScratch      ; stash the x-coordinate
             ldy NumDisks
-            txa                 ; store the x-coordinate
-            sta (ZDiskX), y
-            lda ZPxScratch      ; store the y-coordinate
+            txa                 ; store the y-coordinate
             sta (ZDiskY), y
+            lda ZPxScratch      ; store the x-coordinate
+            sta (ZDiskX), y
             lda MFDiskType      ; store the type
             sta (ZDiskType), y
             tax

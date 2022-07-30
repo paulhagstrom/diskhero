@@ -82,7 +82,7 @@ Bugs I am presently aware of.
 - Occasionally with sound on, motion stops (but not music) on real hardware until sound is toggled off and on
 - Some drawing glitches in hires area above and below when scrolling, particularly down, or when the top void is visible
 - Some tearing in playfield when scrolling horizontally (Maybe sense HBL when drawing? Squeeze more cycles out? Stage then blit?)
-- Hoarders should be swarming toward high value disks, but seem to move essentially randomly
+- Hoarders should be swarming toward high value disks, but seem mostly to be just paralyzed with indecision.
 - Quit dies with a system failure $01
 
 ## Enhancements ##

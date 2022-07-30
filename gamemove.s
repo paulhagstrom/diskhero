@@ -238,13 +238,13 @@ gmupdscr:   lda ZOldYY      ; where the head was (segment 2)
             jmp updsingle   ; rts from there
 
 ; scan disks for the most valuable closest one to ZOldX, ZOldY
-; enter with A being $8x to search only for value x, else anything positive to find most hoarder-valuable
+; enter with A being $8x to search only for value x, else $00 to find most hoarder-valuable
 scandisks:  sta ZTargV
             lda #$FF
             sta ZTargD          ; smallest distance found so far is 255.
             ldy NumDisks
 dcheckdisk: lda (ZDiskX), y
-            bmi dtoofar         ; if the disk is off the board, skip it
+            bmi dtoofar         ; a disk that's been taken off the board is no longer interesting
             sec
             sbc ZOldX           ; how X-far is this disk? Negative if disk is to the left
             sta ZTargDXTemp
@@ -269,13 +269,14 @@ dcombdist:  clc
             lda ZTargV
             bpl dfindval        ; branch if we are looking for most valuable
             and #$7F            ; otherwise we are looking for exactly this valuable
-            cmp (ZDiskType), y  ; check value (higher type = higher value)
-            bne dtoofar         ; wrong value, we no longer care
+            cmp (ZDiskType), y  ; check value
+            bne dtoofar         ; wrong value, we no longer find this disk interesting
             jmp dcheckdist      ; right value, compare distance
 dfindval:   cmp (ZDiskType), y  ; check value (higher type = higher value)
             bcc dtoofar         ; if it is strictly lower value, we no longer care
             beq dcheckdist      ; if is the same as best value we've seen, check distance
-            sta ZTargV          ; this is the best one yet, skip distance check
+            lda (ZDiskType), y
+            sta ZTargV          ; this is the best value one yet, skip distance check
             jmp dnewtarget
 dcheckdist: lda ZTargDTemp
             cmp ZTargD          ; is this closer than the last one we've seen at this value?
@@ -287,9 +288,9 @@ dnewtarget: lda (ZDiskX), y     ; this is the new target
             lda ZTargDTemp
             sta ZTargD
             lda ZTargDXTemp     ; direction toward the disk
-            lda ZTargDX
+            sta ZTargDX
             lda ZTargDYTemp     ; direction toward the disk
-            lda ZTargDY
+            sta ZTargDY
 dtoofar:    dey
             bpl dcheckdisk
             ; at this point the target should contain the closest highest-value disk
@@ -471,7 +472,7 @@ DADiskX = *+1
             lda (ZDiskY), y
 DADiskY = *+1
             cmp #INLINEVAR
-            bne gotthis
+            beq gotthis
 gotnotthis: dey
             bpl gotfind
             ; should never fall through to here, will corrupt memory (disk=FF) if it does
