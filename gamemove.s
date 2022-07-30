@@ -76,7 +76,7 @@ ticksdone:  lda (ZHoardSp), y   ; this one can move now, reset ticks for next mo
             sta ZOldYY
             lda #$00            ; hoarders seek high-value
             jsr scandisks       ; get the closest highest value disk to ZOldX/Y in ZTargX/Y and Z
-            bcs hranddir        ; branch to go a random direction if we did not find one
+            bcs hnewton         ; branch to just continue in motion if no target was found
             ; there is a target
             ; hoarder will preferentially head toward it if it is exactly on target's X or Y
             ; but retains a chance of moving a different way so it does not get stuck forever by a wall
@@ -94,7 +94,7 @@ hoardseek:  lda ZOldX
             beq hgohoriz
             ; if it is not a straight line to the target, then prefer to keep moving the same
             ; direction until stopped, and re-evaluate then
-            lda ZVelY
+hnewton:    lda ZVelY
             beq hnovely         ; is hoarder stopped? Y Velocity has not answered this.
             jmp hmoving         ; if there was Y velocity, hoarder is moving
 hnovely:    lda ZVelX           ; Y velocity was 0, is X velocity 0 also?
@@ -244,41 +244,41 @@ scandisks:  sta ZTargV
             sta ZTargD          ; smallest distance found so far is 255.
             ldy NumDisks
 dcheckdisk: lda (ZDiskX), y
-            bmi dtoofar         ; a disk that's been taken off the board is no longer interesting
+            bmi dtoofar         ; a disk that's been taken off the board is not interesting
             sec
-            sbc ZOldX           ; how X-far is this disk? Negative if disk is to the left
-            sta ZTargDXTemp
-            bcs dxdpos          ; branch away if already positive, else take absolute value
-            eor #$FF
+            sbc ZOldX           ; how X-far is this disk? DiskX - X: Negative if disk is to the left
+            sta ZTargDXTemp     ; this is signed X vector from X to DiskX
+            bcs dxdpos          ; branch away if already positive
+            eor #$FF            ; else take absolute value for distance
             adc #$01
-dxdpos:     sta ZTargDTemp      ; save X distance for combining later
+dxdpos:     sta ZTargDTemp      ; save X distance (scalar) for combining later
             lda (ZDiskY), y
             sec
-            sbc ZOldY           ; how Y-far is this disk? Negative if disk is above
-            bcc dydflip
-            bmi dtoofar         ; did not cross zero but is now negative, too far to consider
-            sta ZTargDYTemp
+            sbc ZOldY           ; how Y-far is this disk? DiskY - Y: Negative if disk is above
+            bcc dyup            ; subtraction crossed zero, so disk above
+            bmi dtoofar         ; disk is below but distance is negative (>$7F), too far to consider
+            sta ZTargDYTemp     ; this is signed Y vector from Y to DiskY (positive, disk is down)
             jmp dcombdist
-dydflip:    bpl dtoofar         ; crossed zero but remained positive, too far to consider
-            sta ZTargDYTemp
+dyup:       bpl dtoofar         ; disk is above but distance is positive so must be >$7F away
+            sta ZTargDYTemp     ; this is signed Y vector from Y to DiskY (negative, disk is up)
             eor #$FF            ; take absolute value for distance
             adc #$01
-dcombdist:  clc
-            adc ZTargDTemp      ; combine Y distance with X distance (path distance)
-            sta ZTargDTemp      ; stash distance while we check value
-            lda ZTargV
-            bpl dfindval        ; branch if we are looking for most valuable
-            and #$7F            ; otherwise we are looking for exactly this valuable
-            cmp (ZDiskType), y  ; check value
+dcombdist:  clc                 ; add Y distance we just computed
+            adc ZTargDTemp      ; with X distance from earlier, to get path distance
+            sta ZTargDTemp      ; replace with path distance, this is now the total distance
+            lda ZTargV          ; consider value of the current target
+            bpl dfindval        ; branch if we are looking for most valuable (hoarder)
+            and #$7F            ; otherwise we are looking for exactly one value
+            cmp (ZDiskType), y  ; check disk value to see if it is the one we are looking for
             bne dtoofar         ; wrong value, we no longer find this disk interesting
-            jmp dcheckdist      ; right value, compare distance
+            jmp dcheckdist      ; right value, so now compare distance
 dfindval:   cmp (ZDiskType), y  ; check value (higher type = higher value)
-            bcc dtoofar         ; if it is strictly lower value, we no longer care
             beq dcheckdist      ; if is the same as best value we've seen, check distance
-            lda (ZDiskType), y
-            sta ZTargV          ; this is the best value one yet, skip distance check
-            jmp dnewtarget
-dcheckdist: lda ZTargDTemp
+            bcs dtoofar         ; if value we had before is higher, we no longer care about this disk
+            lda (ZDiskType), y  ; this value is higher than we had before
+            sta ZTargV          ; remember it as our new target value
+            jmp dnewtarget      ; skip distance check, doesn't matter, this is the new target
+dcheckdist: lda ZTargDTemp      ; compare this disk's distance to the best we've seen so far
             cmp ZTargD          ; is this closer than the last one we've seen at this value?
             bcs dtoofar         ; branch away if not strictly closer
 dnewtarget: lda (ZDiskX), y     ; this is the new target
