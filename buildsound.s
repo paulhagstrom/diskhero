@@ -7,7 +7,7 @@
 
 ; Sound effects live in the lower pages, and are copied in by these routines.
 ; There is room for 29 sound effects, that should be good enough.
-; The player does not handle sound effects with more than $100 samples.
+; The player does not handle sound effects with more than $FF samples.
 ; And probably best to steer clear of the lower $300 in the bank.
 ; One sound effect can be played at a time, and it takes priority over the
 ; background music.  The way it is set up, a new sound effect triggered will

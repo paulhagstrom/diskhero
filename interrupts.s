@@ -10,7 +10,7 @@ ClockTick:  .byte   0   ; ticked down for each clock-during-VBL, for playing sou
 
 ; Screen regions: (screen splitting definition)
 ; ScrRegMode is the graphics mode of the region as defined in the table below
-;   encoded as a multiple of $0C so that it can be used as a branch/jump table.
+;   encoded as a multiple of $0F so that it can be used as a branch/jump table.
 ; This is set up to split in blocks of 8 scan lines, to do multiples, repeat the mode
 ; Last mode (only) will use the smooth scroll parameter, also encoded as a branch offset.
 ; These are in reverse order so that I can quickly detect if it runs off the end somehow
@@ -24,10 +24,10 @@ ScrRegModB: .byte   $1E, $1E
 TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 
 ; modes we are using and their index values above.  xC = branch table value
-; 0 xC = 00 - 40 char Apple III color               text    nomix   lores
-; 1 xC = 0C - Fg/bg hires (280x192, 16 colors)      text    nomix   hires
-; 2 xC = 18 - super hires (560x192, b/w)            gr      mix     hires
-; 3 xC = 24 - 140x192 A Hires (140x192, color)      text    mix     hires   scroll
+; 0 xF = 00 - 40 char Apple III color               text    nomix   lores
+; 1 xF = 0F - Fg/bg hires (280x192, 16 colors)      text    nomix   hires
+; 2 xF = 1E - super hires (560x192, b/w)            gr      mix     hires
+; 3 xF = 2D - 140x192 A Hires (140x192, color)      text    mix     hires   scroll
 
 ; Screen layout:
 ; mode 2 (bw hires)  lines 00-0F (10)        b/w map display
@@ -35,7 +35,7 @@ TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 ; mode 3 (a3 hires)  lines 20-3F (20)        hires map upper field  map: 00-1F
 ; mode 0 (text)      lines 40-8F (50) 08-11  text play field        map: 20-27
 ; mode 3 (a3 hires)  lines 90-AF (20)        hires map lower field  map: 28-47
-; mode 1 (a3 medres) lines B0-BF (10) 15-17  medium res something
+; mode 1 (a3 medres) lines B0-BF (10) 15-17  medium res compasses
 
 ; a 6502 interrupt takes minimum 7 cycles from IRQ to the first instruction
 ; of the handler executing.  The current instruction finishes first, and if
@@ -60,7 +60,7 @@ TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 
 ; This code embeds some of the global game variables within it, so the interrupt code
 ; never looks up the next mode, or nudge value, because the game just stores it inline.
-; to speed up both mode and nudge processing, the values are multiples of $0C, used
+; to speed up both mode and nudge processing, the values are multiples of $0C or $0F, used
 ; as a branch offset.  The TwelveBran table above can be used to look up those multiples.
 ; If you are storing into NudgeVal (held directly in the interrupt code), use the smooth
 ; scroll parameter to look up the multiple of $0C in TwelveBran.
@@ -198,7 +198,7 @@ nudge7:     bit SS_XXY
 postnudge:  ;bit R_TONEHBL       ; 4 burn cycles until HBL arrives (expecting 15, about 2-3 loops)
             ;bvc postnudge       ; 2/3
             lda #0              ;2 leverage the zero here to trigger branch always for mode
-            sta RE_T2CH         ;4 go! [45 to here, next line is drawing, next HBL not here yet]
+            sta RE_T2CH         ;4 timer: go! [45 to here, next line is drawing, next HBL not here yet]
 NextMode = *+1                  ; screen mode to switch into next - directly modifies the interrupt handler code
             beq ismode0         ;3 [48] into blank - INLINEVAR
 ismode0:    sta D_TEXT          ;mode 0 - +00 - 40 char A3 text [19 cycles]
