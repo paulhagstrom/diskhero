@@ -22,6 +22,9 @@ ac -p diskhero.po SOS.INTERP bin < diskhero.bin
 
 ## Play ##
 
+This can be played in a browser (though possibly without sound) here:
+https://archive.org/details/a3-diskhero
+
 Boot to play.
 The idea is that you are running around the space to collect the disks.
 The disks come in 4 types.  The inventory is listed up at the top.
@@ -29,7 +32,7 @@ To the left of each type is an indicator of how many you have.
 To the right of each type is an indicator of how many are left on the field.
 Your antagonists are the "hoarders" who run around and try to grab the disks.
 
-The way it is supposed to work eventually is that hoarders chase after the
+Hoarders chase after the
 most valuable disks, so if a hoarder is heading for a disk you want to
 collect, you can distract it if you have a higher value disk by dropping it.
 
@@ -83,7 +86,7 @@ Bugs I am presently aware of.
 - Some drawing glitches in hires area above and below when scrolling, particularly down, or when the top void is visible
 - Some tearing in playfield when scrolling horizontally (Maybe sense HBL when drawing? Squeeze more cycles out? Stage then blit?)
 - Quit dies with a system failure $01
-- Compasses seem not quite accurate
+- Compasses seem not quite accurate, distinguishing "near" from "far" also seems not to be working right
 - Medres disk colors do not quite match text disk colors
 
 ## Enhancements ##
@@ -92,12 +95,11 @@ Things I have on the list of things to try to do:
 
 - Possibly shrink map for lower levels
 - Make level end when no disks are left
-- Allow player to push hoarders (so as not to be trapped)?
-- Add trucks to collect disks
+- Allow player to push hoarders (so as not to be trapped, or to defend a disk they're heading for)?
+- Add trucks to collect disks (if pushing is possible, trucks can push you? Though eventually will reverse and leave, even if they push you into a wall.)
 - Make sounds nicer, longer, quieter?, sequence into a song
 - Generate sound buffers during other game computations for longer music sequences
 - Add title screen
 - Improve colors on real hardware
 - Make disks much more evident on the big map
-- Try to install in MAME-in-a-browser on the Internet Archive.
-- Maybe use the medres area to illustrate progress (different view on inventory)?
+- Maybe use the medres or shgr area to illustrate progress (different view on inventory)?

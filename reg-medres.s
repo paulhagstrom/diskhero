@@ -1,7 +1,7 @@
 ; DISKHERO
 ; Apple III medium res display
 ;
-; currently not doing anything
+; displays compasses toward closest instance of a disk type
 ; occupies lines B0-BF at the bottom of the screen
 
 ; initialize with some kind of color pattern
