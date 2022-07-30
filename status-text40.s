@@ -123,32 +123,6 @@ drawstatus: ldx #$03
             jsr drawnumber
             dex
             bpl :-
-            ; DEBUG - put the seek values up for hero so they can be seen
-            ldx #$03 
-            lda YLoresL, x
-            clc
-            adc #$00            ; screen location of level
-            sta ZNumPtr
-            lda YLoresHA, x
-            sta ZNumPtr + 1
-            lda #$8F
-            sta ZNumPtr + XByte
-            ldx #$00
-:           lda TargDX, x
-            jsr drawnumber
-            lda ZNumPtr
-            clc
-            adc #$03
-            sta ZNumPtr
-            lda TargDY, x
-            jsr drawnumber
-            lda ZNumPtr
-            clc
-            adc #$03
-            sta ZNumPtr
-            inx
-            cpx #$04
-            bne :-
             rts
 
 ; put a 2-digit number on screen.

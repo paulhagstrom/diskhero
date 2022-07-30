@@ -82,8 +82,9 @@ Bugs I am presently aware of.
 - Occasionally with sound on, motion stops (but not music) on real hardware until sound is toggled off and on
 - Some drawing glitches in hires area above and below when scrolling, particularly down, or when the top void is visible
 - Some tearing in playfield when scrolling horizontally (Maybe sense HBL when drawing? Squeeze more cycles out? Stage then blit?)
-- Hoarders should be swarming toward high value disks, but seem mostly to be just paralyzed with indecision.
 - Quit dies with a system failure $01
+- Compasses seem not quite accurate
+- Medres disk colors do not quite match text disk colors
 
 ## Enhancements ##
 
@@ -99,5 +100,4 @@ Things I have on the list of things to try to do:
 - Improve colors on real hardware
 - Make disks much more evident on the big map
 - Try to install in MAME-in-a-browser on the Internet Archive.
-- Maybe use the medres area (or superhires area) to point toward disks?
 - Maybe use the medres area to illustrate progress (different view on inventory)?

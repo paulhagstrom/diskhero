@@ -32,9 +32,9 @@
 ; 9F00  6400    9E00    6656    9D00    6912
 ; 9C00  7167    9B00    7423    9A00    7679
 ; 9900  7935    9800    8191    9700    8447
-; 9600  8703
+; 9600  8703    9500    8959    9400    9215
 
-            .org     $9700 - 14
+            .org     $9400 - 14
             
 ; SOS interpreter header
             .byte    "SOS NTRP"
@@ -48,10 +48,10 @@ CodeStart:  jmp gameinit
             .include "buildsound.s"         ; should be safe in banked memory
             .include "buildfont.s"          ; should be safe in banked memory
             .include "status-text40.s"      ; should be safe in banked memory
-            .include "gamemove.s"           ; probably ok in banked memory
             .include "play-text40.s"        ; should be safe in banked memory
+            .include "gamemove.s"           ; probably ok in banked memory
             .include "reg-superhires.s"     ; should be safe in banked memory
-            .include "reg-medres.s"         ; should be safe in banked memory
+            .include "reg-medres.s"         ; cannot be in banked memory
             .include "map-hires3-data.s"    ; cannot be in banked memory
             .include "map-hires3.s"         ; cannot be in banked memory
             .include "interrupts.s"         ; cannot be in banked memory
@@ -104,6 +104,7 @@ VBLTick = *+1                               ; ticked down for each VBL, can use 
             bpl posttick                    ; based on number of VBLs set in MoveDelay
             jsr domove                      ; game clock has ticked, move everyone around
             jsr updsplash                   ; update the splash effect at the top
+            jsr drawmedres                  ; draw compasses in medres area
             jsr drawstatus                  ; redraw score (TODO: do only when there is an update)
             lda BackNext                    ; is there a background sample already queued up?
             bne elmusicok                   ; yep we're all good
