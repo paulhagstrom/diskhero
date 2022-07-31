@@ -103,6 +103,13 @@ KeyCaught = *+1                             ; keyboard int pushes a caught key i
 VBLTick = *+1                               ; ticked down for each VBL, can use to delay things for several refreshes
 :           lda #INLINEVAR                  ; wait for game clock to tick
             bpl posttick                    ; based on number of VBLs set in MoveDelay
+            ; to consider: push any buffered graphics out as fast as possible upon tickover,
+            ; then start moving things and building next set of buffers
+            ; (removing any wait delays while building the buffers, and computation delays while blitting)
+            ; because hires3 is drawn incrementally (a handful of full lines and many segment updates),
+            ; staging for that may require setting up a patch list instead, and calling updatemap only on push.
+            ; Playfield can be staged and then blitted fully, it is entirely redrawn each time.
+            ; The playfield staging area can be under the hires regions of the screen, in same screen memory area.
             jsr domove                      ; game clock has ticked, move everyone around
             jsr updsplash                   ; update the splash effect at the top
             jsr drawmedres                  ; draw compasses in medres area
