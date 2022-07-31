@@ -83,6 +83,7 @@ Some cycle counts may be out of date.  Some things of interest:
 Bugs I am presently aware of.
 
 - Occasionally with sound on, motion stops (but not music) on real hardware until sound is toggled off and on
+- Some flicker still in upper map region on real hardware when scrolling, fix is possibly hard.
 - Some tearing in playfield during horizontal scroll (fix: stage under hires areas, wait for region to pass, and blit)
 - Quit dies with a system failure $01
 - Compasses seem not quite accurate, distinguishing "near" from "far" also seems not to be working right

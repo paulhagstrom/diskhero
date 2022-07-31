@@ -144,6 +144,9 @@ umbegin:    lda HeroY
             inc ZTouchVoid      ; we have touched the void in the top field
 umnotvoid:  sta ZMapOffset      ; store the map offset we will draw top field line from (not used if in void)
 :           ldy ScrRegion       ; stall for screen mode to leave hires region
+                                ; trial and error: 10, 0F, 0E, 0D ok in MAME, but flickers on hardware
+                                ; when it is 0D, sound interrupts swamp game on hardware
+                                ; PROPER value should be 0E.
             cpy #$0E            ; wait for top field region to pass
             bne :-
 PTopRastA = *+1
