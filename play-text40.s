@@ -207,14 +207,16 @@ dothumb:    sta Zero, x         ; plant the color (address modified to be start 
             ldy #$10            ; do the bottom line (Y holds the current screen line for borderh)
             jmp borderh
 ; now draw the inner playfield
-innerplay:  ;lda ScrRegion       ; stall for screen mode to leave playfield region
-            ;cmp #$04            ; wait for playfield region to pass
-            ;bne innerplay
-innerplayv: dec VoidU           ; burn through upper void lines first if there are any
+; TODO - computing takes too long, it tears when scrolling horizontally
+; So stage it all while drawing, wait for playfield region to pass, blast it into screen memory
+; Can stage it underneath the hires areas.  Not 7 contiguous lines, but I would be using lookups anyway.
+; so, stage lines 9-C into lines 4-7, and lines D-F into lines 12-14, then move them into lines 9-C.
+; For when I decide the tearing is just too annoying.  Seems like too big a project right now.
+innerplay:  dec VoidU           ; burn through upper void lines first if there are any
             bmi pfstart         ; branch away if done with upper void
             jsr playvoid        ; draw the void at CurScrLine
             inc CurScrLine
-            jmp innerplayv
+            jmp innerplay
 pfstart:    lda PlayTop         ; get address of first drawn line (now that top void is passed)
             jsr setmapptr
 pfline:     lda MapPtrH         ; see if we are in the four lines below the map
@@ -233,6 +235,9 @@ pfnext:     lda MapPtrL         ; advance map pointer (even if we are in the voi
             lda CurScrLine
             cmp #$10            ; have we already done the last one ($0F)?
             bne pfline          ; if not (more to draw), go up and do them
+;:           lda ScrRegion       ; stall for screen mode to leave playfield region
+;            cmp #$04            ; wait for playfield region to pass
+;            bne :-
             lda #$1A            ; return ZP to its proper place
             sta R_ZP
             rts
