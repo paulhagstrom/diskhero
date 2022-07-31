@@ -66,6 +66,7 @@ ZTouchVoid  = $71
 ZMapOffset  = $72
 ZPInc       = $73
 ZCharTemp   = $74
+ZMapPtr     = $78
 
 ; lookup tables
 ZFontDots   = $80   ; ZP cache for FontDots to speed up drawing (80-A7)
@@ -75,13 +76,15 @@ ZFontCol    = $A8   ; ZP cache for FontCol to speed up drawing (A8-D0)
 ZSoundPtr   = $D8   ; current sample in background music
 ZFXPtr      = $DA   ; current sample in sound effect
 
+; hires update during movement processing
+ZDirtStack  = $E2   ; pointer to dirty column group stack pointers - E2 E3 E4 E5 E6 E7 E8 E9 EA
+
 ; Addresses are used when ZP is pointed at a display buffer
 ; these are not in conflict with addresses in the 1A00 ZP,
 ; generally limited to screen holes: 78-7F, F8-FF
 
 ; playfield (play-text40)
 
-ZMapPtr     = $78
 ZOtherZP    = $7A
 ZCurrDrawX  = $7B
 ZLineStart  = $7C

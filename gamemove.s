@@ -54,6 +54,12 @@ heroseekn:  dex
             ldy NumHoards
             sty ZCurrHoard
             ; move each hoarder in turn
+            ; empty the bins of dirty segments
+            ldx #$08
+            lda #$00
+:           sta ZDirtStack, x
+            dex
+            bpl :-
 movehoard:  ldy ZCurrHoard
             lda (ZHoardTick), y ; ready to move yet? (up to 8 tick delay for each, governing speed)
             lsr                 ; countdown is just rotating out bits until none are left.
@@ -208,11 +214,12 @@ handoff:    ldy ZNewX
             clc
             adc ZFrame          ; select animation frame
             sta (ZNewPtr), y    ; update the map
-            jsr gmupdscr        ; update the screen
+            jsr gmqupdate       ; update the screen
 nexthoard:  dec ZCurrHoard
             bmi donehoard
             jmp movehoard
 donehoard:  jsr drawplay        ; redraw middle playfield
+            jsr hrcleanup       ; redraw the dirty segments in the hires screen
             lda VelocityY       ; did we need to scroll up based on hero movement?
             beq noscroll        ; nope
             bmi scrolldn
@@ -222,20 +229,16 @@ scrolldn:   sec
             jmp updatemap       ; scroll the screen (using smooth scroll) - rts from there
 noscroll:   rts
 
-; update the screen where things moved
-; later make this just collect things that will all be updated en masse at the end
-; maybe consolating complications and avoiding redundancy
-; not even sure that this is right (oldx, oldy), might this mess up on some hoarder moves
-; since they are two segments long?
-gmupdscr:   lda ZOldYY      ; where the head was (segment 2)
-            ldy ZOldXX
-            jsr updsingle
-            lda ZOldY       ; where the hands were
-            ldy ZOldX
-            jsr updsingle
-            lda ZNewY       ; where the hands are
-            ldy ZNewX
-            jmp updsingle   ; rts from there
+; queue potential changes to the list of segments that need to be updated on screen
+gmqupdate:  ldy ZOldYY      ; where the head was (segment 2)
+            ldx ZOldXX
+            jsr hrdirty
+            ldy ZOldY       ; where the hands were
+            ldx ZOldX
+            jsr hrdirty
+            ldy ZNewY       ; where the hands are
+            ldx ZNewX
+            jmp hrdirty     ; rts from there
 
 ; scan disks for the most valuable closest one to ZOldX, ZOldY
 ; enter with A being $8x to search only for value x, else $00 to find most hoarder-valuable

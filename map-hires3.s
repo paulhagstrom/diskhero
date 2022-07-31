@@ -306,7 +306,7 @@ prepdraw:   lda YHiresHA, x     ; get 2000-based address of current line on scre
             tax
             rts
             
-; enter with X holding the target line on the graphics page, assumes we are in 1A00 ZP
+; enter with X holding the target raster, assumes we are in 1A00 ZP and bank 0 is banked in
 drawvoid:   jsr prepdraw
             lda ZOtherZP        ; HGR1
             sta R_ZP
@@ -496,40 +496,95 @@ MapDiff = *+1
 froff:      lda #$00        ; return zero (which is clearly not a valid line)
             rts             ; if the line is offscreen.
 
-; update a single 14-pixel segment (called when things move)
-; enter with A being the map line
-; and Y being the horizontal map location of the pixel we wish to redraw.
-updsingle:  pha                 ; stash map line while we check if it is onscreen
-            jsr findraster
-            beq usoff           ; offscreen, do nothing
-            tax                 ; move raster line to X
-            pla                 ; get the map line back and set up the pointer
-            jsr setmapptr
-            lda MapEnds, y      ; get the offset of the right edge of map bytes
-            sta ZCurrMapX
-            lda MapPixG, y      ; get the offset of the left edge of pixel groups
-            pha
-            jsr prepdraw        ; relies on raster line being in X
-            pla
+; mark an x,y as dirty and in need of redrawing
+; call with x-coord in X, y-coordinate in Y
+
+hrdirty:    lda DivSeven, x     ; find the bin by dividing by seven
+            tax
+            lda HRBinLow, x
+            sta ZOldPtr         ; co-opt ZOldPtr to point to bin (already directed to bank 2)
+            lda HRBinHigh, x
+            sta ZOldPtr + 1
+            tya                 ; save y-coordinate for stashing
+            ldy ZDirtStack, x   ; position of next one to be added to the stack
+            inc ZDirtStack, x   ; increase stack pointer for this bin
+            sta (ZOldPtr), y
+            rts
+
+; go through the dirty segments and redraw them
+
+hrcleanup:  lda R_BANK
+            sta GMBank
+            lda #$00            ; switch to bank 0 so we can address graphics memory
+            sta R_BANK
+            lda #$82
+            sta ZMapPtr + XByte
+            lda HeroY           ; determine what is even potentially on screen
+            sec                 ; for quick filtering as we loop through updates
+            sbc #$23
+            bcs :+
+            lda #$00            ; went into the void, so 0 is the minimum
+:           sta GMMinMap
+            lda HeroY
             clc
-            adc ZLineStart      ; from the left edge
+            adc #$24            ; $24 because we are doing >=
+            bcc :+
+            lda #$FF            ; went into the void, so FF is the maximum
+:           sta GMMaxMap
+            ; now process them all (even if some are redundant, probably few will be)
+            ldx #$08            ; doing 9 bins
+            stx GMcurrbin
+hrcheckbin: ldy ZDirtStack, x
+            beq hremptybin      ; branch away if nothing in the current bin
+            lda HRBinLow, x     ; consolidate the setup for this bin so we only do it once
+            sta ZOldPtr
+            lda HRBinHigh, x
+            sta ZOldPtr + 1
+            lda MapEnds, x
+            sta GMMapEnd
+            lda MapPixG, x
+            sta GMMapPixG
+hrbinloop:  ldy ZDirtStack, x
+            dey                 ; stack pointer points one above last valid value
+            lda (ZOldPtr), y    ; get y-coordinate from end of bin stack
+GMMinMap = *+1
+            cmp #INLINEVAR      ; don't bother if it is offscreen
+            bcc hrboffscr
+GMMaxMap = *+1
+            cmp #INLINEVAR
+            bcs hrboffscr
+            sta GMYcoord
+            jsr findraster
+            beq hrbunderpf      ; off screen (probably under playfield)
+            tax
+GMYcoord = *+1
+            lda #INLINEVAR
+            jsr setmapptr
+            jsr prepdraw
+GMMapPixG = *+1
+            lda #INLINEVAR
+            clc
+            adc ZLineStart      ; groups start from the left edge
             sta ZCurrDrawX
+GMMapEnd = *+1
+            lda #INLINEVAR
+            sta ZCurrMapX
             lda MapPtrL         ; point ZMapPtr at the left side of present line in the map data.
             sta ZMapPtr
             lda MapPtrH
             sta ZMapPtr + 1
-            lda #$82
-            sta ZMapPtr + XByte
-            lda R_BANK
-            sta USBank
-            lda #$00            ; switch to bank 0 so we can address graphics memory
-            sta R_BANK
-            jsr drawseg         ; draw the segment
-USBank = *+1
+            jsr drawseg         ; finally, draw the segment
+GMcurrbin = *+1
+hrbunderpf: ldx #INLINEVAR
+hrboffscr:  dec ZDirtStack, x
+            bne hrbinloop
+hremptybin: dex
+            stx GMcurrbin
+            bpl hrcheckbin
+            ; done
+GMBank = *+1
             lda #INLINEVAR
             sta R_BANK
-            rts
-usoff:      pla                 ; toss out the map line we saved
             rts
 
 ; draw a single 14-pixel segment (useful also in selectively updating screen)
