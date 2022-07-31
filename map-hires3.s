@@ -143,6 +143,9 @@ umbegin:    lda HeroY
             bcs umnotvoid
             inc ZTouchVoid      ; we have touched the void in the top field
 umnotvoid:  sta ZMapOffset      ; store the map offset we will draw top field line from (not used if in void)
+:           ldy ScrRegion       ; stall for screen mode to leave hires region
+            cpy #$0E            ; wait for top field region to pass
+            bne :-
 PTopRastA = *+1
             lda #INLINEVAR      ; first raster line (inc=top, dec=bottom) in copy operation in top field
             clc
@@ -163,8 +166,11 @@ PTopRastD = *+1
 :           lda ZMapOffset
             jsr drawline        ; draw line (map pointer is in A, raster pointer is in X)
             ; do the bottom field
+btmfield:   ldy ScrRegion        ; stall for screen mode to leave hires region
+            cpy #$00            ; wait for hires region to pass
+            bne btmfield
 PBotRastA = *+1
-btmfield:   lda #INLINEVAR      ; first raster line (inc=top, dec=bottom) in copy operation in bottom field
+            lda #INLINEVAR      ; first raster line (inc=top, dec=bottom) in copy operation in bottom field
             clc
             adc ZNudge          ; newnudge/oldnudge
             ldy ZPInc           ; carry should still be clear
@@ -428,11 +434,12 @@ toplineseg: jsr drawseg         ; draw a single 14-pixel segment
 
 ; compute where in screen memory a map line would be.  Enter with map line in A.
 ; this took a lot of scribbling on paper, but here is an algorithm that seems to work.
+; should never be called if line is fully off screen, but might be called if line is under playfield
 ; if Map > HeroY, bottom field, on screen if 3 < Map-HeroY < 24
 ; if HeroY > Map, top field, on screen if 3 < HeroY-Map < 24
 ; TL = HeroY - 23 (top field) or TL = HeroY + 4 (bottom field) (top line)
-; T8 = TL & 07 (top field) or T8 = (TL + 1) & 07 (bottom field) (nudge value of top line)
-; TLZ = TL - T8 (top line at nudge 0)
+; T8 = TL & 07 (top field) or T8 = (TL + 1) & 07 (bottom field) (screen scroll start value of top line)
+; TLZ = TL - T8 (what the top map line was when nudge was 0, lines between TLZ and TL now "off the top")
 ; MD = Map - TLZ, M8 = MD & 07 (map difference, distance to top of field, and the mod 8 value)
 ; base = 8 * ( M8 < T8 ) (whether the line has already been nudged into the prior group of 8)
 ; raster = MD - base + 20 (top field) or + 90 (bottom field)

@@ -7,49 +7,8 @@ domove:     lda #$82                ; all map-related stuff is in bank 2
             sta ZNewPtr + XByte     ; set up the XByte for all three pointers up here
             sta ZOldPtr + XByte     ; so we do not wind up setting them repeatedly
             sta ZTailPtr + XByte    ; inside a loop
-            ; move hero
-            sta ZIsHero         ; nonzero - do hero first - sets sound/score effects of hitting a disk
-            lda HeroX           ; current position of Hero is OldX/OldY
-            sta ZOldX
-            lda HeroY
-            sta ZOldY
-            lda VelocityX       ; current velocity of Hero is VelX/VelY
-            sta ZVelX
-            lda VelocityY
-            sta ZVelY
-            jsr trymove         ; attempt to follow trajectory
-            bcs posthero        ; the move failed, do not need to do a map update
-            lda #$00            ; remove old hero from map
-            ldy ZOldX
-            sta (ZOldPtr), y
-            lda #C_HERO         ; put new hero on map
-            ldy ZNewY
-            sty HeroY           ; record new Y location
-            ldy ZNewX
-            sty HeroX           ; record new X location
-            sta (ZNewPtr), y    ; put hero in new place on the map
-            ; would update on screen here except hero is never on the hires screen
-posthero:   lda ZVelX
-            sta VelocityX       ; record new X velocity (might have been stopped by a wall)
-            lda ZVelY
-            sta VelocityY       ; record new Y velocity (might have been stopped by a wall)
-            ; find closest of each value of disk for display
-            ; (and, honestly, also to help debug my searching algorithm, but may help game play too)
-            ldx #$03
-heroseek:   txa
-            ora #$80
-            jsr scandisks       ; look for target disk just of the value currently benig checked
-            bcc heroseeky       ; success, record it
-            lda #$80
-            sta TargDX, x       ; record failure as 80 in the X direction.
-            jmp heroseekn
-heroseeky:  lda ZTargDX
-            sta TargDX, x
-            lda ZTargDY
-            sta TargDY, x
-heroseekn:  dex
-            bpl heroseek
-            lda #$00            ; hero finished, now move hoarders
+            ; move everyone else before moving hero
+            lda #$00
             sta ZIsHero         ; not hero - determines sound and score effects of hitting a disk
             ldy NumHoards
             sty ZCurrHoard
@@ -218,8 +177,50 @@ handoff:    ldy ZNewX
 nexthoard:  dec ZCurrHoard
             bmi donehoard
             jmp movehoard
-donehoard:  jsr drawplay        ; redraw middle playfield
-            jsr hrcleanup       ; redraw the dirty segments in the hires screen
+donehoard:  jsr hrcleanup       ; redraw the dirty segments in the hires screen
+            ; now move hero
+            sta ZIsHero         ; nonzero for hero - sets sound/score effects of hitting a disk
+            lda HeroX           ; current position of Hero is OldX/OldY
+            sta ZOldX
+            lda HeroY
+            sta ZOldY
+            lda VelocityX       ; current velocity of Hero is VelX/VelY
+            sta ZVelX
+            lda VelocityY
+            sta ZVelY
+            jsr trymove         ; attempt to follow trajectory
+            bcs posthero        ; the move failed, do not need to do a map update
+            lda #$00            ; remove old hero from map
+            ldy ZOldX
+            sta (ZOldPtr), y
+            lda #C_HERO         ; put new hero on map
+            ldy ZNewY
+            sty HeroY           ; record new Y location
+            ldy ZNewX
+            sty HeroX           ; record new X location
+            sta (ZNewPtr), y    ; put hero in new place on the map
+            ; would update on screen here except hero is never on the hires screen
+posthero:   lda ZVelX
+            sta VelocityX       ; record new X velocity (might have been stopped by a wall)
+            lda ZVelY
+            sta VelocityY       ; record new Y velocity (might have been stopped by a wall)
+            ; find closest of each value of disk for display
+            ; (and, honestly, also to help debug my searching algorithm, but may help game play too)
+            ldx #$03
+heroseek:   txa
+            ora #$80
+            jsr scandisks       ; look for target disk just of the value currently benig checked
+            bcc heroseeky       ; success, record it
+            lda #$80
+            sta TargDX, x       ; record failure as 80 in the X direction.
+            jmp heroseekn
+heroseeky:  lda ZTargDX
+            sta TargDX, x
+            lda ZTargDY
+            sta TargDY, x
+heroseekn:  dex
+            bpl heroseek
+            jsr drawplay        ; redraw middle playfield
             lda VelocityY       ; did we need to scroll up based on hero movement?
             beq noscroll        ; nope
             bmi scrolldn

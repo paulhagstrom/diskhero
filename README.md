@@ -83,8 +83,7 @@ Some cycle counts may be out of date.  Some things of interest:
 Bugs I am presently aware of.
 
 - Occasionally with sound on, motion stops (but not music) on real hardware until sound is toggled off and on
-- Some drawing glitches in hires area above and below when scrolling, particularly down, or when the top void is visible. Seems to be related to updating, when hoarders move.
-- Some tearing in playfield when scrolling horizontally (Maybe sense VBL before drawing? Squeeze more cycles out? Stage then blit?)
+- Some tearing in playfield when scrolling horizontally (takes too long to draw, maybe stage, wait for region to pass, and blit)
 - Quit dies with a system failure $01
 - Compasses seem not quite accurate, distinguishing "near" from "far" also seems not to be working right
 - Medres disk colors do not quite match text disk colors

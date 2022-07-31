@@ -5,7 +5,6 @@
 ; though I have mostly removed ZP usage except in the audio handler
 
 ; variables for sound and speed management
-VBLTickP:   .byte   0   ; playfield ticker, try to draw during VBL
 ClockTick:  .byte   0   ; ticked down for each clock-during-VBL, for playing sound (only) during VBL
 
 ; Screen regions: (screen splitting definition)
@@ -75,7 +74,7 @@ TwelveBran: .byte   $00, $0C, $18, $24, $30, $3C, $48, $54
 ; 8-line HBL group triggers about 32 times per refresh cycle (including those during VBL)
 ; so we're looking at max audio sampling around 2KHz.
 
-; 86 cycles in here, 44 to get here, 130 total.
+; 80 cycles in here, 44 to get here, 124 total.
 
 intvbl:     lda #$06            ;2 reset the HBL counter for top region when it eventually comes
             sta RE_T2CL         ;4
@@ -93,17 +92,16 @@ SRegFstNxt = *+1                ; the first "next" region, set up by setupenv.
             lda #INLINEVAR      ;2 the first "next" region
             sta NextMode        ;4 [40]
             dec VBLTick         ;6 bump VBL countdown - in event loop code
-            dec VBLTickP        ;6 bump VBL countdown
             lda #$06            ;2 fire the clock interrupt 7 times during VBL
-            sta ClockTick       ;4 [58]
+            sta ClockTick       ;4 [52]
             lda #$10            ;2
-            sta RE_T1CL         ;4 [64] interval is $410, this is the $10 part.
+            sta RE_T1CL         ;4 [58] interval is $410, this is the $10 part.
             lda #%10000010      ;2 enable CA1 (RTC)
-            sta RE_INTENAB      ;4 [70]
+            sta RE_INTENAB      ;4 [64]
             lda #$04            ;2 
-            sta RE_T1CH         ;4 [76] start the clock for $410 cycles
+            sta RE_T1CH         ;4 [70] start the clock for $410 cycles
             pla                 ;4
-            rti                 ;6 [86]
+            rti                 ;6 [80]
 
 ; keyboard interrupt handler - just pass it on to the event loop
 ; 30 (or 27) cycles in here, 21 to get here - 51 (or 48) total

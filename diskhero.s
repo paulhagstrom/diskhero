@@ -347,7 +347,6 @@ gameinit:   sei                 ; no interrupts while we are setting up
             bit D_PAGEONE       ; be on page 1.  Nothing presently uses page 2 for anything.
             jsr initstatus      ; text lines 02-03: score/status
             jsr initplay        ; text lines 08-11: playfield (draw frame)
-            jsr drawplay        ; draw actual playfield
             jsr initshgr        ; mode 6 super hires line 00-0F (doesn't swap in bank 0)
             jsr initmedres      ; med res lines B0-BF (doesn't swap in bank 0)
             jsr paintmap        ; mode 7 a3 hires map regions - paint whole visible map

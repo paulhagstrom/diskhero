@@ -207,11 +207,14 @@ dothumb:    sta Zero, x         ; plant the color (address modified to be start 
             ldy #$10            ; do the bottom line (Y holds the current screen line for borderh)
             jmp borderh
 ; now draw the inner playfield
-innerplay:  dec VoidU           ; burn through upper void lines first if there are any
+innerplay:  ;lda ScrRegion       ; stall for screen mode to leave playfield region
+            ;cmp #$04            ; wait for playfield region to pass
+            ;bne innerplay
+innerplayv: dec VoidU           ; burn through upper void lines first if there are any
             bmi pfstart         ; branch away if done with upper void
             jsr playvoid        ; draw the void at CurScrLine
             inc CurScrLine
-            jmp innerplay
+            jmp innerplayv
 pfstart:    lda PlayTop         ; get address of first drawn line (now that top void is passed)
             jsr setmapptr
 pfline:     lda MapPtrH         ; see if we are in the four lines below the map
