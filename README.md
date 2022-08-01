@@ -82,19 +82,16 @@ Some cycle counts may be out of date.  Some things of interest:
 
 Bugs I am presently aware of.
 
-- Occasionally with sound on, motion stops (but not music) on real hardware until sound is toggled off and on. Still not sure what the mechanism of this failure mode is, what could lead to that. 
-- Some flicker still in upper map region on real hardware when scrolling, easy fix attempts have not worked.
-- Also seems to flicker more in IA-MAME (but not local MAME?) than it used to?  Difference now is that I am timing updates with HBL regions passing?
+- Occasionally with sound on, motion stops (but not music) on real hardware until sound is toggled off and on. Still not sure what the mechanism of this failure mode is, what could lead to that.  Hoping that continuing to improve efficiency could help.
 - Quit dies with a system failure $01
 - Compasses seem not quite accurate, distinguishing "near" from "far" also seems not to be working right
 - Medres disk colors do not quite match text disk colors
-- Getting kind of slow on real hardware, probably due to stalling for HBL region to passing (stalls for up to a full vertical refresh).
 
 ## Enhancements ##
 
 Things I have on the list of things to try to do:
 
-- Change drawing strategy to: blit on VBL tickover, then buffer, to try to speed up game and waste fewer cycles waiting for blanking, even if spending some cycles writing bits first to one place and then to another.
+- Finish separating drawing computations from blitting, to waste fewer cycles waiting around
 - Possibly shrink map for lower levels
 - Make level end when no disks are left
 - Allow player to push hoarders (so as not to be trapped, or to defend a disk they're heading for)?

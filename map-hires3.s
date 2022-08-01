@@ -101,13 +101,8 @@ imdone:     lda #INLINEVAR
 ; playfield goes from HeroY - 3 to HeroY + 3
 ; and bottom field goes from HeroY + 4 to HeroY + 23.
 
-; TODO - scrollmap should operate in two stages.
-; First: knowing that we are going to scroll, compute in a buffer the two new lines that will be drawn
-; Put new line for top field in $40 (just below top field), and for bottom field in $41
-; Second: wait for region to pass, copy the lines, copy the new line, update the smooth scroll
-; It means drawing the new line twice (once offscreen while computing it, and again when copying it),
-; but that should still reduce flicker
-; 
+; TODO - separate this in two parts like for playfield, so that computing and blit can be separated
+ 
 scrollmap:  bcs umdec           ; if we are decrementing nudge, skip past the incrementing parm block
             lda #$20            ; first copy target raster line in top field (then up, copying toward zero)
             sta PTopRastA
