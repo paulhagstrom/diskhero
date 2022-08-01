@@ -597,54 +597,45 @@ GMBank = *+1
             sta R_BANK
             rts
 
+; draw a segment on the screen.
+; should have already called prepdraw with x holding the raster line to set up ZPs and ZLineStart
+; enter with ZCurrDrawX = offset of first byte of 4-byte group of graphics memory (i.e. 4 for second group)
+; calls calcseg, which also requires:
+; ZCurrMapX being the right edge of group of map bytes (i.e. 6 for first group)
+; ZMapPtr should point to the map line (as derived from setmapptr)
+; points ZP into graphics, pulls bytes to store out of $1A00 ZP from outside
+
 drawseg:    jsr calcseg
             ldx ZCurrDrawX
-            lda ZPixByteH
-            pha
-            lda ZPixByteF
-            pha
-            lda ZPixByteD
-            pha
-            lda ZPixByteB
-            pha            
-            lda ZPixByteG
-            pha
-            lda ZPixByteE
-            pha
-            lda ZPixByteC
-            pha
-            lda ZPixByteA
-            pha            
             lda ZOtherZP        ; HGR 1
             sta R_ZP
-            pla
+            lda Zero1A + ZPixByteA
             sta Zero, x
-            pla
+            lda Zero1A + ZPixByteC
             sta $01, x
-            pla
+            lda Zero1A + ZPixByteE
             sta $02, x
-            pla
+            lda Zero1A + ZPixByteG
             sta $03, x
             lda ZOtherZP        ; HGR 2
             sta R_ZP
-            pla
+            lda Zero1A + ZPixByteB
             sta Zero, x
-            pla
+            lda Zero1A + ZPixByteD
             sta $01, x
-            pla
+            lda Zero1A + ZPixByteF
             sta $02, x
-            pla
+            lda Zero1A + ZPixByteH
             sta $03, x
             lda #$1A
             sta R_ZP
             rts
 
-; draw a single 14-pixel segment (useful also in selectively updating screen)
+; calculate the bytes behind a single 14-pixel segment
 ; enter with:
-; ZCurrMapX = right edge of group of map bytes (i.e. 6 for first group)
-; ZCurrDrawX = offset of first byte of 4-byte group of graphics memory (i.e. 4 for second group)
+; ZCurrMapX being the right edge of group of map bytes (i.e. 6 for first group)
 ; ZMapPtr should point to the map line (as derived from setmapptr)
-; should have already called prepdraw with x holding the raster line to set up ZPs and ZLineStart
+; will translate map bytes into pixels, stage in ZPixByteB-H, and return graphics bytes in ZPixByteA-H.
 calcseg:
             ; buffer in the stack the seven map elements we will represent
             ; read them from right to left, then we draw them from left to right
