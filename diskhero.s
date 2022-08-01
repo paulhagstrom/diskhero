@@ -35,7 +35,7 @@
 ; 9600  8703    9500    8959    9400    9215
 ; 9300  9471
 
-            .org     $9380 - 14
+            .org     $9300 - 14
             
 ; SOS interpreter header
             .byte    "SOS NTRP"
@@ -79,7 +79,11 @@ HeroX:      .byte   0                       ; X-coordinate of player on the map.
 HeroY:      .byte   0                       ; Y-coordinate of player on the map.
 VelocityX:  .byte   0                       ; X-velocity of player (neg, 0, pos)
 VelocityY:  .byte   0                       ; Y-velocity of player (neg, 0, pos)
-MoveDelay   = 1                             ; VBL tick delay between moves
+; The following setting governs how often the game clock goes off, which is when movement
+; is processed.  Values under 3 risk leaving not enough time to do everything else when
+; movement isn't being processed, but over 3 start feeling pretty pokey.  Best to try to
+; keep it at 3 or below and make everything more efficient.
+MoveDelay   = 3                             ; VBLs per game tick (3 seems about minimum possible)
 
 CurScrLine: .byte   0
 CurMapLine: .byte   0
@@ -102,16 +106,24 @@ KeyCaught = *+1                             ; keyboard int pushes a caught key i
             jsr handlekey                   ; if there was a key, handle it
 VBLTick = *+1                               ; ticked down for each VBL, governs game speed
 :           lda #INLINEVAR                  ; wait for game clock to tick
-            bpl posttick                    ; based on number of VBLs set in MoveDelay
-            ; to consider: push any buffered graphics out as fast as possible upon tickover,
-            ; then start moving things and building next set of buffers
-            ; (removing any wait delays while building the buffers, and computation delays while blitting)
-            ; because hires3 is drawn incrementally (a handful of full lines and many segment updates),
-            ; staging for that may require setting up a patch list instead, and calling updatemap only on push.
+            bpl offtick                     ; based on number of VBLs set in MoveDelay
+            ; on the game clock, do movement and update animation
             jsr domove                      ; game clock has ticked, move everyone around
-            jsr updsplash                   ; update the splash effect at the top
-            jsr drawmedres                  ; draw compasses in medres area
-            jsr drawstatus                  ; redraw score (TODO: do only when there is an update)
+            jsr updsplash                   ; update the splash effect at the top, also on the tick
+            lda #MoveDelay                  ; reset the game clock
+            sta VBLTick
+            jmp eventloop                   ; go back up to schedule in all the other stuff
+            ; when not on the game clock, do everything else until we hit the game clock again
+offtick:
+            jsr fixscroll                   ; scroll the playfield if needed
+            bcs eventloop                   ; go back around if we spent some time
+            jsr hrcleanup                   ; patch visible match regions based on movement
+            bcs eventloop                   ; go back around if we spent some time
+            jsr blitplay                    ; blit playfield to screen if ready, waits for region to pass
+            bcs eventloop                   ; go back around if we spent some time
+            jsr drawplay                    ; redraw the playfield if needed
+            bcs eventloop                   ; go back around if we spent some time
+            ; make sure background music queue isn't starved
             lda BackNext                    ; is there a background sample already queued up?
             bne elmusicok                   ; yep we're all good
 NowPlaying = *+1                            ; current position on the MusicSeq list
@@ -123,13 +135,11 @@ NowPlaying = *+1                            ; current position on the MusicSeq l
             lda MusicSeq
 elsetnext:  stx NowPlaying
             sta BackNext                    ; queue up the next one
-elmusicok:  lda #MoveDelay                  ; reset the game clock
-            sta VBLTick
+elmusicok:  
+            jsr drawmedres                  ; draw compasses in medres area
+            jsr drawstatus                  ; redraw score (TODO: do only when there is an update)
             jmp eventloop
-posttick:   jsr blitplay                    ; blit playfield to screen if ready, waits for region to pass
-            jsr drawplay                    ; redraw the playfield if needed
-            jmp eventloop
-
+            
 alldone:    lda #$7F                        ;disable all interrupts
             sta RD_INTENAB
             sta RD_INTFLAG

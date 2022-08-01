@@ -2,6 +2,9 @@
 ; Apple III Hires region
 ; map display upper and lower block
 
+MapDirty:   .byte   0           ; nonzero if map needs to be redrawn due to movement
+NeedScroll: .byte   0           ; pos/neg if map needs to be scrolled up(clc)/down(sec) due to Hero Y movement
+
 ; paint the whole map
 ; (updates afterwards are incremental, drawing single lines and using smooth scroll)
 ; This is designed to be able to paint under any circumstance, but it turns out that
@@ -75,7 +78,23 @@ PMBankSave = *+1
 imdone:     lda #INLINEVAR
             sta R_BANK
             rts
-            
+
+; if the screen needs a scroll due to the Hero moving in the Y direction, do it.
+; NeedScroll will be 0 if nothing needed, else pos or neg based on hero's Y velocity
+fixscroll:  clc
+            lda NeedScroll
+            beq noscroll
+            bmi scrolldn
+            jsr scrollmap       ; scroll the screen (using smooth scroll) (up/clc)
+            sec                 ; tell eventloop we took some time
+            jmp fixedscr
+scrolldn:   sec
+            jsr scrollmap       ; scroll the screen (using smooth scroll) (down/sec)
+            sec                 ; tell eventloop we took some time
+fixedscr:   lda #$00
+            sta NeedScroll      ; we no longer need a scroll
+noscroll:   rts
+
 ; scrollmap will effect a vertical movement of the map regions of the screen.
 ; if you call it with carry clear, it will move the map up (hero downward), increasing nudge
 ; if you call it with carry set, it will move the map down (hero upward), decreasing nudge
@@ -106,12 +125,8 @@ imdone:     lda #INLINEVAR
 scrollmap:  bcs umdec           ; if we are decrementing nudge, skip past the incrementing parm block
             lda #$20            ; first copy target raster line in top field (then up, copying toward zero)
             sta PTopRastA
-            ;lda #$38            ; raster offset for drawing new upper field line ($20 + $18)
-            ;sta PTopRastD
             lda #$90            ; first copy target raster line of lower field (then up, copying toward zero)
             sta PBotRastA
-            ;lda #$A8            ; raster offset for drawing new lower field line ($90 + $18)
-            ;sta PBotRastD
             lda #$04            ; map offset back from HeroY for newly drawn line in top field.
             sta ZTopMapOff
             lda #$01            ; remember that we are incrementing (will later be added to PNudge for NudgePos)
@@ -119,12 +134,8 @@ scrollmap:  bcs umdec           ; if we are decrementing nudge, skip past the in
             jmp umbegin         ; skip past the decrementing parm block
 umdec:      lda #$38            ; first copy target raster line in lower field (then down, copying away from zero)
             sta PTopRastA
-            ;lda #$20            ; raster offset for drawing new upper field line ($20 + 0)
-            ;sta PTopRastD
             lda #$A8            ; first copy target raster line in lower field (then down, copying away from zero)
             sta PBotRastA
-            ;lda #$90            ; raster offset for drawing new lower field line ($90 + 0)
-            ;sta PBotRastD
             lda #$23            ; map offset back from HeroY for newly drawn line in top field.
             sta ZTopMapOff
             lda #$00            ; remember that we are decrementing (will later be added to PNudge for NudgePos)
@@ -518,8 +529,14 @@ hrdirty:    lda DivSeven, x     ; find the bin by dividing by seven
             rts
 
 ; go through the dirty segments and redraw them
+; could maybe be segmented into computation and then screen update
+; but seems to be quick enough now just writing updates directly
 
-hrcleanup:  lda R_BANK
+hrcleanup:  lda MapDirty
+            bne :+
+            clc                 ; tell event loop that we did not spend appreciable time
+            rts
+:           lda R_BANK
             sta GMBank
             lda #$00            ; switch to bank 0 so we can address graphics memory
             sta R_BANK
@@ -591,6 +608,9 @@ hremptybin: dex
 GMBank = *+1
             lda #INLINEVAR
             sta R_BANK
+            lda #$00
+            sta MapDirty        ; updates are now done
+            sec                 ; signal to event loop that we spent some time here
             rts
 
 ; draw a segment on the screen.

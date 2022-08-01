@@ -177,8 +177,7 @@ handoff:    ldy ZNewX
 nexthoard:  dec ZCurrHoard
             bmi donehoard
             jmp movehoard
-donehoard:  jsr hrcleanup       ; redraw the dirty segments in the hires screen
-            ; now move hero
+donehoard:  ; now move hero
             sta ZIsHero         ; nonzero for hero - sets sound/score effects of hitting a disk
             lda HeroX           ; current position of Hero is OldX/OldY
             sta ZOldX
@@ -220,17 +219,13 @@ heroseeky:  lda ZTargDX
             sta TargDY, x
 heroseekn:  dex
             bpl heroseek
-            lda #$01            ; mark playfield as in need of redraw
-            sta PlayDirty
+            ldx #$01
+            stx PlayDirty       ; mark playfield as in need of redraw
+            stx MapDirty        ; mark map as in need of updating (hoarders movements)
             lda VelocityY       ; did we need to scroll up based on hero movement?
-            beq noscroll        ; nope
-            bmi scrolldn
-            clc                 ; yep, set scrolling direction parameter to "down" (clc)
-            jmp scrollmap       ; scroll the screen (using smooth scroll) - rts from there
-scrolldn:   sec
-            jmp scrollmap       ; scroll the screen (using smooth scroll) - rts from there
-noscroll:   rts
-
+            sta NeedScroll      ; mark mapfield as in need of a scroll if hero moved in Y direction
+            rts
+            
 ; queue potential changes to the list of segments that need to be updated on screen
 gmqupdate:  ldy ZOldYY      ; where the head was (segment 2)
             ldx ZOldXX

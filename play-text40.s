@@ -115,6 +115,7 @@ Map2Thumb:  .byte   $00, $00, $01, $01, $02, $02, $03
 ; Blast the queued up lines into video memory
 blitplay:   lda PlayCTS         ; go only when the buffer is ready
             bne :+
+            clc                 ; signal to event loop that no appreciable time was wasted
             rts
 :           lda #$00            ; reset clear to send to "nope"
             sta PlayCTS
@@ -197,6 +198,7 @@ ScrColSrc = *+1
             jmp blitpfloop
 blitpfdone: lda #$1A            ; restore ZP to $1A00
             sta R_ZP
+            sec                 ; signal to event loop that we burnt some time
             rts
 
 ; Lines we draw to (staging buffers for lines 8-F)
@@ -222,7 +224,8 @@ BorDataB:   .byte   0           ; character or color on border on left and right
 ; based on hero position, 5 total, high-nibble-of-HeroX of those are on the right side
 
 ; first step, compute boundaries of playfield, void extents
-drawplay:   lda PlayCTS         ; check to see if buffer is already prepared
+drawplay:   clc                 ; signal to event loop that no appreciable time was wasted
+            lda PlayCTS         ; check to see if buffer is already prepared
             beq :+
             rts                 ; if so, do nothing
 :           lda PlayDirty       ; check to see if anything has moved since last draw
@@ -341,6 +344,7 @@ pfnext:     lda MapPtrL         ; advance map pointer (even if we are in the voi
             sta R_ZP
             lda #$00            ; reset the "dirty" flag, playfield has been redrawn since move
             sta PlayDirty
+            sec                 ; signal to event loop that we burnt some time
             rts
 
 ; draw the playfield left/right border and compute edges of line/void to draw

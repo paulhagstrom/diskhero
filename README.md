@@ -91,7 +91,6 @@ Bugs I am presently aware of.
 
 Things I have on the list of things to try to do:
 
-- Finish separating drawing computations from blitting, to waste fewer cycles waiting around
 - Possibly shrink map for lower levels
 - Make level end when no disks are left
 - Allow player to push hoarders (so as not to be trapped, or to defend a disk they're heading for)?
