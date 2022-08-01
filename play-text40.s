@@ -216,8 +216,6 @@ BorDataB:   .byte   0           ; character or color on border on left and right
 ; in order to keep hero in the middle, five columns are used by a frame
 ; based on hero position, 5 total, high-nibble-of-HeroX of those are on the right side
 
-; TODO - stage this for blitplay and set PlayCTS, then put blitplay into main event loop.
-
 ; first step, compute boundaries of playfield, void extents
 drawplay:   lda #$00
             sta PlayCTS         ; playfield is not presently clear to send, will set this flag at the end here
@@ -474,7 +472,7 @@ leftvoid:   dex                 ; we touched the void, any left to draw?
             sta Zero, x
             jmp leftvoid
 pfdone:     ldx CurScrLine      ; now, send what we collected to the screen staging buffer
-            ldy PlayBufSrc, x   ; could maybe optimize by sending to staging buffer first and skipping this
+            ldy PlayBufSrc, x   ; TODO: could maybe optimize by sending to staging buffer first and skipping this
             lda YLoresHA, y     ; $400 base (character space)
             sta R_ZP            ; go to character memory
             lda BorderL         ; left edge inside border

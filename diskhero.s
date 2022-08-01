@@ -108,7 +108,6 @@ VBLTick = *+1                               ; ticked down for each VBL, can use 
             ; (removing any wait delays while building the buffers, and computation delays while blitting)
             ; because hires3 is drawn incrementally (a handful of full lines and many segment updates),
             ; staging for that may require setting up a patch list instead, and calling updatemap only on push.
-            jsr blitplay                    ; blit playfield to screen if ready, waits for region to pass
             jsr domove                      ; game clock has ticked, move everyone around
             jsr updsplash                   ; update the splash effect at the top
             jsr drawmedres                  ; draw compasses in medres area
@@ -126,7 +125,8 @@ elsetnext:  stx NowPlaying
             sta BackNext                    ; queue up the next one
 elmusicok:  lda #MoveDelay                  ; reset the game clock
             sta VBLTick
-posttick:   jmp eventloop
+posttick:   jsr blitplay                    ; blit playfield to screen if ready, waits for region to pass
+            jmp eventloop
 
 alldone:    lda #$7F                        ;disable all interrupts
             sta RD_INTENAB
