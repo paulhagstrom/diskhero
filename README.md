@@ -85,7 +85,6 @@ Bugs I am presently aware of.
 - Occasionally with sound on, motion stops (but not music) on real hardware until sound is toggled off and on. Still not sure what the mechanism of this failure mode is, what could lead to that. 
 - Some flicker still in upper map region on real hardware when scrolling, easy fix attempts have not worked.
 - Also seems to flicker more in IA-MAME (but not local MAME?) than it used to?  Difference now is that I am timing updates with HBL regions passing?
-- Some tearing in playfield during horizontal scroll (fix: stage under hires areas, wait for region to pass, and blit?)
 - Quit dies with a system failure $01
 - Compasses seem not quite accurate, distinguishing "near" from "far" also seems not to be working right
 - Medres disk colors do not quite match text disk colors

@@ -35,7 +35,7 @@
 ; 9600  8703    9500    8959    9400    9215
 ; 9300  9471
 
-            .org     $9400 - 14
+            .org     $9380 - 14
             
 ; SOS interpreter header
             .byte    "SOS NTRP"
@@ -108,9 +108,7 @@ VBLTick = *+1                               ; ticked down for each VBL, can use 
             ; (removing any wait delays while building the buffers, and computation delays while blitting)
             ; because hires3 is drawn incrementally (a handful of full lines and many segment updates),
             ; staging for that may require setting up a patch list instead, and calling updatemap only on push.
-            ; Playfield can be staged and then blitted fully, it is entirely redrawn each time.
-            ; The playfield staging area can be under the hires regions of the screen, in same screen memory area.
-            ;jsr blitplay                    ; blit playfield to screen if ready
+            jsr blitplay                    ; blit playfield to screen if ready, waits for region to pass
             jsr domove                      ; game clock has ticked, move everyone around
             jsr updsplash                   ; update the splash effect at the top
             jsr drawmedres                  ; draw compasses in medres area

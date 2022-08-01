@@ -116,13 +116,16 @@ blitplay:   lda PlayCTS         ; go only when the buffer is ready
             sta PlayCTS
             ldy #$07
             sty CurrBline
+:           lda ScrRegion       ; stall for screen mode to leave playfield region
+            cmp #$04            ; wait for playfield region to pass
+            bne :-
 CurrBline = *+1
 blitpfloop: ldy #INLINEVAR
             bne blitpfnorm
             ; in the special case of the last line, it is drawing
             ; from the color space to the target lines $08 and $10
             ldx PlayBufSrc          ; get source line
-            lda YLoresS, x
+            lda YLoresL, x
             sta ScrChrSrc
             sta ScrColSrc
             lda YLoresHA, x
@@ -139,7 +142,7 @@ blitpfloop: ldy #INLINEVAR
             sta R_ZP
             ldx #$10                ; get other target line (10)
             lda YLoresS, x
-            sta ScrChrTrgL
+            sta ScrColTrgL
             lda YLoresHA, x
             clc
             adc #$04                ; send to color space
@@ -147,7 +150,7 @@ blitpfloop: ldy #INLINEVAR
             jmp blitpfdo
             ; this is just the normal case, write chr and col for the line
 blitpfnorm: ldx PlayBufSrc, y       ; get source line
-            lda YLoresS, x
+            lda YLoresL, x
             sta ScrChrSrc
             sta ScrColSrc
             lda YLoresHA, x
@@ -180,7 +183,7 @@ ScrColTrgH = *+1
             sty R_ZP
             ldy #$27
 ScrColSrc = *+1
-            lda $800, y         ; INLINEVAR - source color address
+:           lda $800, y         ; INLINEVAR - source color address
             sta Zero, x
             dex
             dey
@@ -188,7 +191,9 @@ ScrColSrc = *+1
             dec CurrBline
             bmi blitpfdone
             jmp blitpfloop
-blitpfdone: rts
+blitpfdone: lda #$1A            ; restore ZP to $1A00
+            sta R_ZP
+            rts
 
 ; Lines we draw to (staging buffers for lines 8-F)
 ; These live in the text area that is not displayed because the hires graphics regions are overtop them.
@@ -259,7 +264,7 @@ pmnovoidu:  sta PlayTop         ; record top map line in playfield (HeroY-3)
             sty VoidU           ; and that there is no top void
 ; at this point:
 ; VoidL, VoidR are number of void columns on left and right respectively.
-; VoidU, VoidD are number of void rows above and below HeroY respectively.
+; VoidU is number of void rows above HeroY.
 ; PlayLeft, PlayRight are the first, last map columns being drawn onscreen, respectively.
 ; BorderR is the number of border columns on the right.  (There will be 5-BorderR on the left.)
 ; draw the top and bottom borders (containing thumb). Just colors, chars will already be there
@@ -269,8 +274,7 @@ dppostvoid: ldx PlayRight       ; last visible column on the playfield
             ldx PlayLeft        ; first visible column on the playfield
             lda Map2Thumb, x    ; coresponds to left edge of thumb
             pha
-            ldy #$08            ; we are at the top of the playfield box (in the top border)
-            sty CurScrLine      ; text line $08
+            ldy PlayBufSrc      ; we are at the top of the playfield box (dest: 08 and 10)
 borderh:    lda YLoresHA, y     ; $800 base (color space) is computed from char space
             clc
             adc #$04
@@ -296,22 +300,9 @@ midthumb:   lda #$02            ; thumb color
 dothumb:    sta Zero, x         ; plant the color (address modified to be start of line + 2)
             dex
             bpl doborder
-            ldx CurScrLine
-            cpx #$09            ; if we have done both top and bottom
-            beq innerplay       ; then CurScrLine happens to be 9 (top of playfield) and ready to start
-            inc CurScrLine      ; set exit condition for next time (borderh does not use the value)
-            lda ThumbR          ; push thumb bounds back on the stack for next iteration
-            pha
-            lda ThumbL
-            pha
-            ldy #$10            ; do the bottom line (Y holds the current screen line for borderh)
-            jmp borderh
 ; now draw the inner playfield
-; TODO - computing takes too long, it tears when scrolling horizontally
-; So stage it all while drawing, wait for playfield region to pass, blast it into screen memory
-; Can stage it underneath the hires areas.  Not 7 contiguous lines, but I would be using lookups anyway.
-; so, stage lines 9-C into lines 4-7, and lines D-F into lines 12-14, then move them into lines 9-C.
-; For when I decide the tearing is just too annoying.  Seems like too big a project right now.
+            lda #$01            ; zero was the borders we just did.
+            sta CurScrLine
 innerplay:  dec VoidU           ; burn through upper void lines first if there are any
             bmi pfstart         ; branch away if done with upper void
             jsr playvoid        ; draw the void at CurScrLine
@@ -333,11 +324,8 @@ pfnext:     lda MapPtrL         ; advance map pointer (even if we are in the voi
             inc MapPtrH
 :           inc CurScrLine      ; move to the next screen line
             lda CurScrLine
-            cmp #$10            ; have we already done the last one ($0F)?
+            cmp #$08            ; have we already done the last one ($07)?
             bne pfline          ; if not (more to draw), go up and do them
-;:           lda ScrRegion       ; stall for screen mode to leave playfield region
-;            cmp #$04            ; wait for playfield region to pass
-;            bne :-
             lda #$1A            ; return ZP to its proper place
             sta R_ZP
             rts
@@ -348,7 +336,8 @@ pfnext:     lda MapPtrL         ; advance map pointer (even if we are in the voi
 playbord:   lda #BorderChar
             sta BorDataA        ; outer border character
             sta BorDataB        ; inner border character
-            ldy CurScrLine
+            ldx CurScrLine
+            ldy PlayBufSrc, x
             lda YLoresHA, y     ; $400 base (char space)
 pbdraw:     sta R_ZP            ; point ZP at appropriate space
             lda #$04            ; draw five border columns total
@@ -398,7 +387,8 @@ pbdone:     rts
 ; draw a void line in the playfield
 ; assumes that ZP register can be manipulated with abandon, will be returned to $1A00 somewhere else, later
 playvoid:   jsr playbord        ; draw the border and compute the edges
-            ldy CurScrLine
+            ldx CurScrLine
+            ldy PlayBufSrc, x
             lda YLoresHA, y     ; $800 base (char space)
             sta R_ZP            ; go to char space
             lda BorderL         ; computed first left column
@@ -483,7 +473,8 @@ leftvoid:   dex                 ; we touched the void, any left to draw?
             lda #$10            ; magenta
             sta Zero, x
             jmp leftvoid
-pfdone:     ldy CurScrLine      ; now, send what we collected to the screen
+pfdone:     ldx CurScrLine      ; now, send what we collected to the screen staging buffer
+            ldy PlayBufSrc, x   ; could maybe optimize by sending to staging buffer first and skipping this
             lda YLoresHA, y     ; $400 base (character space)
             sta R_ZP            ; go to character memory
             lda BorderL         ; left edge inside border
@@ -505,4 +496,6 @@ pfwchar:    sta Zero, x         ; store it in character space (base modified to 
 pfwcol:     sta Zero, x         ; and put it in the ZP we point at (modified to point to line's left edge)
             dex
             bpl :-
+            lda #$01            ; done, ready to send
+            sta PlayCTS
             rts
