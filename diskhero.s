@@ -21,7 +21,7 @@
 ; mode 3 (a3 hires)  lines 20-3F (20)        hires map upper field  map: 00-1F
 ; mode 0 (text)      lines 40-8F (50) 08-11  text play field        map: 20-27
 ; mode 3 (a3 hires)  lines 90-AF (20)        hires map lower field  map: 28-47
-; mode 1 (a3 medres) lines B0-BF (10) 15-17  medium res compasses
+; mode 1 (a3 medres) lines B0-BF (10) 16-17  medium res compasses
 
 ; Notes to self about how much space I am allowed by starting below A000.
 ; But after I compile I can check the size of the resulting binary and see if it still
@@ -110,6 +110,7 @@ VBLTick = *+1                               ; ticked down for each VBL, can use 
             ; staging for that may require setting up a patch list instead, and calling updatemap only on push.
             ; Playfield can be staged and then blitted fully, it is entirely redrawn each time.
             ; The playfield staging area can be under the hires regions of the screen, in same screen memory area.
+            ;jsr blitplay                    ; blit playfield to screen if ready
             jsr domove                      ; game clock has ticked, move everyone around
             jsr updsplash                   ; update the splash effect at the top
             jsr drawmedres                  ; draw compasses in medres area

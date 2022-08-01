@@ -9,6 +9,7 @@ BorderChar  = $00       ; C_SPACE
 BorderColA  = $5A       ; grey2 background
 BorderColB  = $A5       ; grey1 background
 
+; Characters that fill the lines just above and just below the playfield
 FrameText:  .byte C_WALL_RUD,   C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_H
             .byte C_WALL_H,     C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_H
             .byte C_WALL_H,     C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_H
@@ -18,19 +19,17 @@ FrameText:  .byte C_WALL_RUD,   C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_H
             .byte C_WALL_H,     C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_H
             .byte C_WALL_H,     C_WALL_H,   C_WALL_H,   C_WALL_H,   C_WALL_LUD
             
-; the only static stuff needing initialization are top/bottom border characters
-; even though it does not require blazing speed, use the stack to push -- just
+; The only static stuff needing initialization are top/bottom border characters.
+; Even though it does not require blazing speed, I use the stack to push -- just
 ; to exemplify the technique.  In the main game code, interrupts come too fast to
 ; use the stack (not interrupt-safe, can't disable interrupts for so long).
 ; (This code is executed at the beginning, while interrupts have been suspended.)
-; Returns ZP to $1A00.
+; Exits with ZP set to $1A00.
 
 IPcount:    .byte   0
 IPeol:      .byte   0           ; end of line pointer
-IPstack:    .byte   0           ; saved stack pointer
-IPenv:      .byte   0           ; saved environment register
 
-initplay:   tsx
+initplay:   tsx                 ; preserve stack and environment register
             stx IPstack
             lda R_ENVIRON
             sta IPenv
@@ -38,11 +37,11 @@ initplay:   tsx
             sta R_ENVIRON
             lda #$01
             sta IPcount
-            ldy #$08            ; draw line 8
-iploop:     lda YLoresHA, y
-            eor #$01            ; this is where ZP has to be
-            sta R_ZP            ; in order for stack to be where we want it
-            ldx YLoresS, y
+            ldy #$08            ; start by drawing text line 8
+iploop:     lda YLoresHA, y     ; look up (high byte of) where this line starts
+            eor #$01            ; Compute where where ZP has to be
+            sta R_ZP            ; in order to put stack to be where we want it
+            ldx YLoresS, y      ; end of line pointer (start + $27)
             stx IPeol           ; save the end of line pointer for later
             txs                 ; point stack pointer at end of line
             ldy #$27
@@ -71,7 +70,7 @@ ipshadow:   ldy #$11            ; draw line 11 (space, with shadow color)
             ldx YLoresS, y
             stx IPeol           ; save the end of line pointer for later
             txs                 ; point stack pointer at end of line
-            lda #C_SPACE
+            lda #C_SPACE        ; C_SPACE is the character (blank) for that line
             ldy #$27
 :           pha                 ; push onto the screen
             dey
@@ -83,15 +82,17 @@ ipshadow:   ldy #$11            ; draw line 11 (space, with shadow color)
             ldx IPeol           ; recall end of line address
             txs                 ; point stack pointer at end of line
             ldy #$27
-            lda #BorderColB
+            lda #BorderColB     ; shadow color
 :           pha
             dey
             bpl :-
             lda #$1A            ; back to $1A00 for ZP
             sta R_ZP
-            lda IPenv           ; back to true stack
+IPenv = *+1
+            lda #INLINEVAR      ; back to true stack (or whatever the entry setting was)
             sta R_ENVIRON
-            ldx IPstack         ; restore stack pointer
+IPstack = *+1
+            ldx #INLINEVAR  ; restore stack pointer
             txs
             rts
             
@@ -106,6 +107,96 @@ Map2Thumb:  .byte   $00, $00, $01, $01, $02, $02, $03
             .byte   $18, $18, $19, $19, $1A, $1A, $1B
             .byte   $1C, $1C, $1D, $1D, $1E, $1E, $1F
             .byte   $20, $20, $21, $21, $22, $22, $23
+
+; Blast the queued up lines into video memory
+blitplay:   lda PlayCTS         ; go only when the buffer is ready
+            bne :+
+            rts
+:           lda #$00            ; reset clear to send to "nope"
+            sta PlayCTS
+            ldy #$07
+            sty CurrBline
+CurrBline = *+1
+blitpfloop: ldy #INLINEVAR
+            bne blitpfnorm
+            ; in the special case of the last line, it is drawing
+            ; from the color space to the target lines $08 and $10
+            ldx PlayBufSrc          ; get source line
+            lda YLoresS, x
+            sta ScrChrSrc
+            sta ScrColSrc
+            lda YLoresHA, x
+            clc
+            adc #$04                ; fetch from color space
+            sta ScrChrSrc + 1
+            sta ScrColSrc + 1
+            ldx #$08                ; get target line (08)
+            lda YLoresS, x
+            sta ScrChrTrgL
+            lda YLoresHA, x
+            clc
+            adc #$04                ; send to color space
+            sta R_ZP
+            ldx #$10                ; get other target line (10)
+            lda YLoresS, x
+            sta ScrChrTrgL
+            lda YLoresHA, x
+            clc
+            adc #$04                ; send to color space
+            sta ScrColTrgH
+            jmp blitpfdo
+            ; this is just the normal case, write chr and col for the line
+blitpfnorm: ldx PlayBufSrc, y       ; get source line
+            lda YLoresS, x
+            sta ScrChrSrc
+            sta ScrColSrc
+            lda YLoresHA, x
+            sta ScrChrSrc + 1
+            clc
+            adc #$04
+            sta ScrColSrc + 1
+            ldx PlayBufTrg, y       ; get target line
+            lda YLoresS, x
+            sta ScrColTrgL
+            sta ScrChrTrgL
+            lda YLoresHA, x
+            sta R_ZP
+            clc
+            adc #$04
+            sta ScrColTrgH
+ScrChrTrgL = *+1
+blitpfdo:   ldx #INLINEVAR
+            ldy #$27
+ScrChrSrc = *+1
+:           lda $400, y         ; INLINEVAR - source char address
+            sta Zero, x
+            dex
+            dey
+            bpl :-
+ScrColTrgL = *+1
+            ldx #INLINEVAR
+ScrColTrgH = *+1
+            ldy #INLINEVAR
+            sty R_ZP
+            ldy #$27
+ScrColSrc = *+1
+            lda $800, y         ; INLINEVAR - source color address
+            sta Zero, x
+            dex
+            dey
+            bne :-
+            dec CurrBline
+            bmi blitpfdone
+            jmp blitpfloop
+blitpfdone: rts
+
+; Lines we draw to (staging buffers for lines 8-F)
+; These live in the text area that is not displayed because the hires graphics regions are overtop them.
+PlayBufSrc: .byte   $15, $04, $05, $06, $07, $12, $13, $14  ; char and color spaces for lines in playfield area
+PlayBufTrg: .byte   $08, $09, $0A, $0B, $0C, $0D, $0E, $0F  ; target lines, to blit onto
+
+PlayCTS:    .byte   0           ; nonzero if playfield has been buffered and is ready to blit
+
 PlayLeft:   .byte   0
 PlayRight:  .byte   0
 PlayTop:    .byte   0
@@ -120,8 +211,12 @@ BorDataB:   .byte   0           ; character or color on border on left and right
 ; in order to keep hero in the middle, five columns are used by a frame
 ; based on hero position, 5 total, high-nibble-of-HeroX of those are on the right side
 
+; TODO - stage this for blitplay and set PlayCTS, then put blitplay into main event loop.
+
 ; first step, compute boundaries of playfield, void extents
-drawplay:   lda HeroX           ; take high nibble of HeroX - that is BorderR
+drawplay:   lda #$00
+            sta PlayCTS         ; playfield is not presently clear to send, will set this flag at the end here
+            lda HeroX           ; take high nibble of HeroX - that is BorderR
             lsr                 ; that is, if HeroX is at 10, there are 2 border cols on the right, 3 on left
             lsr                 ; and if HeroX is at 3F, there are 4 borders on the right, 1 on left
             lsr
@@ -162,6 +257,11 @@ pmcheckt:   lda HeroY           ; check for top void
             jmp dppostvoid
 pmnovoidu:  sta PlayTop         ; record top map line in playfield (HeroY-3)
             sty VoidU           ; and that there is no top void
+; at this point:
+; VoidL, VoidR are number of void columns on left and right respectively.
+; VoidU, VoidD are number of void rows above and below HeroY respectively.
+; PlayLeft, PlayRight are the first, last map columns being drawn onscreen, respectively.
+; BorderR is the number of border columns on the right.  (There will be 5-BorderR on the left.)
 ; draw the top and bottom borders (containing thumb). Just colors, chars will already be there
 dppostvoid: ldx PlayRight       ; last visible column on the playfield
             lda Map2Thumb, x    ; corresponds to right edge of thumb
