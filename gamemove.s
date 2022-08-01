@@ -220,7 +220,8 @@ heroseeky:  lda ZTargDX
             sta TargDY, x
 heroseekn:  dex
             bpl heroseek
-            jsr drawplay        ; redraw middle playfield
+            lda #$01            ; mark playfield as in need of redraw
+            sta PlayDirty
             lda VelocityY       ; did we need to scroll up based on hero movement?
             beq noscroll        ; nope
             bmi scrolldn

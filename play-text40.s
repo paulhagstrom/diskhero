@@ -94,6 +94,10 @@ IPenv = *+1
 IPstack = *+1
             ldx #INLINEVAR  ; restore stack pointer
             txs
+            lda #$00        ; reset buffer ready flag
+            sta PlayCTS
+            lda #$01        ; set buffer-needs-updating flag
+            sta PlayDirty
             rts
             
 ; Map2Thumb is a table showing which lores column corresponds to
@@ -201,6 +205,7 @@ PlayBufSrc: .byte   $15, $04, $05, $06, $07, $12, $13, $14  ; char and color spa
 PlayBufTrg: .byte   $08, $09, $0A, $0B, $0C, $0D, $0E, $0F  ; target lines, to blit onto
 
 PlayCTS:    .byte   0           ; nonzero if playfield has been buffered and is ready to blit
+PlayDirty:  .byte   0           ; nonzero if playfield needs to be redrawn due to movement
 
 PlayLeft:   .byte   0
 PlayRight:  .byte   0
@@ -217,8 +222,16 @@ BorDataB:   .byte   0           ; character or color on border on left and right
 ; based on hero position, 5 total, high-nibble-of-HeroX of those are on the right side
 
 ; first step, compute boundaries of playfield, void extents
-drawplay:   lda #$00
-            sta PlayCTS         ; playfield is not presently clear to send, will set this flag at the end here
+drawplay:   lda PlayCTS         ; check to see if buffer is already prepared
+            beq :+
+            rts                 ; if so, do nothing
+:           lda PlayDirty       ; check to see if anything has moved since last draw
+            bne :+
+            rts                 ; if not, do nothing
+:           lda #$01            ; set buffer prepared flag (in anticipation of finishing buffer in here) 
+            sta PlayCTS
+            lda #$00            ; reset buffer-needs-updating flag (in anticipation of updating in here)
+            sta PlayDirty
             lda HeroX           ; take high nibble of HeroX - that is BorderR
             lsr                 ; that is, if HeroX is at 10, there are 2 border cols on the right, 3 on left
             lsr                 ; and if HeroX is at 3F, there are 4 borders on the right, 1 on left
@@ -326,6 +339,8 @@ pfnext:     lda MapPtrL         ; advance map pointer (even if we are in the voi
             bne pfline          ; if not (more to draw), go up and do them
             lda #$1A            ; return ZP to its proper place
             sta R_ZP
+            lda #$00            ; reset the "dirty" flag, playfield has been redrawn since move
+            sta PlayDirty
             rts
 
 ; draw the playfield left/right border and compute edges of line/void to draw

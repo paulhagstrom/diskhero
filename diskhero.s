@@ -93,14 +93,14 @@ MusicSeq:   .byte   $20, $50, $50, $20, $00
 
 ; main game event loop
 
-ExitFlag = *+1                              ; keyboard int makes this nonzero to trigger exit
+ExitFlag = *+1                              ; keyboard handler makes this nonzero to trigger exit
 eventloop:  lda #INLINEVAR                  ; if ExitFlag becomes nonzero (within keyboard processing)
             bne alldone                     ; then exit
 KeyCaught = *+1                             ; keyboard int pushes a caught key in here
             lda #INLINEVAR                  ; check if we have recently caught a key (keyboard interrupt)
             beq :+
             jsr handlekey                   ; if there was a key, handle it
-VBLTick = *+1                               ; ticked down for each VBL, can use to delay things for several refreshes
+VBLTick = *+1                               ; ticked down for each VBL, governs game speed
 :           lda #INLINEVAR                  ; wait for game clock to tick
             bpl posttick                    ; based on number of VBLs set in MoveDelay
             ; to consider: push any buffered graphics out as fast as possible upon tickover,
@@ -127,6 +127,7 @@ elmusicok:  lda #MoveDelay                  ; reset the game clock
             sta VBLTick
             jmp eventloop
 posttick:   jsr blitplay                    ; blit playfield to screen if ready, waits for region to pass
+            jsr drawplay                    ; redraw the playfield if needed
             jmp eventloop
 
 alldone:    lda #$7F                        ;disable all interrupts
