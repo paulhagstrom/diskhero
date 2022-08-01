@@ -66,15 +66,25 @@ ZTouchVoid  = $71
 ZMapOffset  = $72
 ZPInc       = $73
 ZCharTemp   = $74
-ZMapPtr     = $78
+ZMapPtr     = $76
 
 ; lookup tables
 ZFontDots   = $80   ; ZP cache for FontDots to speed up drawing (80-A7)
 ZFontCol    = $A8   ; ZP cache for FontCol to speed up drawing (A8-D0)
 
 ; interrupt handler
-ZSoundPtr   = $D8   ; current sample in background music
-ZFXPtr      = $DA   ; current sample in sound effect
+ZSoundPtr   = $D2   ; current sample in background music
+ZFXPtr      = $D4   ; current sample in sound effect
+
+; staging for hires3 segment bytes
+ZPixByteA   = $D6
+ZPixByteB   = $D7
+ZPixByteC   = $D8
+ZPixByteD   = $D9
+ZPixByteE   = $DA
+ZPixByteF   = $DB
+ZPixByteG   = $DC
+ZPixByteH   = $DD
 
 ; hires update during movement processing
 ZDirtStack  = $E2   ; pointer to dirty column group stack pointers - E2 E3 E4 E5 E6 E7 E8 E9 EA

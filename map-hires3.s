@@ -101,7 +101,7 @@ imdone:     lda #INLINEVAR
 ; playfield goes from HeroY - 3 to HeroY + 3
 ; and bottom field goes from HeroY + 4 to HeroY + 23.
 
-updatemap:  bcs umdec           ; if we decrementing nudge, skip past the incrementing parm block
+updatemap:  bcs umdec           ; if we are decrementing nudge, skip past the incrementing parm block
             lda #$20            ; first copy target raster line in top field (then up, copying toward zero)
             sta PTopRastA
             lda #$38            ; raster offset for drawing new upper field line ($20 + $18)
@@ -597,13 +597,55 @@ GMBank = *+1
             sta R_BANK
             rts
 
+drawseg:    jsr calcseg
+            ldx ZCurrDrawX
+            lda ZPixByteH
+            pha
+            lda ZPixByteF
+            pha
+            lda ZPixByteD
+            pha
+            lda ZPixByteB
+            pha            
+            lda ZPixByteG
+            pha
+            lda ZPixByteE
+            pha
+            lda ZPixByteC
+            pha
+            lda ZPixByteA
+            pha            
+            lda ZOtherZP        ; HGR 1
+            sta R_ZP
+            pla
+            sta Zero, x
+            pla
+            sta $01, x
+            pla
+            sta $02, x
+            pla
+            sta $03, x
+            lda ZOtherZP        ; HGR 2
+            sta R_ZP
+            pla
+            sta Zero, x
+            pla
+            sta $01, x
+            pla
+            sta $02, x
+            pla
+            sta $03, x
+            lda #$1A
+            sta R_ZP
+            rts
+
 ; draw a single 14-pixel segment (useful also in selectively updating screen)
 ; enter with:
 ; ZCurrMapX = right edge of group of map bytes (i.e. 6 for first group)
 ; ZCurrDrawX = offset of first byte of 4-byte group of graphics memory (i.e. 4 for second group)
 ; ZMapPtr should point to the map line (as derived from setmapptr)
 ; should have already called prepdraw with x holding the raster line to set up ZPs and ZLineStart
-drawseg:
+calcseg:
             ; buffer in the stack the seven map elements we will represent
             ; read them from right to left, then we draw them from left to right
             lda #$06            ; we will buffer seven map elements
@@ -637,7 +679,8 @@ bufmap:     ldy ZCurrMapX
             jmp applycolor
 usemapcol:  lda MapColors, x    ; load the indexed color
 applycolor: and ZPxScratch      ; apply to the pixels (should be 1111 or 0000 else color would be affected)
-bufmappix:  pha                 ; push buffered pixels onto the stack (safe from ZP switch)
+bufmappix:  ldx ZBufCount
+            sta ZPixByteB, x    ; stage pixels in last 7 bytes of scratch space
             dec ZCurrMapX       ; move the map pointer back
             dec ZBufCount       ; keep going until we have buffered 7 map elements
             bpl bufmap
@@ -680,46 +723,37 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             ; MSB->LSB
             ;  0010001  0100010  1000100  0001000
             ; 00010001 00100010 01000100 00001000
-            ldx ZCurrDrawX      ; set x to the horizontal offset on screen
-            lda ZOtherZP        ; go to HGR1 ZP for drawing
-            sta R_ZP
             ; byte 0 (byte 0 page 1): -1110000 [0+0] 421/8421
-            pla                 ; pixels 0-1
+            lda ZPixByteB       ; pixels 0-1
             tay                 ; remember for later
             and #$7F
-            sta Zero, x
+            sta ZPixByteA       ; output byte
             ; byte 1 (byte 0 page 2): -3322221 [0+1+1] 21/8421/8
             tya                 ; recall color of pixel 1
             asl                 ; move hi bit of pixel 1 color
             rol                 ; into lo bit of byte 1
             and #$01
             sta ZPxScratch      ; stash bit of pixel 1
-            pla                 ; pixels 2-3
-            pha                 ; remember for later across ZP switch
+            lda ZPixByteC       ; pixels 2-3
+            tay                 ; remember for later
             asl                 ; move pixel 2's and 3's bits up
             and #%011111110     ; and chop off the two hi bits of pixel 3
             ora ZPxScratch      ; and then add pixel 1's last bit in
-            ; put this pixel data on the other ZP (page 2)
-            ldy ZOtherZP
-            sty R_ZP            ; go to page 2 ZP
-            sta Zero, x
-            ldy ZOtherZP
-            sty R_ZP            ; go to page 1 ZP
-            inx
+            sta ZPixByteB       ; output byte
             ; byte 2 (byte 1 page 1): -5444433 [1+2+2] 1/8421/84
-            pla                 ; recall color of pixel 3
+            tya                 ; recall color of pixel 3
             asl
             rol
             rol                 ; put pixel 3's hi 2 bits in low bits
             and #$03            ; isolate the pixel 3 color's higher two bits
             sta ZPxScratch      ; and stash them
-            pla                 ; pixels 4-5
+            lda ZPixByteD       ; pixels 4-5
             tay                 ; remember for later
             asl                 ; shift them up
             asl
             ora ZPxScratch      ; add in pixel 3's hi 2 bits
             and #$7F            ; chop off the msb
-            sta Zero, x
+            sta ZPixByteC       ; output byte
             ; byte 3 (byte 1 page 2): -6666555 [2+3] 8421/842
             tya                 ; recall color of pixel 5
             asl                 ; move higher 3 bits of pixel 5 into low 3 bits
@@ -728,28 +762,22 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             rol
             and #$07
             sta ZPxScratch
-            pla                 ; pixels 6-7
-            pha                 ; remember for later across ZP switch
+            lda ZPixByteE       ; pixels 6-7
+            tay                 ; remember for later
             asl
             asl
             asl                 ; move pixel 6 left three
             ora ZPxScratch      ; and add in pixel 5's bits
             and #$7F            ; chop off the msb
-            ; put this data on the page 2 ZP
-            ldy ZOtherZP
-            sty R_ZP            ; go to page 2 ZP
-            sta Zero, x
-            ldy ZOtherZP
-            sty R_ZP            ; go to page 1 ZP
-            inx
+            sta ZPixByteD       ; output byte
             ; byte 4 (byte 2 page 1): -8887777 [3+4] 421/8421
-            pla                 ; recall color of pixels 6-7
+            tya                 ; recall color of pixels 6-7
             lsr                 ; demote pixel 7 to low nibble
             lsr
             lsr
             lsr
             sta ZPxScratch
-            pla                 ; pixels 8-9
+            lda ZPixByteF       ; pixels 8-9
             tay                 ; remember for later
             asl                 ; promote pixel 8 to high nibble
             asl
@@ -757,52 +785,40 @@ bufmappix:  pha                 ; push buffered pixels onto the stack (safe from
             asl
             ora ZPxScratch
             and #$7F            ; chop off the msb
-            sta Zero, x
+            sta ZPixByteE       ; output byte
             ; byte 5 (byte 2 page 2): -AA99998 [4+4+5]  21/8421/8
             tya                 ; recall color of pixels 8 and 9
             lsr                 ; get highest pixel 8 bit into lsb
             lsr                 ; putting pixel 9 in the right place too
             lsr
             sta ZPxScratch
-            pla                 ; pixels A-B
-            pha                 ; remember for later across ZP switch
+            lda ZPixByteG       ; pixels A-B
+            tay                 ; remember for later
             lsr                 ; rotate A's low two pixels into bits 7 and 6
             ror
             ror
             ror
             and #%01100000      ; and isolate just those bits 7 and 6
             ora ZPxScratch      ; add in pixels 9 and 8
-            ; put this data on the other ZP
-            ldy ZOtherZP
-            sty R_ZP            ; go to page 2 ZP
-            sta Zero, x
-            ldy ZOtherZP
-            sty R_ZP            ; go to page 1 ZP
-            inx
+            sta ZPixByteF       ; output byte
             ; byte 6 (byte 3 page 1): -CBBBBAA [5+5+6] 1/8421/84
-            pla                 ; recall color of pixels A-B
+            tya                 ; recall color of pixels A-B
             lsr                 ; move pixel A's high two bits to lowest two
             lsr                 ; also puts pixel B in the right place
             and #%00111111      ; clear out last space for pixel C
             sta ZPxScratch
-            pla                 ; pixels C-D
+            lda ZPixByteH       ; pixels C-D
             tay                 ; remember for later
             lsr                 ; rotate low bit of pixel C into bit 6
             ror
             ror
             and #%01000000      ; isolate that low bit of pixel C
             ora ZPxScratch      ; add it in to pixels A and B
-            sta Zero, x
+            sta ZPixByteG       ; output byte
             ; byte 7 (byte 3 page 2): -DDDDCCC [6+6] 8421/842
             tya                 ; recall color of pixels C and D
             lsr                 ; shift away the lsb and strip msb
-            ; put this data on the other ZP
-            ldy ZOtherZP
-            sty R_ZP            ; go to page 2 ZP
-            sta Zero, x
-            ldy #$1A
-            sty R_ZP            ; go to 1A00 ZP
-
-            ; the 14 pixels are now drawn
+            sta ZPixByteH       ; output byte
+            ; the 14 pixels are now computed and stored in ZPixByteA-H
             rts
 
