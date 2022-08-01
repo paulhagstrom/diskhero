@@ -125,6 +125,7 @@ elsetnext:  stx NowPlaying
             sta BackNext                    ; queue up the next one
 elmusicok:  lda #MoveDelay                  ; reset the game clock
             sta VBLTick
+            jmp eventloop
 posttick:   jsr blitplay                    ; blit playfield to screen if ready, waits for region to pass
             jmp eventloop
 
