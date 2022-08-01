@@ -76,7 +76,7 @@ imdone:     lda #INLINEVAR
             sta R_BANK
             rts
             
-; updatemap will effect a vertical movement of the map regions of the screen.
+; scrollmap will effect a vertical movement of the map regions of the screen.
 ; if you call it with carry clear, it will move the map up (hero downward), increasing nudge
 ; if you call it with carry set, it will move the map down (hero upward), decreasing nudge
 ; it is assumed that the HeroY coordinate has just been changed, triggering this call.
@@ -101,15 +101,22 @@ imdone:     lda #INLINEVAR
 ; playfield goes from HeroY - 3 to HeroY + 3
 ; and bottom field goes from HeroY + 4 to HeroY + 23.
 
-updatemap:  bcs umdec           ; if we are decrementing nudge, skip past the incrementing parm block
+; TODO - scrollmap should operate in two stages.
+; First: knowing that we are going to scroll, compute in a buffer the two new lines that will be drawn
+; Put new line for top field in $40 (just below top field), and for bottom field in $41
+; Second: wait for region to pass, copy the lines, copy the new line, update the smooth scroll
+; It means drawing the new line twice (once offscreen while computing it, and again when copying it),
+; but that should still reduce flicker
+; 
+scrollmap:  bcs umdec           ; if we are decrementing nudge, skip past the incrementing parm block
             lda #$20            ; first copy target raster line in top field (then up, copying toward zero)
             sta PTopRastA
-            lda #$38            ; raster offset for drawing new upper field line ($20 + $18)
-            sta PTopRastD
+            ;lda #$38            ; raster offset for drawing new upper field line ($20 + $18)
+            ;sta PTopRastD
             lda #$90            ; first copy target raster line of lower field (then up, copying toward zero)
             sta PBotRastA
-            lda #$A8            ; raster offset for drawing new lower field line ($90 + $18)
-            sta PBotRastD
+            ;lda #$A8            ; raster offset for drawing new lower field line ($90 + $18)
+            ;sta PBotRastD
             lda #$04            ; map offset back from HeroY for newly drawn line in top field.
             sta ZTopMapOff
             lda #$01            ; remember that we are incrementing (will later be added to PNudge for NudgePos)
@@ -117,12 +124,12 @@ updatemap:  bcs umdec           ; if we are decrementing nudge, skip past the in
             jmp umbegin         ; skip past the decrementing parm block
 umdec:      lda #$38            ; first copy target raster line in lower field (then down, copying away from zero)
             sta PTopRastA
-            lda #$20            ; raster offset for drawing new upper field line ($20 + 0)
-            sta PTopRastD
+            ;lda #$20            ; raster offset for drawing new upper field line ($20 + 0)
+            ;sta PTopRastD
             lda #$A8            ; first copy target raster line in lower field (then down, copying away from zero)
             sta PBotRastA
-            lda #$90            ; raster offset for drawing new lower field line ($90 + 0)
-            sta PBotRastD
+            ;lda #$90            ; raster offset for drawing new lower field line ($90 + 0)
+            ;sta PBotRastD
             lda #$23            ; map offset back from HeroY for newly drawn line in top field.
             sta ZTopMapOff
             lda #$00            ; remember that we are decrementing (will later be added to PNudge for NudgePos)
@@ -137,54 +144,18 @@ umbegin:    lda HeroY
             sta R_BANK
             sta ZTouchVoid      ; reset "touched the void" flag            
             ; do the top field
+            ldx #$40            ; buffer line in raster 40
             lda HeroY           ; find the new data line for the top field
             sec
             sbc ZTopMapOff      ; counting back from HeroY to either top or bottom of top field
+            sta ZMapOffset      ; store the map offset we will draw top field line from
             bcs umnotvoid
             inc ZTouchVoid      ; we have touched the void in the top field
-umnotvoid:  sta ZMapOffset      ; store the map offset we will draw top field line from (not used if in void)
-:           ldy ScrRegion       ; stall for screen mode to leave hires region
-                                ; trial and error: 10, 0F, 0E, 0D ok in MAME, but flickers on hardware
-                                ; when it is 0D, sound interrupts swamp game on hardware
-                                ; PROPER value should be 0E.
-            cpy #$0E            ; wait for top field region to pass
-            bne :-
-PTopRastA = *+1
-            lda #INLINEVAR      ; first raster line (inc=top, dec=bottom) in copy operation in top field
-            clc
-            adc ZNudge          ; newnudge/oldnudge
-            ldy ZPInc           ; carry should still be clear
-            bne :+              ; set carry if we we decrementing
-            sec
-:           jsr copylines       ; copy lines that can be copied
-PTopRastD = *+1
-            lda #INLINEVAR      ; raster line that is target for new draw in top field
-            clc
-            adc ZNudge          ; plus nudge
-            tax                 ; move raster line to X for drawline
-            ldy ZTouchVoid      ; if we are in the void, draw the void
-            beq :+              ; branch if we are not in the void
             jsr drawvoid
             jmp btmfield
-:           lda ZMapOffset
-            jsr drawline        ; draw line (map pointer is in A, raster pointer is in X)
+umnotvoid:  jsr drawline
             ; do the bottom field
-btmfield:   ldy ScrRegion        ; stall for screen mode to leave hires region
-            cpy #$00            ; wait for hires region to pass
-            bne btmfield
-PBotRastA = *+1
-            lda #INLINEVAR      ; first raster line (inc=top, dec=bottom) in copy operation in bottom field
-            clc
-            adc ZNudge          ; newnudge/oldnudge
-            ldy ZPInc           ; carry should still be clear
-            bne :+              ; set carry if we are decrementing
-            sec
-:           jsr copylines       ; copy lines that can be copied
-PBotRastD = *+1
-            lda #INLINEVAR      ; raster line that is target for new draw in bottom field
-            clc
-            adc ZNudge          ; plus nudge
-            tax                 ; move raster line to X for drawline
+btmfield:   ldx #$41            ; buffer line in raster 41
             lda ZMapOffset      ; find map line for the bottom field
             clc                 ; by adding $27 to the map line from the top field
             adc #$27
@@ -192,8 +163,30 @@ PBotRastD = *+1
             dec ZTouchVoid      ; if we were in the void before, we're not now.  Else we are.
             beq :+              ; if we're not in the void skip to drawing the line
             jsr drawvoid
-            jmp upddone
+            jmp umcopy
 :           jsr drawline        ; draw line (map pointer is still in A, raster pointer is in X)
+            ; now copy everything to visible screen regions
+umcopy:     ldy ScrRegion       ; stall for screen mode to leave hires region
+            cpy #$00            ; wait for bottom field hires region to pass
+            bne umcopy
+PBotRastA = *+1
+            lda #INLINEVAR      ; first raster line (inc=top, dec=bottom) in copy operation in bottom field
+            clc
+            adc ZNudge          ; newnudge/oldnudge
+            ldy ZPInc           ; carry should still be clear
+            bne :+              ; set carry if we are decrementing
+            sec
+:           ldx #$41            ; new bottom field line buffer
+            jsr copylines       ; copy lines that can be copied
+PTopRastA = *+1
+            lda #INLINEVAR      ; first raster line (inc=top, dec=bottom) in copy operation in top field
+            clc
+            adc ZNudge          ; newnudge/oldnudge
+            ldy ZPInc           ; carry should still be clear
+            bne :+              ; set carry if we we decrementing
+            sec
+:           ldx #$40            ; new top field line buffer
+            jsr copylines       ; copy lines that can be copied
 UMBankSave = *+1
 upddone:    lda #INLINEVAR      ; put the bank back
             sta R_BANK
@@ -207,7 +200,9 @@ upddone:    lda #INLINEVAR      ; put the bank back
             rts
 
 ; copylines uses self-modifying code and ZP repointing to quickly copy the three graphics lines
-; enter with graphics line (top line plus NudgePos), carry clear for increase nudge, set for decrease nudge
+; enter with start line (top line plus NudgePos) in A,
+; carry clear for increase nudge, carry set for decrease nudge,
+; and x holding the new line that will be copied in ($40 or $41)
 ; exits with x still holding the line that would be the target of new draw (was last source)
 ; assumes we are already in bank 0 (video data), and sets ZP to $1A00 on exit
 ; interrupts are too tight in this game to use the stack to push
@@ -216,12 +211,13 @@ LinesLeft:  .byte   0
 
 copylines:  tay                 ; move start line into Y
             pha                 ; and remember it 
+            stx BufferLine      ; store where the offscreen buffer is for the last line
             lda #$00            ; set LinesDec to 1 if carry was set or 0 if carry was clear
             rol
             sta LinesDec
-            lda #$02            ; move three lines, countdown in LinesLeft
+            lda #$03            ; move four lines (last one being from the buffer), countdown in LinesLeft
             sta LinesLeft
-            lda YHiresS, y
+            lda YHiresS, y      ; set the first target line based on start line we were passed
             sta TargS           ; target low, end of the line
             lda YHiresHA, y
             sta TargHA          ; target A high
@@ -235,12 +231,12 @@ lmnext:     lda #INLINEVAR      ; restore carry from entry
             bcs :+              ; if carry is set we are subtracting
             adc #$08            ; if carry is clear we are adding
             jmp lmprep
-:           sbc #$08            ; carry survives from entry (no chance carry got cleared)
+:           sbc #$08
 lmprep:     tay
             pha                 ; remember source line we computed for the next iteration's target
-            lda YHiresS, y      ; end of line pointer not used in source but passed on to be target after
+lmsetsrc:   lda YHiresS, y      ; end of line pointer not used in source but passed on to be target after
             sta SourceS
-            lda YHiresL, y
+            lda YHiresL, y      ; source start-of-line low byte
             sta lmsrca + 1      ; modify code in upcoming loop (page 1 source)
             sta lmsrcb + 1      ; modify code in upcoming loop (page 2 source)
             lda YHiresHA, y
@@ -269,8 +265,7 @@ lmsrcb:     lda $4000, y        ; this address is modified to be exactly at the 
             dex
             dey
             bpl lmsrcb
-            dec LinesLeft
-            bmi lmdone          ; done moving lines
+            ; the source we just used will now become the target for the next one
 SourceS = *+1
             lda #INLINEVAR
             sta TargS
@@ -278,11 +273,16 @@ SourceS = *+1
             sta TargHA
             lda lmsrcb + 2
             sta TargHB
-            jmp lmnext
-lmdone:     pla                 ; we can now forget the next line we computed
+            dec LinesLeft
+            beq lmlast          ; last line source is an offscreen buffer
+            bpl lmnext          ; if we're not even to the last line yet, compute next source
             lda #$1A            ; restore ZP to $1A00
             sta R_ZP
             rts
+BufferLine = *+1
+lmlast:     ldy #INLINEVAR      ; offscreen buffer line
+            pla                 ; toss out saved line
+            jmp lmsetsrc
 
 ; seven magenta pixels for the left and right two bytes in the map region
 ; and for the void lines
@@ -435,9 +435,10 @@ toplineseg: jsr drawseg         ; draw a single 14-pixel segment
             jmp toplineseg
 :           rts
 
-; compute where in screen memory a map line would be.  Enter with map line in A.
-; this took a lot of scribbling on paper, but here is an algorithm that seems to work.
-; should never be called if line is fully off screen, but might be called if line is under playfield
+; Compute where in screen memory a map line would be.  Enter with map line in A.
+; The logic of the game outside is such that it will not be called if line is fully off screen,
+; but might be called if the line is under the playfield (and it would work regardless).
+; This took a lot of scribbling on paper, but here is an algorithm that seems to work.
 ; if Map > HeroY, bottom field, on screen if 3 < Map-HeroY < 24
 ; if HeroY > Map, top field, on screen if 3 < HeroY-Map < 24
 ; TL = HeroY - 23 (top field) or TL = HeroY + 4 (bottom field) (top line)
@@ -503,7 +504,7 @@ MapDiff = *+1
             adc #INLINEVAR
             ; A should now hold the line in video memory corresponding to the map
             rts
-froff:      lda #$00        ; return zero (which is clearly not a valid line)
+froff:      lda #$00        ; return zero (which is clearly not a valid line in the context of this game)
             rts             ; if the line is offscreen.
 
 ; mark an x,y as dirty and in need of redrawing
@@ -603,6 +604,7 @@ GMBank = *+1
 ; calls calcseg, which also requires:
 ; ZCurrMapX being the right edge of group of map bytes (i.e. 6 for first group)
 ; ZMapPtr should point to the map line (as derived from setmapptr)
+; and will return with ZCurrMapX backed up to the right edge of the preceding group of map bytes
 ; points ZP into graphics, pulls bytes to store out of $1A00 ZP from outside
 
 drawseg:    jsr calcseg
@@ -636,15 +638,12 @@ drawseg:    jsr calcseg
 ; ZCurrMapX being the right edge of group of map bytes (i.e. 6 for first group)
 ; ZMapPtr should point to the map line (as derived from setmapptr)
 ; will translate map bytes into pixels, stage in ZPixByteB-H, and return graphics bytes in ZPixByteA-H.
-calcseg:
-            ; buffer in the stack the seven map elements we will represent
-            ; read them from right to left, then we draw them from left to right
-            lda #$06            ; we will buffer seven map elements
+; Note: will also back ZCurrMapX up to the beginning of the preceding map byte group, while it buffers
+calcseg:    lda #$06            ; we will buffer seven map elements
             sta ZBufCount
 bufmap:     ldy ZCurrMapX
             lda (ZMapPtr), y
-            ; now that we have the byte from the map, we can translate this into
-            ; the two pixels it will be displaying.
+            ; translate the map byte into the two pixels it will be displaying.
             ; this information comes from FontDots, which we cached into ZFontDots (1A ZP)
             tay                 ; stash the map byte
             and #$3F            ; strip any color bits
@@ -675,6 +674,14 @@ bufmappix:  ldx ZBufCount
             dec ZCurrMapX       ; move the map pointer back
             dec ZBufCount       ; keep going until we have buffered 7 map elements
             bpl bufmap
+            ; fall through to translate pixel data into screen bytes
+
+; This part below could be called independently, it's quite general
+; It assumes there are 14 pixels of data stored in the seven bytes ZPixByteB-ZPixByteH
+; And it smears those bits across eight graphics bytes, with result in ZPixByteA-ZPixByteH
+; Those bytes are then ready to be written to the video memory (A, C, E, G to $2000-based page)
+; Uses A and Y but not X or stack
+
             ; the pixels have now been translated, we can send them to the screen
             ; the 7 pixels on the stack each use 8 bits, but we need to smear them across the
             ; 8 bytes of graphics memory using 7 bits at a time.  I know, right?

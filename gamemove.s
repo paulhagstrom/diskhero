@@ -226,9 +226,9 @@ heroseekn:  dex
             beq noscroll        ; nope
             bmi scrolldn
             clc                 ; yep, set scrolling direction parameter to "down" (clc)
-            jmp updatemap       ; scroll the screen (using smooth scroll) - rts from there
+            jmp scrollmap       ; scroll the screen (using smooth scroll) - rts from there
 scrolldn:   sec
-            jmp updatemap       ; scroll the screen (using smooth scroll) - rts from there
+            jmp scrollmap       ; scroll the screen (using smooth scroll) - rts from there
 noscroll:   rts
 
 ; queue potential changes to the list of segments that need to be updated on screen
